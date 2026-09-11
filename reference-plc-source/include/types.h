@@ -1,0 +1,795 @@
+/**
+ * @file types.h
+ * @brief Central location for ALL struct definitions
+ *
+ * This file should be the ONLY place where structs are defined.
+ * Prevents duplicate definitions and makes the project structure clear.
+ */
+
+#ifndef TYPES_H
+#define TYPES_H
+
+#include <stdint.h>
+#include "constants.h"
+
+/* ============================================================================
+ * MODBUS REQUEST STRUCTS
+ * ============================================================================ */
+
+/* NOTE: ModbusFrame is defined in modbus_frame.h */
+
+typedef struct {
+  uint16_t starting_address;
+  uint16_t quantity;
+} ModbusReadRequest;
+
+typedef struct {
+  uint16_t output_address;
+  uint16_t output_value;
+} ModbusWriteSingleCoilRequest;
+
+typedef struct {
+  uint16_t register_address;
+  uint16_t register_value;
+} ModbusWriteSingleRegisterRequest;
+
+typedef struct {
+  uint16_t starting_address;
+  uint16_t quantity_of_outputs;
+  uint8_t byte_count;
+  uint8_t output_values[MODBUS_FRAME_MAX];
+} ModbusWriteMultipleCoilsRequest;
+
+typedef struct {
+  uint16_t starting_address;
+  uint16_t quantity_of_registers;
+  uint8_t byte_count;
+  uint16_t register_values[MODBUS_FRAME_MAX / 2];
+} ModbusWriteMultipleRegistersRequest;
+
+/* ============================================================================
+ * COUNTER CONFIGURATION
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint8_t enabled;
+  CounterModeEnable mode_enable;
+  CounterEdgeType edge_type;
+  CounterDirection direction;
+  CounterHWMode hw_mode;
+
+  uint16_t prescaler;
+  uint8_t bit_width;  // 8, 16, 32, 64
+  float scale_factor;
+
+  // Register addresses
+  uint16_t value_reg;        // Computed/scaled value register (renamed from index_reg)
+  uint16_t raw_reg;          // Prescaled value register
+  uint16_t freq_reg;         // Frequency (Hz) register
+  uint16_t ctrl_reg;         // Control register (bit layout below)
+  uint16_t compare_value_reg; // Compare threshold register (BUG-030, v4.2.4)
+
+  // ctrl_reg bit layout:
+  //   Bit 0: Reset command (write 1 to reset counter)
+  //   Bit 1: Start/Stop command (write 1 to start, 0 to stop)
+  //   Bit 2: Running status (read-only: 1=counting, 0=stopped)
+  //   Bit 3: Overflow flag (read-only: 1=overflow occurred)
+  //   Bit 4: Compare triggered (read-only: 1=compare threshold reached)
+  //   Bit 5-6: Reserved (available for future use)
+  //   Bit 7: Direction indicator (read-only: 0=up, 1=down)
+
+  // Mode-specific
+  uint64_t start_value;   // BUG-183 FIX: Changed from uint16_t to uint64_t for 32/64-bit counter support
+  uint8_t debounce_enabled;
+  uint16_t debounce_ms;
+
+  // SW polling mode
+  uint8_t input_dis;      // Discrete input index
+
+  // SW-ISR mode
+  uint8_t interrupt_pin;  // GPIO pin for interrupt
+
+  // HW (PCNT) mode
+  uint8_t hw_gpio;        // GPIO pin for PCNT input (BUG FIX 1.9)
+
+  // COMPARE FEATURE (v2.3+)
+  uint8_t compare_enabled;      // Enable compare check
+  uint8_t compare_mode;         // 0=≥, 1=>, 2=== (exact match)
+  uint64_t compare_value;       // Værdi at sammenligne med
+  uint8_t reset_on_read;        // Auto-clear bit 4 ved ctrl-reg read
+  uint8_t compare_source;       // BUG-040: 0=raw, 1=prescaled, 2=scaled (default: 1)
+
+  // Note: Compare status stored in ctrl_reg bit 4 (no separate fields needed)
+
+  // Reserved for alignment
+  uint8_t reserved[1];
+} CounterConfig;
+
+typedef struct {
+  uint64_t counter_value;      // Changed from uint32_t to match usage
+  uint32_t last_level;
+  uint32_t debounce_timer;
+  uint8_t is_counting;
+  uint8_t overflow_flag;       // BUG FIX 1.1: Track overflow
+} CounterSWState;
+
+typedef struct {
+  uint64_t pcnt_value;         // Changed from uint32_t for consistency
+  uint32_t last_count;         // Stores last PCNT read (int16_t range)
+  uint32_t overflow_count;
+  uint8_t is_counting;
+} CounterHWState;
+
+typedef struct {
+  CounterConfig config;
+  CounterSWState sw_state;
+  CounterHWState hw_state;
+  uint32_t measured_frequency;
+  uint32_t freq_sample_time;
+
+  // COMPARE FEATURE RUNTIME STATE (v2.3+)
+  uint8_t compare_triggered;  // Flag: Compare værdi nået denne iteration
+  uint32_t compare_time_ms;   // Timestamp når triggered
+  uint64_t last_value;        // Previous counter value (for exact match detection)
+} Counter;
+
+/* ============================================================================
+ * TIMER CONFIGURATION
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint8_t enabled;
+  TimerMode mode;
+
+  // Mode 1: One-shot
+  uint32_t phase1_duration_ms;
+  uint32_t phase2_duration_ms;
+  uint32_t phase3_duration_ms;
+  uint8_t phase1_output_state;
+  uint8_t phase2_output_state;
+  uint8_t phase3_output_state;
+
+  // Mode 2: Monostable
+  uint32_t pulse_duration_ms;
+  uint8_t trigger_level;
+
+  // Mode 3: Astable
+  uint32_t on_duration_ms;
+  uint32_t off_duration_ms;
+
+  // Mode 4: Input-triggered
+  uint8_t input_dis;
+  uint32_t delay_ms;
+  uint8_t trigger_edge;
+
+  // Output
+  uint16_t output_coil;
+
+  // Control register (Modbus holding register for start/stop/reset)
+  uint16_t ctrl_reg;
+
+  // Reserved for alignment
+  uint8_t reserved[6];
+} TimerConfig;
+
+typedef struct {
+  TimerConfig config;
+  uint32_t start_time;
+  uint32_t current_phase;
+  uint8_t is_running;
+  uint8_t output_state;
+} Timer;
+
+/* ============================================================================
+ * REGISTER MAPPING (STATIC & DYNAMIC)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint16_t register_address;
+  uint8_t value_type;           // ModbusValueType (UINT/INT/DINT/DWORD/REAL)
+  uint8_t reserved;             // Alignment (future use)
+  union {
+    uint16_t value_16;          // For UINT/INT (16-bit)
+    uint32_t value_32;          // For DINT/DWORD (32-bit)
+    float value_real;           // For REAL (32-bit float)
+  };
+} StaticRegisterMapping;
+
+typedef struct __attribute__((packed)) {
+  uint16_t register_address;
+  uint8_t source_type;          // DYNAMIC_SOURCE_COUNTER or DYNAMIC_SOURCE_TIMER
+  uint8_t source_id;            // Counter/Timer ID (1-4)
+  uint8_t source_function;      // CounterFunction or TimerFunction enum
+} DynamicRegisterMapping;
+
+/* ============================================================================
+ * COIL MAPPING (STATIC & DYNAMIC)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint16_t coil_address;
+  uint8_t static_value;         // STATIC: 0 (OFF) or 1 (ON)
+} StaticCoilMapping;
+
+typedef struct __attribute__((packed)) {
+  uint16_t coil_address;
+  uint8_t source_type;          // DYNAMIC_SOURCE_COUNTER or DYNAMIC_SOURCE_TIMER
+  uint8_t source_id;            // Counter/Timer ID (1-4)
+  uint8_t source_function;      // CounterFunction or TimerFunction enum
+} DynamicCoilMapping;
+
+/* ============================================================================
+ * UNIFIED VARIABLE MAPPING (GPIO pins + ST variables ↔ Modbus registers)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  // Source type: what is being mapped
+  uint8_t source_type;          // MAPPING_SOURCE_GPIO, MAPPING_SOURCE_ST_VAR
+
+  // GPIO mapping (if source_type == MAPPING_SOURCE_GPIO)
+  uint8_t gpio_pin;
+  uint8_t associated_counter;   // 0xff if none (set via input-dis=<pin>)
+  uint8_t associated_timer;     // 0xff if none
+
+  // ST Variable mapping (if source_type == MAPPING_SOURCE_ST_VAR)
+  uint8_t st_program_id;        // Logic program ID (0-3), 0xff if none
+  uint8_t st_var_index;         // ST variable index (0-31)
+
+  // I/O Configuration
+  uint8_t is_input;             // 1 = INPUT mode (source → register), 0 = OUTPUT mode (register → source)
+  uint8_t input_type;           // 0 = Holding Register (HR), 1 = Discrete Input (DI) - only for INPUT mode
+  uint8_t output_type;          // 0 = Holding Register (HR), 1 = Coil - only for OUTPUT mode
+  uint16_t input_reg;           // Input register index (65535 if none) - for INPUT mode
+  // BUG-011: renamed from "coil_reg" (was misleading — this field holds an
+  // HR address when output_type==0, a coil index only when output_type==1).
+  // JSON wire-format key in backup/restore stays "coil_reg" for backward
+  // compatibility with old backup files (see api_handlers.cpp export/import).
+  uint16_t output_reg;          // Output register/coil index (65535 if none) - for OUTPUT mode, meaning depends on output_type
+
+  // BUG-105: Multi-register support for DINT/REAL (32-bit types)
+  uint8_t word_count;           // Number of consecutive 16-bit registers (1=INT/BOOL, 2=DINT/REAL/DWORD)
+} VariableMapping;
+
+/* ============================================================================
+ * PERSISTENT REGISTER GROUPS (v4.0+)
+ * ============================================================================ */
+
+#define PERSIST_GROUP_MAX_REGS  16   // Max registers per group
+#define PERSIST_MAX_GROUPS      8    // Max persistence groups
+
+typedef struct __attribute__((packed)) {
+  char name[16];                     // Group name (null-terminated)
+  uint8_t reg_count;                 // Number of registers (0-16)
+  uint16_t reg_addresses[PERSIST_GROUP_MAX_REGS];  // Register addresses
+  uint16_t reg_values[PERSIST_GROUP_MAX_REGS];     // Saved values
+  uint32_t last_save_ms;             // Timestamp of last save
+  uint8_t reserved[3];               // Alignment
+} PersistGroup;
+
+typedef struct __attribute__((packed)) {
+  uint8_t enabled;                   // Persistence system enabled
+  uint8_t group_count;               // Number of active groups (0-8)
+  PersistGroup groups[PERSIST_MAX_GROUPS];  // Persistence groups
+  uint8_t auto_load_enabled;         // Auto-load on boot enabled (v4.3.0)
+  uint8_t auto_load_group_ids[7];    // Group IDs to auto-load (1-8, 0=unused)
+} PersistentRegisterData;
+
+/* ============================================================================
+ * WATCHDOG MONITOR STATE (v4.0+)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint8_t enabled;                   // Watchdog enabled
+  uint32_t timeout_ms;               // Timeout (default 30000 = 30s)
+  uint32_t reboot_counter;           // Persistent reboot count
+  uint32_t last_reset_reason;        // ESP_RST_REASON enum
+  char last_error[128];              // Last error message
+  uint32_t last_reboot_uptime_ms;    // Uptime before last reboot
+  uint8_t reserved[8];
+} WatchdogState;
+
+/* ============================================================================
+ * HTTP REST API CONFIGURATION (v6.0.0+)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint8_t enabled;                              // HTTP server enabled (1) or disabled (0)
+  uint16_t port;                                // HTTP port (default 80)
+  uint8_t auth_enabled;                         // Basic auth enabled (1) or disabled (0)
+  // NOTE: auth_mode (FEAT-397h: none/basic/bearer) er BEVIDST IKKE et felt her —
+  // se PersistConfig.http_auth_mode helt til sidst i den struct i stedet, med
+  // samme begrundelse som https_port/rbac_salt/dashboard_card_custom: HttpConfig
+  // sidder naer STARTEN af NetworkConfig/PersistConfig, saa et nyt felt her ville
+  // forskyde byte-offsettet for naesten ALT resten af PersistConfig for enhver
+  // allerede-konfigureret enhed.
+  char username[HTTP_AUTH_USERNAME_MAX_LEN];    // Basic auth username
+  char password[HTTP_AUTH_PASSWORD_MAX_LEN];    // Basic auth password
+  uint8_t api_enabled;                          // API endpoints enabled (1) or disabled (0)
+  uint8_t priority;                             // Task priority: 0=LOW, 1=NORMAL, 2=HIGH
+  uint8_t tls_enabled;                          // HTTPS/TLS via custom wrapper (FEAT-016)
+  uint16_t sse_port;                            // SSE server port (v7.0.0, default 81, 0=disabled)
+  uint8_t  sse_enabled;                         // SSE server enabled (1) or disabled (0) (v7.0.2)
+  uint8_t  sse_max_clients;                     // Max simultaneous SSE clients (1-5, default 3) (v7.0.2)
+  uint16_t sse_check_interval_ms;               // Change detection interval ms (50-5000, default 100) (v7.0.2)
+  uint16_t sse_heartbeat_ms;                    // Heartbeat interval ms (1000-60000, default 15000) (v7.0.2)
+} HttpConfig;
+
+/* ============================================================================
+ * ETHERNET CONFIGURATION (v6.1.0+ W5500)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint8_t enabled;                              // Ethernet enabled (1) or disabled (0)
+  uint8_t dhcp_enabled;                         // 1 = DHCP, 0 = static IP
+  uint32_t static_ip;                           // Static IP address (network byte order)
+  uint32_t static_gateway;                      // Gateway IP
+  uint32_t static_netmask;                      // Netmask
+  uint32_t static_dns;                          // Primary DNS
+  char hostname[32];                            // Ethernet-specific hostname (empty = system hostname)
+  uint8_t reserved[4];                          // Future use
+} EthernetConfig;
+
+/* ============================================================================
+ * NETWORK CONFIGURATION (v3.0+)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint8_t enabled;                              // Wi-Fi enabled (1) or disabled (0)
+  uint8_t dhcp_enabled;                         // 1 = DHCP, 0 = static IP
+  char ssid[WIFI_SSID_MAX_LEN];                 // Wi-Fi network name
+  char password[WIFI_PASSWORD_MAX_LEN];         // Wi-Fi password (WPA2)
+
+  // Static IP configuration (used if dhcp_enabled == 0)
+  uint32_t static_ip;                           // Static IP address (network byte order)
+  uint32_t static_gateway;                      // Gateway IP
+  uint32_t static_netmask;                      // Netmask
+  uint32_t static_dns;                          // Primary DNS
+
+  // Telnet configuration
+  uint8_t telnet_enabled;                       // 1 = Telnet server enabled
+  uint16_t telnet_port;                         // Telnet port (default 23)
+
+  // Telnet authentication (v3.1+)
+  char telnet_username[32];                     // Telnet username (max 31 chars + null)
+  char telnet_password[64];                     // Telnet password (max 63 chars + null)
+
+  // HTTP REST API configuration (v6.0.0+)
+  HttpConfig http;                              // HTTP server configuration
+
+  // Wi-Fi power management (v6.0.4+)
+  uint8_t wifi_power_save;                      // 0 = OFF (fast response), 1 = ON (low power)
+
+  // W5500 Ethernet configuration (v6.1.0+)
+  EthernetConfig ethernet;                      // Ethernet configuration
+
+  // Reserved for future (SSH, mDNS, etc.)
+  uint8_t reserved[3];                          // Future: SSH, certificates, mDNS (reduced from 4)
+} NetworkConfig;
+
+/* ============================================================================
+ * MODBUS MODE (ES32D26 single-transceiver: slave OR master, not both)
+ * ============================================================================ */
+
+typedef enum {
+  MODBUS_MODE_SLAVE  = 0,   // Default: Modbus RTU slave
+  MODBUS_MODE_MASTER = 1,   // Modbus RTU master (ST Logic driven)
+  MODBUS_MODE_OFF    = 2    // RS485 disabled (USB console only on ES32D26)
+} ModbusMode;
+
+/* ============================================================================
+ * ANALOG OUTPUT MODE (ES32D26 AO1/AO2 DIP switch SW1 config)
+ * ============================================================================ */
+
+typedef enum {
+  AO_MODE_VOLTAGE = 0,      // 0-10V output (default)
+  AO_MODE_CURRENT = 1       // 4-20mA output
+} AnalogOutputMode;
+
+/* ============================================================================
+ * ANALOG INPUT/OUTPUT CONFIGURATION (FEAT-034/035/036, ES32D26 only, schema 20+)
+ *
+ * Kalibrering foelger samme princip som CounterConfig.scale_factor: firmware
+ * kan ikke kende boardets praecise deler-/shunt-modstandsvaerdier, saa scale+
+ * offset er brugerjusterbare med et fornuftigt startgaet (fuld ADC-skala =
+ * fuldt maaleomraade). Modbus-registrene rummer altid ×100 fixed-point
+ * (0-1000 = 0,00-10,00V), samme konvention som ellers bruges for decimaltal
+ * i 16-bit registre i dette projekt.
+ * ============================================================================ */
+
+typedef struct {
+  bool     enabled;      // Kanal aktiv (false = ikke tilsluttet, spring over)
+  float    scale;        // engineering_x100 = offset + scale * raw_mv
+  float    offset;
+  uint16_t raw_reg;      // HR: seneste raa millivolt-laesning
+  uint16_t value_reg;    // HR: kalibreret vaerdi ×100 (fx 1000 = 10,00V eller 20,00mA)
+} AnalogInputConfig;      // 13 bytes
+
+typedef struct {
+  bool     enabled;
+  float    scale;        // dac_count (0-255) = round((engineering_x100 - offset) / scale)
+  float    offset;
+  uint16_t value_reg;    // HR: setpoint ×100, skrevet af bruger/ST Logic
+} AnalogOutputConfig;     // 11 bytes
+
+/* ============================================================================
+ * MODBUS MASTER CONFIGURATION
+ * ============================================================================ */
+
+typedef enum {
+  MB_OK = 0,
+  MB_TIMEOUT = 1,
+  MB_CRC_ERROR = 2,
+  MB_EXCEPTION = 3,
+  MB_MAX_REQUESTS_EXCEEDED = 4,
+  MB_NOT_ENABLED = 5,
+  MB_INVALID_SLAVE = 6,       // BUG-084: Invalid slave ID (not 1-247)
+  MB_INVALID_ADDRESS = 7,     // BUG-085: Invalid address (not 0-65535)
+  MB_BUS_BUSY = 8             // BUG-338: kunne ikke faa UART-mutex (optaget af anden transaktion i >2s)
+} mb_error_code_t;
+
+typedef struct {
+  bool enabled;                  // Master enabled/disabled
+  uint32_t baudrate;            // 9600, 19200, 38400, 57600, 115200
+  uint8_t parity;               // 0=none, 1=even, 2=odd
+  uint8_t stop_bits;            // 1 or 2
+  uint16_t timeout_ms;          // Response timeout (default: 500ms)
+  uint16_t inter_frame_delay;   // 0=auto (t3.5 from baudrate), >0=manual ms
+  uint8_t max_requests_per_cycle; // Max requests per ST execution (default: 10)
+  uint16_t cache_ttl_ms;         // Cache TTL in ms (0=never expire, default: 0)
+  uint8_t cache_max_entries;     // Runtime cache size limit (1-32, default: 32)
+  uint8_t queue_max_size;        // Runtime queue size limit (4-32, default: 16)
+
+  // Runtime statistics
+  uint32_t total_requests;      // Total requests sent
+  uint32_t successful_requests; // Successful responses
+  uint32_t timeout_errors;      // Timeout count
+  uint32_t crc_errors;          // CRC error count
+  uint32_t exception_errors;    // Modbus exception count
+  // BUG-339: bus_busy_errors flyttet UD af denne struct — se g_modbus_bus_busy_errors
+  // i modbus_master.h/.cpp. Denne struct er indlejret i PersistConfig (raw NVS-blob
+  // m. CRC16 + schema_version), saa et nyt felt her AENDRER PersistConfig's
+  // stoerrelse/layout uden en tilsvarende schema-migration — resultat: CRC-mismatch
+  // ved naeste load -> hele configen (inkl. WiFi/netvaerk) nulstilles til fabriksdefault.
+  // Runtime-taellere som denne hoerer aldrig hjemme her (de blev i forvejen ALDRIG
+  // laest tilbage fra persisteret config ved boot — kun de reelle config-felter
+  // foer "Runtime statistics" bliver det, se modbus_master_init()).
+
+  // Last error context (for alarm detail)
+  uint8_t last_error_slave_id;  // Slave ID of last failed request
+  uint16_t last_error_address;  // Register address of last failed request
+  uint8_t last_error_type;      // mb_error_code_t of last error
+
+  // Stats reset timestamp (v7.9.3.2)
+  uint32_t stats_since_ms;      // millis() at last stats reset
+} modbus_master_config_t;
+
+/* ============================================================================
+ * MODBUS SLAVE CONFIGURATION
+ * ============================================================================ */
+
+typedef struct {
+  bool enabled;                  // Slave enabled/disabled
+  uint8_t slave_id;              // Modbus slave ID (1-247)
+  uint32_t baudrate;            // 9600, 19200, 38400, 57600, 115200
+  uint8_t parity;               // 0=none, 1=even, 2=odd
+  uint8_t stop_bits;            // 1 or 2
+  uint16_t inter_frame_delay;   // 0=auto (t3.5 from baudrate), >0=manual ms
+
+  // Runtime statistics
+  uint32_t total_requests;      // Total requests received
+  uint32_t successful_requests; // Successful responses
+  uint32_t crc_errors;          // CRC error count
+  uint32_t exception_errors;    // Modbus exception count
+} modbus_slave_config_t;
+
+/* ============================================================================
+ * RBAC USER ACCOUNTS (v7.6.2)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint8_t active;                       // 0 = slot empty, 1 = active
+  char username[RBAC_USERNAME_MAX];     // 24 bytes
+  char password[RBAC_PASSWORD_MAX];     // 32 bytes
+  uint8_t roles;                        // Bitmask: ROLE_API | ROLE_CLI | ROLE_EDITOR | ROLE_MONITOR
+  uint8_t privilege;                    // PRIV_READ, PRIV_WRITE, or PRIV_RW
+  uint8_t reserved[2];                  // Alignment/future use
+} RbacUser;                             // 60 bytes
+
+typedef struct __attribute__((packed)) {
+  uint8_t enabled;                      // RBAC enabled (1) or legacy mode (0)
+  uint8_t user_count;                   // Number of active users
+  RbacUser users[RBAC_MAX_USERS];       // 8 * 60 = 480 bytes
+} RbacConfig;                           // 482 bytes
+
+/* ============================================================================
+ * NTP CONFIGURATION (v7.8.1)
+ * ============================================================================ */
+
+#define NTP_SERVER_MAX_LEN   48   // Max NTP server hostname length
+#define NTP_TZ_MAX_LEN       48   // Max POSIX timezone string length
+
+typedef struct __attribute__((packed)) {
+  uint8_t  enabled;                      // NTP enabled (1) or disabled (0)
+  char     server[NTP_SERVER_MAX_LEN];   // NTP server hostname
+  char     timezone[NTP_TZ_MAX_LEN];     // POSIX timezone string
+  uint16_t sync_interval_min;            // Re-sync interval in minutes (default: 60)
+} NtpConfig;                             // 100 bytes
+
+/* ============================================================================
+ * IP ACCESS CONTROL LIST (FEAT-399, schema 26+; FEAT-401 ordnet permit/deny, schema 27+)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  uint32_t network_addr;  // Maskeret netvaerksadresse, network byte order (inet_aton-format)
+  uint8_t  prefix_len;    // CIDR-praefiks 0-32 (0 = "any", 32 = enkelt host)
+  uint8_t  service;       // AclServiceType: 0=HTTP,1=TELNET,2=SSE,3=ALL (constants.h)
+  uint8_t  enabled;       // 1 = aktiv/haandhaevet, 0 = bevaret men ikke haandhaevet
+  uint8_t  action;        // FEAT-401 (schema 27+, var "reserved"): 0=ALLOW,1=DENY
+                           // (constants.h ACL_ACTION_*). acl_rules[] evalueres i
+                           // INDEX-raekkefolge, foerste match (service+CIDR) vinder
+                           // — samme klassiske Cisco/iptables-semantik som goer en
+                           // "deny 0.0.0.0/0" nederst i listen meningsfuld. Regler
+                           // migreret fra schema <27 faar eksplicit action=DENY
+                           // (config_load.cpp) — de betoed alle "bloker" under den
+                           // gamle, ordensuafhaengige model, og skal blive ved med det.
+} AclRule;                              // 8 bytes, packed
+
+/* ============================================================================
+ * PERSISTENT CONFIGURATION (EEPROM/NVS)
+ * ============================================================================ */
+
+typedef struct __attribute__((packed)) {
+  // Schema versioning
+  uint8_t schema_version;
+
+  // Modbus Slave configuration (v4.4.1+)
+  modbus_slave_config_t modbus_slave;
+
+  char hostname[32];                // System hostname (max 31 chars + null)
+
+  // CLI configuration (v3.2+)
+  uint8_t remote_echo;              // Enable/disable remote echo (for serial terminals)
+
+  // Network configuration (v3.0+)
+  NetworkConfig network;
+
+  // Counters (4 maximum)
+  CounterConfig counters[COUNTER_COUNT];
+
+  // Timers (4 maximum)
+  TimerConfig timers[TIMER_COUNT];
+
+  // STATIC Register mappings
+  uint8_t static_reg_count;
+  StaticRegisterMapping static_regs[MAX_DYNAMIC_REGS];
+
+  // DYNAMIC Register mappings
+  uint8_t dynamic_reg_count;
+  DynamicRegisterMapping dynamic_regs[MAX_DYNAMIC_REGS];
+
+  // STATIC Coil mappings
+  uint8_t static_coil_count;
+  StaticCoilMapping static_coils[MAX_DYNAMIC_COILS];
+
+  // DYNAMIC Coil mappings
+  uint8_t dynamic_coil_count;
+  DynamicCoilMapping dynamic_coils[MAX_DYNAMIC_COILS];
+
+  // Variable mappings (GPIO pins + ST variables) — FEAT-397i (schema 24+):
+  // udvidet fra 32 til 64 (MAX_VAR_MAPPINGS, constants.h). Arrayet er DELT
+  // mellem GPIO-statiske mappinger og ST Logic-variabelbindinger (se
+  // VariableMapping.source_type) — 32 var for lille i praksis: et enkelt
+  // ST-program med mange bindinger (fx 17) kunne alene fylde det meste af
+  // pladsen og blokere GPIO-konfiguration for resten af enheden (set live:
+  // "Maximum GPIO mappings (32) reached" med kun 15 GPIO-mappinger, fordi
+  // 17 ST-bindinger fra et andet program allerede fyldte resten). BEMAERK:
+  // denne udvidelse sker MIDT i structen (efterfulgt af gpio2_user_mode,
+  // persist_regs, rbac, ntp, analog, salte, crc16 osv.), saa en simpel
+  // schema-bump alene er IKKE nok — se PersistConfig_v24_shadow_t og
+  // "VAR_MAPS RE-POSITIONERING" i config_load.cpp, som eksplicit
+  // reallokerer alle disse felter til deres nye byte-position for aeldre
+  // gemte configs. cli_commands_logic.cpp's mappings-graense checkede i
+  // forvejen mod 64 (et levn fra FOeR reduktionen til 32) — den graense er
+  // korrekt igen efter denne udvidelse.
+  uint8_t var_map_count;
+  VariableMapping var_maps[MAX_VAR_MAPPINGS];
+
+  // GPIO2 configuration (heartbeat control)
+  uint8_t gpio2_user_mode;  // 0 = heartbeat mode (default), 1 = user mode (GPIO2 available)
+
+  // Persistent register groups (v4.0+)
+  PersistentRegisterData persist_regs;
+
+  // ST Logic configuration (v4.1+)
+  uint32_t st_logic_interval_ms;  // Execution interval for all ST Logic programs (default: 10ms)
+
+  // Modbus Master configuration (v4.4+)
+  modbus_master_config_t modbus_master;
+
+  // Module enable/disable flags (v6.2.0+)
+  uint8_t module_flags;  // Bitmask: MODULE_FLAG_* constants
+
+  // Modbus mode (v7.2.0+ ES32D26 single-transceiver support)
+  uint8_t modbus_mode;   // ModbusMode enum: 0=slave, 1=master, 2=off
+
+  // Analog output mode (v7.2.0+ ES32D26 AO1/AO2 DIP switch SW1)
+  uint8_t ao1_mode;      // AnalogOutputMode: 0=voltage (0-10V), 1=current (4-20mA)
+  uint8_t ao2_mode;      // AnalogOutputMode: 0=voltage (0-10V), 1=current (4-20mA)
+
+  // UART selection for Modbus slave/master (v7.2.0+)
+  uint8_t modbus_slave_uart;   // 0=UART0(Serial), 1=UART1(Serial1), 2=UART2(Serial2)
+  uint8_t modbus_master_uart;  // 0=UART0(Serial), 1=UART1(Serial1), 2=UART2(Serial2)
+
+  // UART pin configuration per peripheral (v7.2.0+ schema 14)
+  // 0xFF = use board default from constants.h
+  uint8_t uart1_tx_pin;        // UART1 TX pin (0xFF=default)
+  uint8_t uart1_rx_pin;        // UART1 RX pin (0xFF=default)
+  uint8_t uart1_dir_pin;       // UART1 RS485 DIR pin (0xFF=default)
+  uint8_t uart2_tx_pin;        // UART2 TX pin (0xFF=default)
+  uint8_t uart2_rx_pin;        // UART2 RX pin (0xFF=default)
+  uint8_t uart2_dir_pin;       // UART2 RS485 DIR pin (0xFF=default)
+
+  // RBAC multi-user access control (v7.6.2, schema 15)
+  RbacConfig rbac;
+
+  // NTP time synchronization (v7.8.1, schema 16)
+  NtpConfig ntp;
+
+  // Dashboard card order (v7.8.4.2, schema 17)
+  char dashboard_card_order[160];  // Comma-separated card IDs, e.g. "system,network,modbusslave,..."
+
+  // Dashboard tab assignments + hidden cards (v7.9.6.8, schema 18)
+  char dashboard_card_tabs[256];   // "id:tab,id:tab,..." e.g. "system:overview,counters:app"
+  char dashboard_card_hidden[80];  // "id,id,..." hidden card IDs
+
+  // Analog I/O (FEAT-034/035/036, ES32D26 only, schema 20+)
+  // BEVIDST placeret HELT SIDST, lige foer crc16 — ikke ved siden af det
+  // beslaegtede ao1_mode/ao2_mode laengere oppe. En indsaettelse midt i
+  // PersistConfig forskyder byte-positionen for ALT der kommer efter
+  // (rbac, ntp, dashboard-felter, crc16), og selvom schema-tjekket denne
+  // gang faktisk trigger en migration (modsat BUG-339), er der ingen
+  // garanti for at nvs_get_blob's delvise-fyld-adfaerd (gammel, mindre
+  // blob ind i ny, stoerre struct) haandterer den forskydning korrekt for
+  // felter der IKKE selv bliver eksplicit gensat. At tilfoeje helt til
+  // sidst er den eneste maade at vaere 100% sikker paa at INTET
+  // eksisterende felts offset aendrer sig.
+  AnalogInputConfig  analog_ai_v[4];  // Vi1-Vi4: 0-10V spaendingsindgange
+  AnalogInputConfig  analog_ai_i[4];  // Ii1-Ii4: 4-20mA stroemindgange
+  AnalogOutputConfig analog_ao[2];    // AO1-AO2: DAC-udgange (mode: ao1_mode/ao2_mode)
+
+  // Dedikeret HTTPS-port (BUG-350, schema 21+) — foer delte HTTP og HTTPS
+  // samme portnummer (network.http.port), saa aktivering af TLS uden videre
+  // gjorde port 80 om til en TLS-only-lytter: enhver klient der stadig sendte
+  // almindelig http:// mod port 80 (browser-bogmaerker, Node-RED, aabne faner)
+  // floedede loggen med "bad ClientHello", og https:// uden eksplicit :80
+  // ramte slet ikke serveren (browsere antager port 443 for https-skemaet).
+  // Samme placerings-begrundelse som analog-felterne ovenfor: helt til sidst,
+  // foer crc16, for ikke at forskyde noget eksisterende felts byte-offset.
+  uint16_t https_port;  // Default 443 — separat fra network.http.port (80)
+
+  // Password-hashing salte (schema 22+) — RBAC-brugerpasswords (rbac.users[i].password)
+  // og legacy single-user HTTP-password (network.http.password) er fra schema 22 SHA-256
+  // hashes (32 raw bytes, genbruger den eksisterende password[]-byteplads — feltet skifter
+  // betydning fra "klartekst-streng" til "raw digest"), IKKE laengere klartekst. Saltene
+  // kan ikke ligge inde i RbacUser/HttpConfig selv uden at forskyde alt der kommer efter
+  // dem i PersistConfig — samme begrundelse som analog-felterne og https_port ovenfor,
+  // derfor separate arrays helt til sidst, indekseret parallelt med rbac.users[].
+  uint8_t rbac_salt[RBAC_MAX_USERS][16];  // Ét 16-byte salt pr. RBAC-brugerslot
+  uint8_t http_legacy_salt[16];           // Salt til network.http.password
+
+  // Dashboard "Custom"-fane medlemsskab (schema 23+) — SEPARAT fra
+  // dashboard_card_tabs (som styrer et korts ENE normale fane): et kort kan
+  // vaere medlem af Custom UAFHAENGIGT af sin normale fane-tilhoerighed,
+  // saa det stadig vises begge steder. Samme "id,id,..."-format og
+  // begrundelse for placering (helt til sidst, foer crc16) som resten af
+  // dashboard-/analog-/salt-felterne ovenfor.
+  char dashboard_card_custom[80];  // "id,id,..." kort-id'er der er tilfoejet til Custom-fanen
+
+  // HTTP auth-metode (FEAT-397h, schema 24+) — none/basic/bearer. "None" er
+  // uaendret network.http.auth_enabled=0 (virtual-admin-fald-tilbage, BUG-370),
+  // saa dette felt er kun meningsfuldt naar auth_enabled=1. BEVIDST placeret
+  // her (og IKKE i HttpConfig ved siden af auth_enabled) — samme begrundelse
+  // som https_port/rbac_salt/dashboard_card_custom ovenfor: HttpConfig sidder
+  // naer starten af PersistConfig, saa et nyt felt der ville forskyde
+  // byte-offsettet for stort set alt resten af structen.
+  uint8_t http_auth_mode;  // HTTP_AUTH_MODE_BASIC(0)/BEARER(1), constants.h
+
+  // IP Access Control List (FEAT-399, schema 26+) — se AclRule ovenfor.
+  // BEVIDST placeret helt til sidst (samme begrundelse som http_auth_mode/
+  // https_port/rbac_salt/dashboard_card_custom ovenfor) — INGEN felter maa
+  // nogensinde indsaettes MIDT i PersistConfig, kun tilfoejes her. Bekraeftede
+  // ubekraeftede/afventende ACL-aendringer (lockout-recovery, se ip_acl.cpp)
+  // ligger BEVIDST IKKE her, men i en helt separat RAM-only staging-struct i
+  // ip_acl.cpp — se den udfoerlige begrundelse der: hvis en utestet, endnu
+  // ikke bekraeftet regel laa direkte i disse felter, kunne ETHVERT af de
+  // ~15 uafhaengige `config_save_to_nvs()`-kaldesteder andre steder i
+  // kodebasen (REST/CLI/ST Logic) ved et uheld persistere den til NVS FOeR
+  // brugeren fik bekraeftet at den ikke laaste dem selv ude.
+  uint8_t acl_enabled;
+  uint8_t acl_rule_count;
+  AclRule acl_rules[ACL_MAX_RULES];  // ACL_MAX_RULES = 32 (constants.h)
+
+  // FEAT-407 (schema 28+): hvilke af dashboardets 18 kort (data-card-id i
+  // web/dashboard.html) der vises paa den offentlige, login-fri statusside
+  // ("/", web/status.html) — kommasepareret liste af kort-ID'er, fx
+  // "system,network,alarms". Tom streng = INGEN kort vises (bevidst
+  // opt-in-default, ikke opt-out — nogle kort viser reel drifts-/procesdata,
+  // fx counters/timers/dio/analogio/mbactivity, saa admin skal aktivt vaelge
+  // hvad der er passende at vise offentligt). Samme "hidden"-liste-koncept
+  // som dashboard_card_hidden ovenfor, blot omvendt (visible i stedet for
+  // hidden) og for en HELT ANDEN, ikke-autentificeret side.
+  char public_dashboard_cards[220];
+
+  // FEAT-408 (schema 29): RESERVERET, IKKE LAENGERE AKTIVT BRUGT. Var
+  // tiltaenkt Modbus Master #2 (dedikeret UART2-motor) — forsoeget blev
+  // rullet tilbage efter et hardware-blocker-fund (se BUGS_INDEX.md
+  // FEAT-408: UART-hardware-periferi #1 korrumperer heapen paa denne
+  // ES32D26/ESP32-WROVER-kombination, formentlig en PSRAM-cache-erratum
+  // udloest af en foerste-gangs UART-interrupt-kilde). Feltet BEVARES
+  // (ikke fjernet, schema IKKE rullet tilbage til 28) fordi allerede
+  // migrerede enheder har gemt NVS-data i schema 29-layoutet — at fjerne
+  // feltet ville faa dem til at falde tilbage til fabriksdefaults ved
+  // naeste boot. Zero-init (alt 0) er harmloest.
+  modbus_master_config_t modbus_master2;
+  uint8_t uart2_role;
+
+  // CRC checksum (last)
+  uint16_t crc16;
+} PersistConfig;
+
+typedef struct {
+  // Runtime state (not persisted)
+  uint8_t wifi_connected;                       // Current Wi-Fi connection status
+  uint8_t telnet_client_connected;              // Telnet client connected
+  uint32_t wifi_connect_time_ms;                // When last connected
+  uint32_t wifi_reconnect_retries;              // Current reconnect attempt count
+
+  // Wi-Fi IP information (DHCP or static)
+  uint32_t local_ip;                            // Current local IP (Wi-Fi)
+  uint32_t gateway;                             // Current gateway (Wi-Fi)
+  uint32_t netmask;                             // Current netmask (Wi-Fi)
+  uint32_t dns;                                 // Current DNS (Wi-Fi)
+
+  // Ethernet state (v6.1.0+)
+  uint8_t eth_connected;                        // Current Ethernet connection status
+  uint32_t eth_local_ip;                        // Current local IP (Ethernet)
+  uint32_t eth_gateway;                         // Current gateway (Ethernet)
+  uint32_t eth_netmask;                         // Current netmask (Ethernet)
+  uint32_t eth_dns;                             // Current DNS (Ethernet)
+
+  // Client socket
+  int telnet_socket;                            // Socket descriptor (-1 if none)
+} NetworkState;
+
+/* ============================================================================
+ * DEBUG FLAGS (RUNTIME, NOT PERSISTED)
+ * ============================================================================ */
+
+typedef struct {
+  uint8_t all;                // Enable all debug output (master flag)
+  uint8_t config_save;        // Show debug when saving config to NVS
+  uint8_t config_load;        // Show debug when loading config from NVS
+  uint8_t wifi_connect;       // Show debug when connecting WiFi (network_manager, wifi_driver)
+  uint8_t network_validate;   // Show debug for network config validation
+  uint8_t http_server;        // Show debug for HTTP server operations
+  uint8_t http_api;           // Show debug for HTTP API request/response
+} DebugFlags;
+
+/* ============================================================================
+ * RUNTIME STATE (NOT PERSISTED)
+ * ============================================================================ */
+
+typedef struct {
+  Counter counters[COUNTER_COUNT];
+  Timer timers[TIMER_COUNT];
+
+  // Modbus state
+  uint8_t modbus_tx_in_progress;
+  uint32_t modbus_last_rx_time;
+
+  // CLI state
+  uint8_t cli_active;
+  uint32_t cli_last_input_time;
+} RuntimeState;
+
+#endif // TYPES_H
