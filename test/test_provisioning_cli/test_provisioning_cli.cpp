@@ -181,6 +181,11 @@ void test_rest_unknown_subcommand(void) {
   TEST_ASSERT_EQUAL(PROV_UNKNOWN_COMMAND, r);
 }
 
+void test_save_action(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "save", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SAVE, r);
+}
+
 void test_status_action(void) {
   // "status" delegerer selve indholdet til kaldstedet (uptime/heap/WiFi er
   // runtime-data) — her verificeres kun at kommandoen genkendes korrekt.
@@ -262,6 +267,7 @@ void test_help_action(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest user"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest pass"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "status"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "save"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "version"));
   // Den SIDSTE linjes fulde tekst, ikke kun ordet "help" (som ogsaa optraeder
   // i "wifi ssid <navn> for help"-agtige delstrenge andetsteds) — hvis
@@ -405,6 +411,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_rest_pass_never_leaks_in_show);
   RUN_TEST(test_rest_missing_subcommand);
   RUN_TEST(test_rest_unknown_subcommand);
+  RUN_TEST(test_save_action);
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);

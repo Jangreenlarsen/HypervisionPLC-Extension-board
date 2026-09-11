@@ -67,6 +67,7 @@ enum mb_provisioning_result_t {
   PROV_ACTION_HELP,            // "help" — out_message har allerede kommandolisten
   PROV_ACTION_VERSION,         // "version" — out_message har allerede firmware-version+build (fra version.json, §1)
   PROV_ACTION_STATUS,          // "status" — kaldstedet skal selv sammensætte+udskrive systemstatus (uptime/heap/WiFi er runtime-data lib/ ikke kender)
+  PROV_ACTION_SAVE,            // "save" — kaldstedet skal gemme den aktuelle state til NVS uden at forsøge en WiFi-forbindelse
   PROV_EMPTY_LINE,             // tomt/whitespace-only input — kaldstedet kan ignorere stille
   PROV_UNKNOWN_COMMAND,
   PROV_MISSING_ARGUMENT,       // out_message forklarer hvilket felt der mangler

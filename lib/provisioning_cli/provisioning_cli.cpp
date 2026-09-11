@@ -210,6 +210,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "rest pass <kode>", "adgangskode til REST-management-API'et (8-63 tegn)");
     append_line(out_message, out_message_capacity, &pos, "show", "vis alt der er sat (password maskeret)");
     append_line(out_message, out_message_capacity, &pos, "status", "systemstatus (uptime/heap/WiFi/tilstand)");
+    append_line(out_message, out_message_capacity, &pos, "save", "gem nuvaerende felter til NVS uden at forsoege forbindelse");
     append_line(out_message, out_message_capacity, &pos, "connect", "anvend felterne og forsoeg WiFi-forbindelse");
     append_line(out_message, out_message_capacity, &pos, "factory-reset confirm", "ryd WiFi/token/firewall og genstart");
     append_line(out_message, out_message_capacity, &pos, "version", "vis firmware-version+build");
@@ -243,6 +244,14 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     // hardware-uafhængige funktion ikke har adgang til — kaldstedet
     // (src/provisioning.cpp) sammensætter selve status-teksten.
     return PROV_ACTION_STATUS;
+  }
+
+  if (ieq(tokens[0], "save")) {
+    // Ren "gem hvad der er indtastet indtil nu"-handling — forsøger IKKE en
+    // WiFi-forbindelse (det gør "connect"). Nyttig til fx at gemme REST-
+    // credentials uden at ville (gen)forbinde WiFi lige nu.
+    snprintf(out_message, out_message_capacity, "ok - gemmer til NVS");
+    return PROV_ACTION_SAVE;
   }
 
   if (ieq(tokens[0], "connect")) {
