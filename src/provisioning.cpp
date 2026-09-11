@@ -5,6 +5,7 @@
 
 #include <cstring>
 
+#include "config.h"
 #include "provisioning_cli.h"
 
 namespace {
@@ -75,7 +76,47 @@ void history_recall_newer() {
 }
 // -----------------------------------------------------------------------
 
-void attempt_connect() {
+// Menneskelæselig gengivelse af WiFi.status() — dækker de tilstande der
+// reelt forekommer under normal drift eksplicit, i stedet for at samle det
+// meste under et uinformativt "ukendt/fejl" (Jan: "viser ikke connect
+// status" — WL_NO_SHIELD o.lign. blev tidligere vist som "ukendt/fejl").
+const char *wifi_status_text(wl_status_t status) {
+  switch (status) {
+    case WL_CONNECTED:
+      return "forbundet";
+    case WL_IDLE_STATUS:
+      return "forbinder...";
+    case WL_NO_SSID_AVAIL:
+      return "fejl: SSID ikke fundet";
+    case WL_CONNECT_FAILED:
+      return "fejl: forbindelse fejlede (forkert password?)";
+    case WL_CONNECTION_LOST:
+      return "forbindelse tabt";
+    case WL_DISCONNECTED:
+      return "ikke forbundet";
+    case WL_NO_SHIELD:
+      return "wifi ikke initialiseret (ingen 'connect' forsoegt endnu)";
+    default:
+      return "ukendt";
+  }
+}
+
+// Udskriver forbindelsesstatus — bruges af BÅDE "status" og "show", så de to
+// kommandoer ikke kan komme til at modsige hinanden (Jan: "show status eller
+// wifi viser ikke connect status").
+void print_wifi_connection_status() {
+  const wl_status_t status = WiFi.status();
+  Serial.print("wifi.connection: ");
+  Serial.println(wifi_status_text(status));
+  if (status == WL_CONNECTED) {
+    Serial.print("wifi.ip: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("wifi.rssi_dbm: ");
+    Serial.println(WiFi.RSSI());
+  }
+}
+
+bool attempt_connect() {
   Serial.println("Forbinder til WiFi...");
 
   WiFi.mode(WIFI_STA);
@@ -84,7 +125,7 @@ void attempt_connect() {
     IPAddress ip, mask, gw;
     if (!ip.fromString(g_state.ip) || !mask.fromString(g_state.mask) || !gw.fromString(g_state.gw)) {
       Serial.println("FEJL: kunne ikke fortolke wifi ip/mask/gw som gyldige IPv4-adresser.");
-      return;
+      return false;
     }
     WiFi.config(ip, gw, mask);
   }
@@ -104,7 +145,7 @@ void attempt_connect() {
       Serial.println();
       Serial.println("FEJL: WiFi-forbindelse timede ud efter 30 sekunder. Tjek ssid/pass og proev 'connect' igen.");
       WiFi.disconnect(true);
-      return;
+      return false;
     }
     delay(250);
     Serial.print(".");
@@ -113,10 +154,24 @@ void attempt_connect() {
   Serial.println();
   Serial.print("Forbundet. Boardets IP er nu: ");
   Serial.println(WiFi.localIP());
-  Serial.println(
-      "BEMAERK: management-API-token, NVS-persistering og firewall-seed (paragraf 4.3) er IKKE "
-      "implementeret endnu (config.cpp mangler, senere i Fase 3) - forbindelsen overlever "
-      "IKKE en genstart af boardet.");
+
+  // Persistér til NVS (§3.5) og udsted et management-API-token FØRSTE gang
+  // boardet nogensinde forbinder — "vises kun én gang"-reglen fra §3.4.1.
+  const bool had_token_already = config_get().has_mgmt_token;
+  config_apply_and_save(&g_state);
+  config_mark_provisioned();
+
+  char token[MB_MGMT_TOKEN_LEN + 1];
+  config_ensure_mgmt_token(token, sizeof(token));
+  if (!had_token_already) {
+    Serial.println();
+    Serial.println("Management-API-token (VISES KUN ÉN GANG - kopiér det nu):");
+    Serial.println(token);
+    Serial.println(
+        "Indsæt det i PLC'ens System-side under 'Modbus Expansion Boards'. Det kan ikke hentes igen bagefter.");
+  }
+
+  return true;
 }
 
 void print_status() {
@@ -138,29 +193,20 @@ void print_status() {
   Serial.print("heap_free_bytes: ");
   Serial.println(ESP.getFreeHeap());
 
-  Serial.print("wifi.status: ");
-  switch (WiFi.status()) {
-    case WL_CONNECTED:
-      Serial.println("forbundet");
-      Serial.print("wifi.ip: ");
-      Serial.println(WiFi.localIP());
-      Serial.print("wifi.rssi_dbm: ");
-      Serial.println(WiFi.RSSI());
-      break;
-    case WL_IDLE_STATUS:
-      Serial.println("ikke forsoegt (ingen 'connect' kaldt endnu)");
-      break;
-    case WL_DISCONNECTED:
-      Serial.println("ikke forbundet");
-      break;
-    default:
-      Serial.println("ukendt/fejl");
-      break;
-  }
+  print_wifi_connection_status();
+
+  Serial.print("provisioned: ");
+  Serial.println(config_get().provisioned ? "ja" : "nej");
+  Serial.print("mgmt.token: ");
+  Serial.println(config_get().has_mgmt_token ? "sat" : "ikke sat");
+  Serial.print("rest.user: ");
+  Serial.println(config_get().has_rest_user ? config_get().rest_user : "(ikke sat)");
+  Serial.print("rest.pass: ");
+  Serial.println(config_get().has_rest_pass ? "********" : "(ikke sat)");
 
   Serial.println(
-      "BEMAERK: kanal-/modbus-status er ikke relevant endnu - UART-kanaler, REST-API og "
-      "config.cpp er ikke implementeret (Fase 1/3 fortsaetter).");
+      "BEMAERK: kanal-/modbus-status er ikke relevant endnu - UART-kanaler og REST-API "
+      "(http_server.cpp) er ikke implementeret (Fase 1/5 fortsaetter).");
 }
 
 void print_boot_banner() {
@@ -187,7 +233,21 @@ void provisioning_begin() {
   g_history_next = 0;
   g_history_browse = -1;
   g_esc_state = EscState::kNone;
+
+  config_begin();
   print_boot_banner();
+
+  // Automatisk genforbindelse ved boot, hvis boardet allerede er
+  // provisioneret (§3.4's "CLI'en er altid tilgængelig"-princip — en
+  // genstart skal ikke kræve at et menneske genindtaster credentials).
+  if (config_get().provisioned && config_get().wifi_has_ssid) {
+    mb_config_to_provisioning_state(&config_get(), &g_state);
+    Serial.print("Gemt WiFi-config fundet (");
+    Serial.print(g_state.ssid);
+    Serial.println(") - forsoeger automatisk genforbindelse...");
+    attempt_connect();
+    Serial.print("> ");
+  }
 }
 
 void provisioning_poll() {
@@ -233,12 +293,25 @@ void provisioning_poll() {
       if (result == PROV_ACTION_CONNECT) {
         attempt_connect();
       } else if (result == PROV_ACTION_FACTORY_RESET) {
-        Serial.println(
-            "BEMAERK: NVS-persistering findes ikke endnu, saa der er intet gemt at rydde. Genstarter alligevel.");
+        Serial.println("Rydder NVS-konfiguration og genstarter.");
+        config_factory_reset();
         delay(500);
         ESP.restart();
       } else if (result == PROV_ACTION_STATUS) {
         print_status();
+      } else if (result == PROV_ACTION_SAVE) {
+        config_apply_and_save(&g_state);
+        Serial.println("Gemt til NVS (WiFi-forbindelse IKKE forsoegt).");
+      } else if (result == PROV_ACTION_SHOW) {
+        // "show" (lib/provisioning_cli) kender kun CLI-udkastet, ikke
+        // live WiFi-forbindelsesstatus (hardware-data) — tilføjes her,
+        // saa Jan ser forbindelsesstatus i BAADE "show" og "status".
+        print_wifi_connection_status();
+      } else if (result == PROV_OK && (g_state.has_rest_user || g_state.has_rest_pass)) {
+        // REST-credentials persisteres uafhængigt af WiFi-forbindelsesstatus
+        // (§4.4) — installatøren skal kunne rotere dem uden en fuld
+        // "connect"-cyklus.
+        config_apply_and_save(&g_state);
       }
 
       g_line_len = 0;

@@ -135,19 +135,20 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 ├── extract_version.py              # injicerer version.json som FW_VERSION/FW_BUILD i firmwaren (kun esp32dev)
 ├── src/                             # firmware-kildekode (ESP32/Arduino-specifik — se ARCHITECTURE.md for hvorfor)
 │   ├── main.cpp
-│   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect (§3.4), bruger lib/provisioning_cli/ — v0.4.0, NVS/token/firewall-seed mangler (resten af Fase 3)
+│   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect + config.cpp-kobling (§3.4) — v0.6.0, firewall-seed mangler (hører til Fase 5)
+│   ├── config.cpp/.h               # NVS (ESP32 Preferences) omkring lib/board_config/ — v0.6.0, færdig
 │   ├── net_driver.cpp/.h           # WiFi/Ethernet, DHCP/statisk IP
-│   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-509 (§4.1) — Fase 4
+│   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-503 (Variant A, §2.0/§4.1) — Fase 4
 │   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — Fase 5
-│   ├── firewall.cpp/.h             # IP-allowlist for data-planet (§4.3)
-│   ├── ota_handler.cpp/.h          # firmware-opdatering, dual-partition
-│   ├── uart_expander.cpp/.h        # SPI-driver for MAX14830/SC16IS75x — Fase 1-2
-│   ├── modbus_channel.cpp/.h       # × active_channels, én FreeRTOS-task pr. kanal — bruger lib/modbus_pdu/
-│   └── config.cpp/.h               # NVS-konfiguration + schema-versionering (§3.5)
+│   ├── firewall.cpp/.h             # IP-allowlist for data-planet (§4.3) — Fase 5
+│   ├── ota_handler.cpp/.h          # firmware-opdatering, dual-partition — Fase 5
+│   └── modbus_channel.cpp/.h       # × 2 (Variant A), én FreeRTOS-task pr. kanal — bruger lib/modbus_pdu/ — Fase 1
 ├── lib/                             # hardware-uafhængig, native-testbar logik (se ARCHITECTURE.md)
 │   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (FC01-06/16) — v0.2.0, færdig
-│   └── provisioning_cli/           # seriel CLI-kommando-parsing/validering (§3.4.1) — v0.3.0, færdig
+│   ├── provisioning_cli/           # seriel CLI-kommando-parsing/validering (§3.4.1) — v0.5.0, færdig
+│   └── board_config/               # persisteret config-schema + serialisering (§3.5) — v0.6.0, færdig
 └── test/                            # PlatformIO native unit-tests (`pio test -e native`)
     ├── test_modbus_pdu/
-    └── test_provisioning_cli/
+    ├── test_provisioning_cli/
+    └── test_board_config/
 ```

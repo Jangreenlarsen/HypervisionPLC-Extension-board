@@ -4,6 +4,23 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.6.0 build 0006] — 2026-09-11 — NVS-persistering (config.cpp) — Fase 3 afsluttet
+
+**Filer tilføjet:**
+- `lib/board_config/board_config.h/.cpp` — hardware-uafhængig, native-testbar: `mb_board_config_t` (`#pragma pack(1)`-blob, schema-versioneret §3.5, CRC16-checksum via egen lille implementering — bevidst IKKE `lib/modbus_pdu`s, for begrebsmæssig adskillelse), `mb_config_load_from_blob()`/`mb_config_save_to_blob()` (robust mod: intet gemt, forkert størrelse, checksum-korruption, "fremtidig"/nedgraderet schema — alle falder sikkert tilbage til defaults, aldrig udefineret opførsel), `mb_config_token_from_random_bytes()` (ren hex-encoding, RNG-uafhængig), `mb_config_apply_provisioning_state()`/`mb_config_to_provisioning_state()` (transformation til/fra `mb_provisioning_state_t`, sidstnævnte bruges til auto-genforbindelse ved boot).
+- `src/config.h/.cpp` — ESP32/`Preferences`-laget (NVS): `config_begin()` (indlæser ved boot), `config_apply_and_save()`, `config_factory_reset()`, `config_ensure_mgmt_token()` (genererer via `esp_fill_random()` FØRSTE gang, ellers no-op), `config_mark_provisioned()`.
+- `test/test_board_config/test_board_config.cpp` — 11 tests: defaults, save/load-roundtrip, undersized buffer, intet gemt, forkert størrelse, checksum-korruption (bevidst væltet byte), "fremtidig schema-version" (manuelt konstrueret, da `save_to_blob()` altid tvinger nuværende version), token-hex-encoding (kendt input→output), `apply_provisioning_state` (feltoverførsel + garanti om at `mgmt_token` ALDRIG røres).
+
+**Filer ændret:**
+- `src/provisioning.cpp` — kobler `config.cpp` ind: `connect`-succes persisterer og udsteder (første gang) et management-token, vist ÉN gang (§3.4.1). Ny `save`-kommando (gem uden forbindelsesforsøg — Jan: "vi kan ikke save i cli til nvs"). REST-credentials persisteres uafhængigt af WiFi-status. Automatisk WiFi-genforbindelse ved boot hvis `provisioned`. `factory-reset confirm` rydder nu rent faktisk NVS (kaldte tidligere kun `ESP.restart()`).
+- `lib/provisioning_cli/provisioning_cli.h/.cpp` — ny `PROV_ACTION_SAVE` + `"save"`-kommando, tilføjet til `help`.
+
+**To fejl fundet og rettet undervejs (se BUGS.md):**
+1. `show`/`status` viste ikke reel WiFi-forbindelsesstatus (Jan: "viser ikke connect status") — ny `wifi_status_text()` dækker alle `wl_status_t`-værdier eksplicit (var tidligere et uinformativt "ukendt/fejl" for normale før-forbindelse-tilstande), kaldt efter BÅDE `show` og `status`.
+2. Fabriksnyt/factory-reset'et board printede en skræmmende (men ufarlig) `Preferences`-fejl-log-linje ved allerførste boot (read-only `begin()` på et endnu-ikke-oprettet NVS-namespace) — rettet til read-write `begin()`.
+
+**Verificeret på fysisk hardware:** scriptet pyserial-test der beviser ÆGTE NVS-persistering på tværs af RIGTIGE hardware-genstarter (portlukning/genåbning trigger DTR/RTS-chip-reset, ikke kun et soft-state-skift i testscriptet) — REST-credentials og en `save`'et (ikke `connect`'et) WiFi-SSID overlevede en genstart; `factory-reset confirm` ryddede begge dele korrekt i en efterfølgende session. `pio test -e native` → 79/79 bestået.
+
 ## [0.5.0 build 0005] — 2026-09-11 — CLI-udvidelse (multi-linje, REST-auth, status, historik) + 3 designbeslutninger
 
 **Designdokument-revision (EXPANSION_BOARD_DESIGN.md), 3 beslutninger bekræftet af Jan:**

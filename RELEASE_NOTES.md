@@ -2,6 +2,16 @@
 
 ---
 
+## v0.6.0 — 2026-09-11 — NVS-persistering (Fase 3 afsluttet)
+
+Boardets konfiguration overlever nu en genstart. `config.cpp`/`lib/board_config/` gemmer WiFi, PLC-IP og REST-credentials i NVS (schema-versioneret, §3.5), og udsteder automatisk et management-API-token ved første vellykkede `connect` (vist én gang, som designet). Ny CLI-kommando `save` gemmer uden at forsøge en forbindelse. Boardet forsøger nu selv at genoprette WiFi-forbindelsen ved boot, hvis det allerede er provisioneret. Verificeret med et scriptet test der beviser ægte persistering på tværs af rigtige hardware-genstarter, ikke kun in-memory-tilstand.
+
+To mindre fejl fundet og rettet undervejs: `show`/`status` viste ikke den faktiske WiFi-forbindelsesstatus tydeligt nok, og et fabriksnyt board printede en ufarlig, men skræmmende fejl-log-linje ved første boot.
+
+**Næste skridt**: Fase 4 (Modbus TCP-server, 2 porte 502-503) og Fase 5 (den fulde REST-management-API — kanal-config, diagnostisk read/write, OTA, status — §4.2) er de næste store byggesten. Fase 1 (fysisk hardware-bring-up: UART1/UART2 + RS232/RS485-transceivere) kræver fortsat fysisk hardware og kan ikke udføres af Claude alene.
+
+---
+
 ## v0.5.0 — 2026-09-11 — CLI-udvidelse + 3 designbeslutninger
 
 Tre arkitekturbeslutninger er bekræftet og indarbejdet i EXPANSION_BOARD_DESIGN.md: (1) boardets første hardware-revision bliver **Variant A — 2 kanaler via ESP32's egne UART1/UART2**, ikke det oprindelige 8-kanals SPI-expander-design (som bevares i dokumentet som en senere Variant B); (2) REST-API'et vil acceptere **både** det eksisterende Bearer-token **og** et nyt Basic Auth brugernavn/adgangskode; (3) kommende REST-endpoints for Modbus read/write bliver et **diagnostisk supplement**, ikke en erstatning for Modbus TCP-data-planet.
