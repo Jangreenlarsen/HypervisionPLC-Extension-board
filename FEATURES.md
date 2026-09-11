@@ -9,13 +9,14 @@ Backlog seedet fra implementeringsfaserne i [EXPANSION_BOARD_DESIGN.md](EXPANSIO
 
 ## Færdige features
 
+- [x] done — v0.3.0 — Seriel provisioning-CLI kommando-kerne (`lib/provisioning_cli/`): tokenizer (inkl. citerede værdier med mellemrum, fx SSID'er), felt-validering (SSID 1-32 tegn, WPA2-password 8-63 tegn, IPv4, dhcp/static-mode), og tilstand for `wifi ssid/pass/open/mode/ip/mask/gw`, `plc ip`, `show`, `connect`, `factory-reset confirm`, `help` (EXPANSION_BOARD_DESIGN.md §3.4.1). Password lækker aldrig i klartekst i nogen besked (maskeret som `********`) — eksplicit testet. Erstatter en tidligere planlagt WiFi AP-mode-webside, som er droppet fra designet (§3.4: seriel/USB kræver fysisk adgang, ingen trådløs angrebsflade, ingen mode-switching-kompleksitet). 33 unit-tests, alle bestået. Hardware-uafhængig — selve NVS-skrivning/WiFi-forbindelse/reboot i `src/provisioning.cpp` følger i Fase 3 og kræver fysisk hardware.
 - [x] done — v0.2.0 — Modbus RTU PDU-kerne (`lib/modbus_pdu/`): CRC16, RTU-frame-opbygning, FC-baseret svar-længde-prædiktion og svar-parsing (exception-detektion, CRC/slave-validering) for FC01/02/03/04/05/06/16. Hardware-uafhængig, genbruges af både den kommende kanal-eksekvering (Lag 2, RTU-framing) og TCP-serveren (Lag 1, MBAP i stedet for RTU-framing om samme PDU) — port af mønsteret i `reference-plc-source/src/modbus_master.cpp`. 23 unit-tests (`pio test -e native`), CRC-værdier krydsverificeret med en uafhængig Python-implementering. Bygger også rent for ESP32-target (`pio run -e esp32dev`).
 
 ## Planlagte features
 
 - [ ] planned — Fase 1: Hardware-bring-up — gateway-MCU (ESP32) + WiFi + 1 UART-expander-chip (2-4 kanaler) på breadboard; verificér SPI-kommunikation og én RS485-kanal mod en kendt Modbus RTU-slave
 - [ ] planned — Fase 2: Fuld hardware (8 kanaler, 2× expander-chip) — parallel-test af alle 8 kanaler samtidigt uden krydsforstyrrelse; verificér kanal-auto-detektion (§2.2.2) med bevidst delvist bestykket testopstilling
-- [ ] planned — Fase 3: Provisioning — WiFi AP-mode bootstrap-side (§3.4.1), token-udstedelse, firewall-allowlist seedet med PLC'ens IP
+- [ ] planned — Fase 3: Provisioning — seriel CLI over USB (§3.4.1, kommando-parsing i `lib/provisioning_cli/` allerede færdig, se ovenfor), token-udstedelse, firewall-allowlist seedet med PLC'ens IP, NVS-skrivning + rigtig WiFi-forbindelse (`src/provisioning.cpp`, kræver fysisk hardware)
 - [ ] planned — Fase 4: Data-plan — Modbus TCP-server på 8 porte (502-509, §4.1), testet med et standard Modbus TCP-værktøj (fx `mbpoll`) mod fysisk slave
 - [ ] planned — Fase 5: Management-API — REST-endpoints for status/kanal-config/firewall/OTA (§4.2), Bearer-token-auth (§4.4), testet med curl/Postman
 - [ ] planned — Fase 8 (board-siden): Robusthedstest — isoleret RS485-kanal-fejl påvirker ikke øvrige kanaler, genstart midt i drift håndteres uden manuel indgriben, firewall afviser IP udenfor allowlist, 24-timers belastningstest uden heap-fragmentering
