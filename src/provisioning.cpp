@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "http_server.h"
 #include "provisioning_cli.h"
 
 namespace {
@@ -171,6 +172,8 @@ bool attempt_connect() {
         "Indsæt det i PLC'ens System-side under 'Modbus Expansion Boards'. Det kan ikke hentes igen bagefter.");
   }
 
+  http_server_begin();
+
   return true;
 }
 
@@ -194,6 +197,11 @@ void print_status() {
   Serial.println(ESP.getFreeHeap());
 
   print_wifi_connection_status();
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("rest.api: http://");
+    Serial.print(WiFi.localIP());
+    Serial.println(":8080/api/status");
+  }
 
   Serial.print("provisioned: ");
   Serial.println(config_get().provisioned ? "ja" : "nej");

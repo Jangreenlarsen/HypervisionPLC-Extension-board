@@ -401,6 +401,8 @@ Expansion-boardets kanal-task modtager PDU'en + det udpakkede `Unit ID` (→ RTU
 { "ok": false, "error_code": 6, "error": "invalid_slave", "message": "Slave-ID skal være 1-247" }
 ```
 
+**`error_code` udelades bevidst for rene HTTP-/auth-lags-fejl** (fx `401 Unauthorized`): `error_code` er specifikt `mb_error_code_t`-værdier (§4) — ingen af dem repræsenterer "manglende/ugyldig Authorization-header", og at tvinge en ind ville være misvisende, ikke kun upraktisk. Sådanne svar har derfor kun `{ "ok": false, "error": "unauthorized", "message": "..." }`, uden `error_code`-feltet. `error_code` er reserveret til fejl der reelt stammer fra en Modbus-transaktion.
+
 **Endpoints:**
 
 | Metode | Sti | Beskrivelse |
