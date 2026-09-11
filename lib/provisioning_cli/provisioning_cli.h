@@ -9,10 +9,22 @@ constexpr size_t MB_PROV_PASSWORD_MIN_LEN = 8;
 constexpr size_t MB_PROV_PASSWORD_MAX_LEN = 63;
 constexpr size_t MB_PROV_IPV4_MAX_LEN = 15;  // "255.255.255.255"
 constexpr size_t MB_PROV_CLI_MAX_LINE_LEN = 128;
-// "help"-kommandoens fulde tekst er 159 tegn — 96 var for lille og blev
-// klippet midt i en sætning (fundet ved manuel test mod rigtig hardware,
-// ikke af den oprindelige unit-test, som kun tjekkede "ikke-tom" streng).
-constexpr size_t MB_PROV_MSG_MAX_LEN = 192;
+
+// REST-API brugernavn/adgangskode (Basic Auth, §4.4 — ved siden af, ikke i
+// stedet for, det auto-genererede Bearer-token). Samme længdefilosofi som
+// WiFi-password (min. 8 tegn af sikkerhedshygiejne), men egne konstanter så
+// de to credential-typer ikke er sammenblandede i koden.
+constexpr size_t MB_PROV_REST_USER_MAX_LEN = 32;
+constexpr size_t MB_PROV_REST_PASS_MIN_LEN = 8;
+constexpr size_t MB_PROV_REST_PASS_MAX_LEN = 63;
+
+// Multi-linje CLI-output (Jan: "alle [beskeder] skal IKKE komme på en
+// linje") — hvert felt/hver kommando på sin egen linje (\r\n-separeret, for
+// kompatibilitet med simple seriel-terminaler der ikke auto-CR'er på bar
+// \n). 1024 er bevidst rigeligt (den fulde help-tekst målt til 717 bytes) —
+// ESP32 har 320KB RAM, så det er billigere at have god margin end at ramme
+// den samme afkortnings-klasse-bug igen (se BUGS.md).
+constexpr size_t MB_PROV_MSG_MAX_LEN = 1024;
 
 // Tilstanden CLI-kommandoerne bygger op, indtil "connect" eller
 // "factory-reset confirm" udløser en handling i src/provisioning.cpp
@@ -35,6 +47,14 @@ struct mb_provisioning_state_t {
 
   char plc_ip[MB_PROV_IPV4_MAX_LEN + 1];
   bool has_plc_ip;
+
+  // REST-API Basic Auth-credentials (§4.4) — ved siden af det separate,
+  // auto-genererede Bearer-token, som stadig etableres af src/provisioning.cpp
+  // ved første "connect" og IKKE administreres via denne struct.
+  char rest_user[MB_PROV_REST_USER_MAX_LEN + 1];
+  bool has_rest_user;
+  char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
+  bool has_rest_pass;
 };
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state);
@@ -46,6 +66,7 @@ enum mb_provisioning_result_t {
   PROV_ACTION_SHOW,            // "show" — out_message har allerede den formaterede (password-maskerede) status
   PROV_ACTION_HELP,            // "help" — out_message har allerede kommandolisten
   PROV_ACTION_VERSION,         // "version" — out_message har allerede firmware-version+build (fra version.json, §1)
+  PROV_ACTION_STATUS,          // "status" — kaldstedet skal selv sammensætte+udskrive systemstatus (uptime/heap/WiFi er runtime-data lib/ ikke kender)
   PROV_EMPTY_LINE,             // tomt/whitespace-only input — kaldstedet kan ignorere stille
   PROV_UNKNOWN_COMMAND,
   PROV_MISSING_ARGUMENT,       // out_message forklarer hvilket felt der mangler

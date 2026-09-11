@@ -20,6 +20,18 @@ bool mb_provisioning_validate_password(const char *password) {
   return len >= MB_PROV_PASSWORD_MIN_LEN && len <= MB_PROV_PASSWORD_MAX_LEN;
 }
 
+static bool validate_rest_user(const char *user) {
+  if (user == nullptr) return false;
+  const size_t len = strlen(user);
+  return len >= 1 && len <= MB_PROV_REST_USER_MAX_LEN;
+}
+
+static bool validate_rest_pass(const char *pass) {
+  if (pass == nullptr) return false;
+  const size_t len = strlen(pass);
+  return len >= MB_PROV_REST_PASS_MIN_LEN && len <= MB_PROV_REST_PASS_MAX_LEN;
+}
+
 bool mb_provisioning_validate_ipv4(const char *ip) {
   if (ip == nullptr) return false;
 
@@ -94,6 +106,21 @@ static void set_ipv4_field(char *target, const char *value) {
   target[MB_PROV_IPV4_MAX_LEN] = '\0';
 }
 
+// Lille hjælper til multi-linje-output: tilføjer "<label>: <value>\r\n" til
+// `buf` (via `pos`, som opdateres) uden at kunne overskride `capacity` —
+// snprintf'ens returværdi bruges IKKE direkte som ny `pos` (den kan angive
+// hvor mange bytes der VILLE være skrevet ved uendelig plads, hvilket ville
+// kunne få `pos` til at overstige `capacity` og efterfølgende kald til at
+// skrive udenfor bufferen).
+static void append_line(char *buf, size_t capacity, size_t *pos, const char *label, const char *value) {
+  if (*pos >= capacity) return;
+  const int written = snprintf(buf + *pos, capacity - *pos, "%s: %s\r\n", label, value);
+  if (written > 0) {
+    const size_t advance = static_cast<size_t>(written);
+    *pos += (advance < capacity - *pos) ? advance : (capacity - *pos - 1);
+  }
+}
+
 static void mb_provisioning_format_status(const mb_provisioning_state_t *state, char *out_buffer,
                                            size_t out_buffer_capacity) {
   const char *password_display = "(ikke sat)";
@@ -102,17 +129,21 @@ static void mb_provisioning_format_status(const mb_provisioning_state_t *state, 
   } else if (state->has_password) {
     password_display = "********";
   }
+  const char *rest_pass_display = state->has_rest_pass ? "********" : "(ikke sat)";
 
+  size_t pos = 0;
+  out_buffer[0] = '\0';
+  append_line(out_buffer, out_buffer_capacity, &pos, "wifi.ssid", state->has_ssid ? state->ssid : "(ikke sat)");
+  append_line(out_buffer, out_buffer_capacity, &pos, "wifi.pass", password_display);
+  append_line(out_buffer, out_buffer_capacity, &pos, "wifi.mode", state->static_ip ? "static" : "dhcp");
   if (state->static_ip) {
-    snprintf(out_buffer, out_buffer_capacity, "ssid=%s pass=%s mode=static ip=%s mask=%s gw=%s plc.ip=%s",
-             state->has_ssid ? state->ssid : "(ikke sat)", password_display,
-             state->has_ip ? state->ip : "(ikke sat)", state->has_mask ? state->mask : "(ikke sat)",
-             state->has_gw ? state->gw : "(ikke sat)", state->has_plc_ip ? state->plc_ip : "(ikke sat)");
-  } else {
-    snprintf(out_buffer, out_buffer_capacity, "ssid=%s pass=%s mode=dhcp plc.ip=%s",
-             state->has_ssid ? state->ssid : "(ikke sat)", password_display,
-             state->has_plc_ip ? state->plc_ip : "(ikke sat)");
+    append_line(out_buffer, out_buffer_capacity, &pos, "wifi.ip", state->has_ip ? state->ip : "(ikke sat)");
+    append_line(out_buffer, out_buffer_capacity, &pos, "wifi.mask", state->has_mask ? state->mask : "(ikke sat)");
+    append_line(out_buffer, out_buffer_capacity, &pos, "wifi.gw", state->has_gw ? state->gw : "(ikke sat)");
   }
+  append_line(out_buffer, out_buffer_capacity, &pos, "plc.ip", state->has_plc_ip ? state->plc_ip : "(ikke sat)");
+  append_line(out_buffer, out_buffer_capacity, &pos, "rest.user", state->has_rest_user ? state->rest_user : "(ikke sat)");
+  append_line(out_buffer, out_buffer_capacity, &pos, "rest.pass", rest_pass_display);
 }
 
 // Tjekker om `state` har alle påkrævede felter til et "connect"-forsøg.
@@ -167,10 +198,22 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
   }
 
   if (ieq(tokens[0], "help")) {
-    snprintf(out_message, out_message_capacity,
-             "wifi ssid <navn> | wifi pass <kode> | wifi open | wifi mode dhcp|static | "
-             "wifi ip/mask/gw <a.b.c.d> | plc ip <a.b.c.d> | show | connect | factory-reset confirm | "
-             "version | help");
+    size_t pos = 0;
+    out_message[0] = '\0';
+    append_line(out_message, out_message_capacity, &pos, "wifi ssid <navn>", "SSID for produktionsnetvaerket");
+    append_line(out_message, out_message_capacity, &pos, "wifi pass <kode>", "WPA2-adgangskode (8-63 tegn)");
+    append_line(out_message, out_message_capacity, &pos, "wifi open", "marker netvaerket som aabent (intet password)");
+    append_line(out_message, out_message_capacity, &pos, "wifi mode dhcp|static", "netvaerkstype, default dhcp");
+    append_line(out_message, out_message_capacity, &pos, "wifi ip/mask/gw <a.b.c.d>", "kun ved mode static");
+    append_line(out_message, out_message_capacity, &pos, "plc ip <a.b.c.d>", "PLC'ens IP - seedes i firewall-allowlist");
+    append_line(out_message, out_message_capacity, &pos, "rest user <navn>", "brugernavn til REST-management-API'et");
+    append_line(out_message, out_message_capacity, &pos, "rest pass <kode>", "adgangskode til REST-management-API'et (8-63 tegn)");
+    append_line(out_message, out_message_capacity, &pos, "show", "vis alt der er sat (password maskeret)");
+    append_line(out_message, out_message_capacity, &pos, "status", "systemstatus (uptime/heap/WiFi/tilstand)");
+    append_line(out_message, out_message_capacity, &pos, "connect", "anvend felterne og forsoeg WiFi-forbindelse");
+    append_line(out_message, out_message_capacity, &pos, "factory-reset confirm", "ryd WiFi/token/firewall og genstart");
+    append_line(out_message, out_message_capacity, &pos, "version", "vis firmware-version+build");
+    append_line(out_message, out_message_capacity, &pos, "help", "denne kommandoliste");
     return PROV_ACTION_HELP;
   }
 
@@ -193,6 +236,13 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
   if (ieq(tokens[0], "show")) {
     mb_provisioning_format_status(state, out_message, out_message_capacity);
     return PROV_ACTION_SHOW;
+  }
+
+  if (ieq(tokens[0], "status")) {
+    // Uptime/heap/WiFi-forbindelsesstatus er runtime-data denne
+    // hardware-uafhængige funktion ikke har adgang til — kaldstedet
+    // (src/provisioning.cpp) sammensætter selve status-teksten.
+    return PROV_ACTION_STATUS;
   }
 
   if (ieq(tokens[0], "connect")) {
@@ -314,6 +364,43 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     state->has_plc_ip = true;
     snprintf(out_message, out_message_capacity, "ok - plc.ip sat");
     return PROV_OK;
+  }
+
+  if (ieq(tokens[0], "rest")) {
+    if (token_count < 3) {
+      snprintf(out_message, out_message_capacity, "brug 'rest user <navn>' eller 'rest pass <kode>'");
+      return PROV_MISSING_ARGUMENT;
+    }
+
+    if (ieq(tokens[1], "user")) {
+      if (!validate_rest_user(tokens[2])) {
+        snprintf(out_message, out_message_capacity, "ugyldigt brugernavn (1-%u tegn)",
+                 static_cast<unsigned>(MB_PROV_REST_USER_MAX_LEN));
+        return PROV_INVALID_VALUE;
+      }
+      strncpy(state->rest_user, tokens[2], MB_PROV_REST_USER_MAX_LEN);
+      state->rest_user[MB_PROV_REST_USER_MAX_LEN] = '\0';
+      state->has_rest_user = true;
+      snprintf(out_message, out_message_capacity, "ok - rest.user sat");
+      return PROV_OK;
+    }
+
+    if (ieq(tokens[1], "pass")) {
+      if (!validate_rest_pass(tokens[2])) {
+        snprintf(out_message, out_message_capacity, "ugyldigt password (%u-%u tegn)",
+                 static_cast<unsigned>(MB_PROV_REST_PASS_MIN_LEN), static_cast<unsigned>(MB_PROV_REST_PASS_MAX_LEN));
+        return PROV_INVALID_VALUE;
+      }
+      strncpy(state->rest_pass, tokens[2], MB_PROV_REST_PASS_MAX_LEN);
+      state->rest_pass[MB_PROV_REST_PASS_MAX_LEN] = '\0';
+      state->has_rest_pass = true;
+      snprintf(out_message, out_message_capacity, "ok - rest.pass sat (%u tegn)",
+               static_cast<unsigned>(strlen(tokens[2])));
+      return PROV_OK;
+    }
+
+    snprintf(out_message, out_message_capacity, "ukendt rest-underkommando: %s", tokens[1]);
+    return PROV_UNKNOWN_COMMAND;
   }
 
   snprintf(out_message, out_message_capacity, "ukendt kommando: %s (proev 'help')", tokens[0]);
