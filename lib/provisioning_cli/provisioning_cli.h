@@ -9,7 +9,10 @@ constexpr size_t MB_PROV_PASSWORD_MIN_LEN = 8;
 constexpr size_t MB_PROV_PASSWORD_MAX_LEN = 63;
 constexpr size_t MB_PROV_IPV4_MAX_LEN = 15;  // "255.255.255.255"
 constexpr size_t MB_PROV_CLI_MAX_LINE_LEN = 128;
-constexpr size_t MB_PROV_MSG_MAX_LEN = 96;
+// "help"-kommandoens fulde tekst er 159 tegn — 96 var for lille og blev
+// klippet midt i en sætning (fundet ved manuel test mod rigtig hardware,
+// ikke af den oprindelige unit-test, som kun tjekkede "ikke-tom" streng).
+constexpr size_t MB_PROV_MSG_MAX_LEN = 192;
 
 // Tilstanden CLI-kommandoerne bygger op, indtil "connect" eller
 // "factory-reset confirm" udløser en handling i src/provisioning.cpp
@@ -42,6 +45,7 @@ enum mb_provisioning_result_t {
   PROV_ACTION_FACTORY_RESET,   // "factory-reset confirm" — kaldstedet skal nu rydde NVS og genstarte
   PROV_ACTION_SHOW,            // "show" — out_message har allerede den formaterede (password-maskerede) status
   PROV_ACTION_HELP,            // "help" — out_message har allerede kommandolisten
+  PROV_ACTION_VERSION,         // "version" — out_message har allerede firmware-version+build (fra version.json, §1)
   PROV_EMPTY_LINE,             // tomt/whitespace-only input — kaldstedet kan ignorere stille
   PROV_UNKNOWN_COMMAND,
   PROV_MISSING_ARGUMENT,       // out_message forklarer hvilket felt der mangler

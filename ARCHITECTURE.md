@@ -85,8 +85,10 @@
 │   └── settings.local.json
 ├── .gitignore                      # udelukker .pio/ (build-cache/toolchains)
 ├── platformio.ini                  # PlatformIO build-config: esp32dev (target) + native (host-side unit-tests)
+├── extract_version.py              # PlatformIO pre-build-script — injicerer version.json som FW_VERSION/FW_BUILD-defines (kun esp32dev)
 ├── src/                             # Lag 1-3 + cross-cutting orchestration (ESP32/Arduino-specifik, IKKE native-testbar)
-│   └── main.cpp                    # (stub — provisioning/net_driver/modbus_tcp_server/... følger i Fase 1+)
+│   ├── main.cpp
+│   └── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect (§3.4/§3.4.1) — v0.4.0, NVS/token/firewall-seed mangler stadig
 ├── lib/                             # Hardware-uafhængig, native-testbar logik — se note nedenfor
 │   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (Lag 2's protokol-kerne, delt med Lag 1)
 │   └── provisioning_cli/           # Seriel CLI-kommando-parsing/validering (§3.4.1) — bruges af provisioning.cpp

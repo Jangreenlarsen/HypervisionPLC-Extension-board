@@ -1,8 +1,10 @@
 #include <Arduino.h>
 
+#include "provisioning.h"
+
 void setup() {
   Serial.begin(115200);
-  Serial.println("HypervisionPLC Extension board — firmware ikke implementeret endnu (se FEATURES.md)");
+  provisioning_begin();
 }
 
-void loop() {}
+void loop() { provisioning_poll(); }

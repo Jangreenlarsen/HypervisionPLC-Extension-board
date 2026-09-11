@@ -169,8 +169,25 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
   if (ieq(tokens[0], "help")) {
     snprintf(out_message, out_message_capacity,
              "wifi ssid <navn> | wifi pass <kode> | wifi open | wifi mode dhcp|static | "
-             "wifi ip/mask/gw <a.b.c.d> | plc ip <a.b.c.d> | show | connect | factory-reset confirm");
+             "wifi ip/mask/gw <a.b.c.d> | plc ip <a.b.c.d> | show | connect | factory-reset confirm | "
+             "version | help");
     return PROV_ACTION_HELP;
+  }
+
+  if (ieq(tokens[0], "version")) {
+    // FW_VERSION/FW_BUILD injiceres af extra_scripts/extract_version.py fra
+    // version.json (CLAUDE.md regel 1: version.json er den ENESTE kilde) —
+    // kun defineret for esp32dev-target'et. native-miljøet (unit-tests) har
+    // dem bevidst IKKE sat, så testen ikke skal opdateres ved hver
+    // versionsbump — fallback-teksten er hvad testene faktisk verificerer.
+#ifdef FW_VERSION
+    snprintf(out_message, out_message_capacity, "HypervisionPLC Extension board v%s build %s", FW_VERSION,
+             FW_BUILD);
+#else
+    snprintf(out_message, out_message_capacity,
+             "HypervisionPLC Extension board (version ukendt - bygget uden FW_VERSION/FW_BUILD build-flags)");
+#endif
+    return PROV_ACTION_VERSION;
   }
 
   if (ieq(tokens[0], "show")) {

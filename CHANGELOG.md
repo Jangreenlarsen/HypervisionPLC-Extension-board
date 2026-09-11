@@ -4,6 +4,29 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.4.0 build 0004] — 2026-09-11 — Seriel CLI koblet til rigtig hardware (første kørsel på fysisk board)
+
+**Version/build i selve firmwaren (Jan bemærkede at firmwaren ikke viste sit eget versionsnummer noget sted):** `version.json` var hidtil kun læst af dokumentation/commit-beskeder — firmwaren selv anede ikke sin egen version. `extract_version.py` (PlatformIO `extra_scripts`, kun `esp32dev`-target'et) injicerer nu `version.json`s `version`+`build` som `FW_VERSION`/`FW_BUILD`-compile-time-defines ved hver build, så `version.json` forbliver den ENESTE kilde (CLAUDE.md regel 1) også for den kørende firmware. Vises i boot-banneret og via en ny `version`-kommando. `native`-miljøet (unit-tests) får dem bevidst IKKE injiceret — testen verificerer fallback-teksten, ikke et hardkodet versionsnummer der ellers skulle opdateres ved hver bump.
+
+**Filer tilføjet:**
+- `extract_version.py` — PlatformIO pre-build-script, se ovenfor.
+- `src/provisioning.cpp/.h` — læser linjer fra `Serial` (lokal ekko, backspace-håndtering, CR/LF-tolerant), kalder `lib/provisioning_cli/`, og udfører et RIGTIGT `WiFi.begin()`-forsøg ved `connect` (DHCP eller statisk IP via `WiFi.config()`, 30 sek. timeout, jf. §3.4.1's fejlhåndtering). `factory-reset confirm` genstarter boardet (NVS-rydning følger med `config.cpp`, ikke implementeret endnu). Boot-banner viser `FW_VERSION`/`FW_BUILD`.
+
+**Filer ændret:**
+- `src/main.cpp` — kalder nu `provisioning_begin()`/`provisioning_poll()` i stedet for at være en tom stub.
+- `lib/provisioning_cli/provisioning_cli.h` — `MB_PROV_MSG_MAX_LEN` hævet fra 96 til 192 bytes (se BUGS.md — den gamle værdi afkortede `help`-kommandoens svartekst midt i en sætning).
+- `lib/provisioning_cli/provisioning_cli.cpp` — `help`-teksten nævnte ikke sig selv som kommando; tilføjet. Ny `version`-kommando (samme `FW_VERSION`/`FW_BUILD`-defines, fallback-tekst når de ikke er sat).
+- `lib/provisioning_cli/provisioning_cli.h` — `PROV_ACTION_VERSION` tilføjet til resultat-enum'en.
+- `test/test_provisioning_cli/test_provisioning_cli.cpp` — `test_help_action` tjekker nu at ALLE kommandoer faktisk er til stede i `help`-output, ikke kun at strengen er ikke-tom (den svage version fangede ikke afkortnings-bugen ovenfor).
+
+**Verificeret PÅ FYSISK HARDWARE** (ESP32-board tilsluttet via USB/CH340, COM6) — første gang firmwaren kører på rigtig hardware:
+- Compileret (`pio run -e esp32dev`) og uploadet (`pio run -t upload --upload-port COM6`).
+- Selv-testet med et scriptet pyserial-baseret smoke-test (sender kommandoer, læser svar, tjekker indhold programmatisk — ikke kun "kompilerer") mod boardet: `help`, `show`, `wifi ssid/pass`, `plc ip`, `connect` (rigtigt `WiFi.begin()`-forsøg, timede korrekt ud efter 30 sek. mod et ikke-eksisterende testnetværk), og en eksplicit kontrol af at password ALDRIG optræder i klartekst i noget seriel-output.
+- Denne test fandt selve `MB_PROV_MSG_MAX_LEN`-bugen (BUGS.md) — `pio test -e native` fangede den IKKE, fordi test-koden brugte samme (for lille) buffer-konstant som produktionskoden. Lektion: en native-testsuite der deler en konstant med koden den tester, kan ikke opdage at konstanten selv er forkert — kun test mod den faktiske output-grænse (her: rigtig seriel-linje-bredde) afslørede det.
+- `pio test -e native` → 56/56 stadig bestået efter rettelsen.
+
+**Stadig IKKE verificeret på hardware:** en ægte WiFi-forbindelse til et rigtigt netværk (kun timeout-stien er testet, med opdigtede credentials) — kræver Jans faktiske WiFi-oplysninger, som Claude ikke har og ikke bør gætte på.
+
 ## [0.3.0 build 0003] — 2026-09-11 — Seriel provisioning-CLI + design-revision (droppet AP-mode)
 
 **Designændring (EXPANSION_BOARD_DESIGN.md, alle referencer til §3.4 opdateret):** WiFi/PLC-IP-provisionering sker nu UDELUKKENDE via en seriel CLI over USB, ikke en midlertidig WiFi AP-mode + webside som tidligere designet. Begrundelse dokumenteret i §3.4: seriel/USB er fysisk uafhængig af WiFi (løser "hønen og ægget" uden mode-switching), kræver fysisk USB-adgang (ingen trådløs angrebsflade for et fabriksnyt board, jf. §8), og CLI'en er — modsat den droppede AP-mode-side — permanent tilgængelig, ikke kun ved fabriksnyt board (indbygget recovery-vej ved WiFi-password-skift). §3.4.1 (tidligere AP-mode-sidens felt-spec) er erstattet af CLI-kommandospecifikationen. `http_server.cpp`/§4.2's auth-afsnit forenklet: ALLE HTTP-endpoints kræver nu token uden undtagelse, da provisionering ikke længere er en del af HTTP-laget.
