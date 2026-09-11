@@ -18,7 +18,7 @@ HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og ha
 
 **Arkitektur i korte træk:** en ESP32 gateway-MCU forbundet via SPI til eksterne UART-expander-chips (MAX14830/SC16IS75x), der hver driver op til 8 RS485/RS232-feltbus-kanaler (modulær bestykning, auto-detekteret ved boot — se §2.2.2). Boardet er bevidst "tyndt": al forretningslogik, prioritering og caching forbliver på PLC'en; boardet udfører kun de fysiske Modbus RTU-transaktioner og eksponerer dem via en hybrid netværks-grænseflade — Modbus TCP (data-plan, port 502-509) + autentificeret REST/JSON (management-plan: kanal-config, firewall, OTA, port 8080).
 
-**Kerneprincip ("single pane of glass"):** boardet har INGEN egen driftsbrugerflade — kun en minimal WiFi-provisioning-side (AP-mode, §3.4) for at komme på nettet første gang. Al løbende konfiguration sker fra PLC'ens eksisterende System-side.
+**Kerneprincip ("single pane of glass"):** boardet har INGEN egen driftsbrugerflade — kun en minimal seriel provisioning-CLI over USB (§3.4/§3.4.1) for at komme på nettet første gang. Al løbende konfiguration sker fra PLC'ens eksisterende System-side.
 
 **Scope for dette repo:** KUN expansion-boardets eget hardware+firmware (design-dokumentets §1-4, §9-10) — et selvstændigt firmware-projekt uden kode-afhængighed til PLC-repoet. PLC-side-integrationen (§5: `modbus_expansion.cpp`, `web/system.html`-udvidelse, CLI/ST Logic) sker INDE I `Modbus_server_slave_ESP32`-repoet og er et separat, fremtidigt arbejde — UDENFOR scope her. `reference-plc-source/` indeholder statiske kode-kopier fra PLC-repoet, brugt udelukkende som implementeringsskabeloner (se `reference-plc-source/README.md`).
 
@@ -29,7 +29,7 @@ HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og ha
 - **Feltbus-hardware**: UART-expander over SPI (MAX14830 / SC16IS750 / SC16IS752) → SP3485 (RS485) / MAX3232 (RS232) transceiver-par pr. kanal, valgt via expander-GPIO (§2.2.1)
 - **Netværk**: WiFi (indbygget) + valgfri Ethernet (W5500 over SPI)
 - **Protokoller**: Modbus TCP (data-plan, 8 porte) + REST/JSON (management-plan, Bearer-token-auth)
-- **Deployment**: fysisk PCB monteret i el-skab; første opsætning via lokal WiFi AP + provisioning-side (§3.4); al efterfølgende drift/konfiguration/OTA-opdatering fjernstyret fra PLC'ens System-side — ingen SSH/lokal adgang i normal drift
+- **Deployment**: fysisk PCB monteret i el-skab; første opsætning via seriel CLI over USB (§3.4/§3.4.1); al efterfølgende drift/konfiguration/OTA-opdatering fjernstyret fra PLC'ens System-side — ingen SSH/lokal netværksadgang i normal drift
 
 ---
 
@@ -91,9 +91,7 @@ HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og ha
     - **Regler der kun gælder én gren**: når en regel indføres for ét tilfælde (kun ved oprettelse, kun for den ene ressource), så gennemgå de øvrige grene *med det samme* — opdatering, den anden ressource, import-vejen. En regel der kun holder halvvejs opdages typisk først som en fejlmelding fra Jan.
     - Ved større funktioner (auth, permissions, betalinger, data-integritet) skal Claude proaktivt overveje disse punkter under implementering, ikke først vente på at Jan beder om en fejl-gennemgang.
 
-13. **Visuel verifikation af layout-ændringer (UFRAVIGELIG)**: boardets ENESTE visuelle flade er WiFi-provisioning-siden (AP-mode, §3.4.1) — en enkelt, indlejret HTML-side, bevidst designet mobilvenlig (installatøren står typisk ved et el-skab med en telefon). En ændring af dens layout — positionering, ombrydning af formularfelter, foldet-ud/ind-tilstande — skal ses i en browser (inkl. mobil-bredde) før den meldes færdig. `build`/kompilering kan ikke fange den slags: markup og styling er hver for sig gyldige, og det er kun kombinationen der er forkert. Sig eksplicit i afrapporteringen om ændringen er *set* eller kun *bygget*. Bemærk: PLC-sidens "Modbus Expansion Boards"-kort (§5.2) hører til et ANDET repo og er udenfor dette projekts scope.
-
-14. **Tests**: Ny logik der kan gå galt uden at nogen opdager det — PDU/CRC-parsing, MBAP-framing, JSON-fejlformat, cache/dedup, adaptiv backoff, NVS-schema-migration — skal have en test der kan køre UDEN fysisk hardware. Rene visuelle ændringer skal ikke; til dem gælder regel 13. Kør **alle** relevante testsuiter før noget meldes færdigt:
+13. **Tests**: Ny logik der kan gå galt uden at nogen opdager det — PDU/CRC-parsing, MBAP-framing, JSON-fejlformat, cache/dedup, adaptiv backoff, NVS-schema-migration — skal have en test der kan køre UDEN fysisk hardware. Kør **alle** relevante testsuiter før noget meldes færdigt:
     - `pio test -e native` — logik-unittests (protokol/config/cache) afkoblet fra Arduino/ESP-IDF-hardware-API'er
     - `pio run` — verificér at firmwaren bygger for target-boardet (miljønavn fastlægges når `platformio.ini` oprettes i Fase 1)
     - Adfærd der kun kan verificeres MED fysisk hardware (SPI-timing, RS485/RS232-transceiver-skift, kanal-auto-detektion, OTA-partitionsskift) kan ikke automatiseres her — følg i stedet fase-testplanen og acceptance-kriterierne i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) §9-§10, og sig eksplicit i afrapporteringen hvilke af disse der IKKE er verificeret på rigtig hardware endnu.
@@ -107,7 +105,7 @@ HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og ha
 3. Opdater `version.json`: bump build (altid), bump version (hvis feature/bugfix/breaking).
 4. Tilføj entry i `CHANGELOG.md` med `[version build NNNN]` prefix.
 5. Opdater `RELEASE_NOTES.md` hvis kode er ændret.
-6. Kør testsuiter/verifikation før noget meldes færdigt. Rører ændringen layout, gælder desuden regel 13.
+6. Kør testsuiter/verifikation før noget meldes færdigt.
 7. `git add` + `git commit` med besked der inkluderer version: `v0.1.0-b0001: beskrivelse`.
 8. `git push origin dev` til GitHub.
 9. Spørg Jan: *"Vil du også merge til `main`?"* — merge og push `origin main` hvis ja.
