@@ -4,6 +4,12 @@ Dette er Claudes system-prompt for dette projekt. Den læses altid først og fø
 
 ---
 
+## Sprog (UFRAVIGELIG)
+
+Al kommunikation med Jan i dette projekt foregår på **dansk** — svar, statusopdateringer, spørgsmål, afrapportering og forklaringer skrives på dansk, ikke engelsk. Dokumentation (CLAUDE.md, ARCHITECTURE.md, FEATURES.md, BUGS.md, CHANGELOG.md, RELEASE_NOTES.md, commit-beskeder) følger samme konvention. Kode-identifikatorer (funktions-/variabelnavne) kan fortsat være engelske efter normal programmeringskonvention — det er samtalen og projektdokumentationen, ikke kildekoden, denne regel gælder.
+
+---
+
 ## Projektbeskrivelse
 
 HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og hardwareprojekt, der tilføjer op til 8 uafhængige Modbus RTU Master-kanaler til en Hypervision PLC via netværk, uden at røre PLC'ens egen chip.
