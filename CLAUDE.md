@@ -116,7 +116,7 @@ HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og ha
 
 ## Projektstruktur
 
-Planlagt struktur (jf. `EXPANSION_BOARD_DESIGN.md` §3.1) — `src/`, `include/`, `test/` og `platformio.ini` oprettes i Fase 1, findes endnu ikke:
+Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `src/` indeholder p.t. kun en stub-`main.cpp` — `provisioning.cpp` osv. tilføjes fra Fase 1:
 
 ```
 .
@@ -132,19 +132,21 @@ Planlagt struktur (jf. `EXPANSION_BOARD_DESIGN.md` §3.1) — `src/`, `include/`
 ├── reference-plc-source/           # statiske kode-referencer fra Hypervision PLC-repoet (se dens egen README.md)
 ├── .claude/
 │   └── settings.local.json
-├── platformio.ini                  # PlatformIO build-config (ESP32) — Fase 1
-├── src/                             # firmware-kildekode
-│   ├── main.cpp
-│   ├── provisioning.cpp/.h         # WiFi AP-mode bootstrap (§3.4)
+├── .gitignore                      # udelukker .pio/ (build-cache/toolchains)
+├── platformio.ini                  # PlatformIO build-config: esp32dev (target) + native (host-side unit-tests)
+├── src/                             # firmware-kildekode (ESP32/Arduino-specifik — se ARCHITECTURE.md for hvorfor)
+│   ├── main.cpp                    # stub — resten tilføjes i takt med faserne i FEATURES.md
+│   ├── provisioning.cpp/.h         # WiFi AP-mode bootstrap (§3.4) — Fase 3
 │   ├── net_driver.cpp/.h           # WiFi/Ethernet, DHCP/statisk IP
-│   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-509 (§4.1)
-│   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2)
+│   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-509 (§4.1) — Fase 4
+│   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — Fase 5
 │   ├── firewall.cpp/.h             # IP-allowlist for data-planet (§4.3)
 │   ├── ota_handler.cpp/.h          # firmware-opdatering, dual-partition
-│   ├── uart_expander.cpp/.h        # SPI-driver for MAX14830/SC16IS75x
-│   ├── modbus_channel.cpp/.h       # × active_channels, én FreeRTOS-task pr. kanal
+│   ├── uart_expander.cpp/.h        # SPI-driver for MAX14830/SC16IS75x — Fase 1-2
+│   ├── modbus_channel.cpp/.h       # × active_channels, én FreeRTOS-task pr. kanal — bruger lib/modbus_pdu/
 │   └── config.cpp/.h               # NVS-konfiguration + schema-versionering (§3.5)
-├── include/                         # delte headers (fejlkoder, datastrukturer)
-├── test/                            # PlatformIO native unit-tests (protokol/config-logik uden hardware)
-└── docs/                            # løbende bug/feature-log (§9's anbefaling), testlogs
+├── lib/                             # hardware-uafhængig, native-testbar logik (se ARCHITECTURE.md)
+│   └── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (FC01-06/16) — v0.2.0, færdig
+└── test/                            # PlatformIO native unit-tests (`pio test -e native`)
+    └── test_modbus_pdu/
 ```
