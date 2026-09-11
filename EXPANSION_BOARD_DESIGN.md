@@ -224,10 +224,10 @@ Alle varianter bruger **samme SPI-bus med op til 8 dedikerede CS-linjer** (én p
 
 ```
 main.cpp
-  ├─ provisioning.cpp/.h       — §3.4: WiFi-bootstrap (AP-mode + minimal lokal webside), KUN aktiv indtil forbundet — etablerer også management-API'ets auth-token og seeder firewall-allowlisten med PLC'ens IP
+  ├─ provisioning.cpp/.h       — §3.4: WiFi-bootstrap via seriel CLI over USB (§3.4.1, bruger lib/provisioning_cli/ til parsing), altid aktiv (ikke kun ved fabriksnyt board) — etablerer også management-API'ets auth-token og seeder firewall-allowlisten med PLC'ens IP
   ├─ net_driver.cpp/.h         — WiFi-init (og valgfrit Ethernet/W5500), DHCP/statisk IP, genopkobling
   ├─ modbus_tcp_server.cpp/.h  — 8× Modbus TCP-lyttesocket (data-plan, port 502-509, §4.1) — MBAP-parsing, PDU videresendes til kanal-task
-  ├─ http_server.cpp/.h        — REST management-API (§4.2), autentificeret (Bearer-token, §4.4) — kanal-config, statistik, board-status, firewall-styring (§4.3), OTA (§4.2), samt provisioning-siden (§3.4, kun i AP-mode)
+  ├─ http_server.cpp/.h        — REST management-API (§4.2), autentificeret (Bearer-token, §4.4) — kanal-config, statistik, board-status, firewall-styring (§4.3), OTA (§4.2). Ingen provisioning her — det sker udelukkende over seriel (§3.4), ALLE HTTP-endpoints kræver derfor token uden undtagelse
   ├─ firewall.cpp/.h           — IP-allowlist håndhævelse på Modbus TCP-lyttesocketsne (502-509) — tjekker peer-IP FØR accept(), regelsæt styret via REST (§4.3)
   ├─ ota_handler.cpp/.h        — modtager ny firmware som strømmet binær body (§4.2), skriver til inaktiv OTA-partition, verificerer, kræver reboot for aktivering — spejler `src/ota_handler.cpp` i PLC-repoet
   ├─ uart_expander.cpp/.h      — SPI-driver for MAX14830/SC16IS752, abstraherer 8 UART-kanaler bag samme interface som en almindelig UART
@@ -258,44 +258,50 @@ Dette er **identisk arkitektur** til PLC'ens `mb_async.cpp` (den ÉN-motor-versi
 
 **Princip (§0):** Alt driftsrelateret konfigureres fra PLC'en. Expansion-boardet har kun brug for lokal indgriben for at løse "hønen og ægget"-problemet: uden netværk kan intet API nås.
 
-**Anbefalet flow (velkendt IoT-mønster):**
-1. **Fabriksnyt/fabriksnulstillet board** starter i WiFi **AP-mode** (eget, midlertidigt access point, fx `ModbusExpansion-XXXX` hvor XXXX er en del af MAC-adressen) med en minimal, indbygget webside på en fast IP (fx `192.168.4.1`). Siden dækker **hele bootstrap-behovet i ét trin**: SSID + password (og evt. valgfri statisk IP/DHCP-valg) for produktionsnetværket, PLC'ens IP-adresse (seedes ind i firewall-allowlisten, §4.3), og et management-API-token som boardet selv genererer og viser på siden — kopieres én gang ind i PLC'ens System-side (§5.2), samme "vis nøglen én gang ved parring"-mønster som de fleste IoT-enheder bruger.
-2. Ved gemt konfiguration genstarter boardet, forbinder til det angivne netværk, og forlader AP-mode permanent (indtil evt. fabriksnulstilling igen, fx via en fysisk knap holdt inde ved boot — samme mønster som langt de fleste IoT-enheder).
-3. Herfra er boardet **udelukkende** styret via netværket: management-API'et (§4.2) kræver token fra nu af (§4.4), kun IP'er på firewall-allowlisten (§4.3) kan nå data-plan-portene, og PLC'en taler Modbus TCP til dataplan-portene (§4.1).
-4. **Ingen anden lokal UI eksisterer** — intet web-dashboard, ingen CLI, ingen mulighed for at ændre kanal-config lokalt på boardet. Dette er bevidst: det forhindrer "config drift" (to steder der begge tror de har den autoritative konfiguration) og holder boardets egen angrebsflade og kodemængde minimal.
-5. Fabriksnulstilling (fysisk knap, holdt X sekunder ved boot) rydder WiFi-credentials, management-API-token OG firewall-allowlist samtidig, og går tilbage til AP-mode — ét entydigt, forudsigeligt nulpunkt (kanal-konfiguration kan efter samme princip enten bevares eller ryddes, anbefaling: ryd begge).
+**Mekanisme: seriel CLI over USB — IKKE en midlertidig WiFi AP-mode + webside.** En tidligere revision af dette afsnit foreslog det velkendte IoT-mønster (board starter sit eget, midlertidige access point med en indbygget webside). Det er droppet til fordel for en seriel CLI over boardets USB-forbindelse (samme fysiske port som bruges til at flashe/debugge firmwaren, §3.6) — se §3.4.1 for kommandoerne. Begrundelse:
+- Seriel/USB er et fysisk UAFHÆNGIGT kanal fra WiFi — løser "hønen og ægget"-problemet uden nogen mode-switching-logik overhovedet (ingen AP→station-overgang, ingen captive portal, ingen WiFi-scan-UI, ingen indlejret HTML/HTTP-server kun til bootstrap). Enklere firmware, mindre kode, mindre angrebsflade.
+- Kræver FYSISK adgang til boardet (USB-kabel) — strengt strammere end en WiFi AP'ers trådløse rækkevidde, og matcher §8's princip om at minimere angrebsfladen for et fabriksnyt, endnu ikke autentificeret board: der er nu INGEN trådløs angrebsflade overhovedet før første provisionering.
+- **Bevidst afvejning:** en installatør skal have en bærbar/PC med en seriel-terminal ved boardet under opsætning, ikke kun en telefon på en midlertidig WiFi-forbindelse. Vurderet acceptabelt, da boardet under alle omstændigheder kræver fysisk montering/kabling ved samme besøg, og fordi CLI'en (modsat den droppede AP-mode-side) forbliver tilgængelig permanent, ikke kun ved fabriksnyt board — se §3.4.1's punkt om genbrug til recovery.
 
-### 3.4.1 Provisioning-websidens GUI — præcis felt-for-felt-specifikation
+**Flow:**
+1. **Boardet lytter altid på USB-seriel fra boot** — ingen særlig "opsætningstilstand" at gå ind i eller ud af (modsat AP-mode, som skulle startes/forlades eksplicit). Et fabriksnyt/fabriksnulstillet board har blot ingen gemt WiFi-config endnu, så det forsøger ingen WiFi-forbindelse før `connect` er kørt via CLI'en.
+2. Installatøren/udvikleren forbinder en seriel-terminal (fx PlatformIOs `pio device monitor`, PuTTY, Arduino Serial Monitor) og indtaster SSID, adgangskode (eller `wifi open`), evt. statisk IP, og PLC'ens IP-adresse (§3.4.1).
+3. Ved `connect` anvendes felterne, boardet forsøger en rigtig forbindelse og genstarter ved succes. Et nygenereret management-API-token udskrives ÉN gang (samme "vis nøglen én gang ved parring"-mønster som de fleste IoT-enheder, blot over seriel i stedet for web) — kopieres ind i PLC'ens System-side (§5.2).
+4. Herfra er boardet **udelukkende** styret via netværket for DRIFT: management-API'et (§4.2) kræver token fra nu af (§4.4), kun IP'er på firewall-allowlisten (§4.3) kan nå data-plan-portene, og PLC'en taler Modbus TCP til dataplan-portene (§4.1). Den serielle CLI forbliver dog tilgængelig ved fysisk USB-adgang — se §3.4.1's recovery-brug.
+5. **Ingen anden lokal UI for DRIFT eksisterer** — intet web-dashboard, ingen mulighed for at ændre kanal-config, firewall-regler (udover PLC-IP'en CLI'en kan seede) eller trigge OTA lokalt på boardet. Dette er bevidst: det forhindrer "config drift" for de mange driftsparametre og holder boardets angrebsflade og kodemængde minimal. Den serielle CLI er bevidst snævert afgrænset til NETOP bootstrap-felterne (§3.4.1) — aldrig kanal-/firewall-udover-PLC-IP/OTA-konfiguration.
+6. Fabriksnulstilling: `factory-reset confirm` via CLI'en (§3.4.1) ELLER en fysisk knap holdt inde ved boot (alternativ hardware-vej hvis ingen seriel-terminal er ved hånden), begge rydder WiFi-credentials, management-API-token OG firewall-allowlist samtidig — ét entydigt, forudsigeligt nulpunkt (kanal-konfiguration kan efter samme princip enten bevares eller ryddes, anbefaling: ryd begge).
 
-Dette er den ENESTE grafiske brugerflade boardet nogensinde selv viser (§0) — den skal derfor dække **alt** der kræves for at bringe et fabriksnyt board til fuldt driftsklar tilstand, i ét besøg, uden en efterfølgende "runde 2"-side. Siden serveres statisk fra boardets AP-mode-IP (`192.168.4.1`), som én enkelt, selvstændig HTML-side (samme "indlejret, gzippet HTML i firmwaren"-mønster som PLC'ens egne `include/generated_web/*_html_gz.h` — ingen eksterne CDN-afhængigheder, da boardet i AP-mode ikke har internetadgang). Design den mobilvenlig — installatøren står typisk ved et el-skab med en telefon, ikke en bærbar.
+### 3.4.1 Seriel provisioning-CLI — præcis kommando-for-kommando-specifikation
 
-**Formularfelter (i rækkefølge):**
+Dette er den ENESTE brugerflade boardet nogensinde selv viser (§0) — over USB-seriel, samme port som bruges til at flashe/debugge firmwaren (§3.6). Den skal derfor dække **alt** der kræves for at bringe et fabriksnyt board til fuldt driftsklar tilstand. Linjebaseret, mellemrums-separerede tokens, `"citationstegn"` for værdier med mellemrum (fx en SSID med mellemrum) — kommando-ord er IKKE versalfølsomme, værdier (SSID/password) ER det.
 
-| # | Felt | Type | Påkrævet | Validering/adfærd |
-|---|---|---|---|---|
-| 1 | WiFi-netværk (SSID) | Dropdown (scannet liste) + "Andet…"-mulighed for skjult SSID | Ja | Boardet scanner tilgængelige netværk ved sidens indlæsning (samme UX som de fleste IoT-opsætningssider) |
-| 2 | WiFi-adgangskode | Password-felt (med "vis"-øje-ikon) | Ja (med mindre åbent netværk) | Ingen client-side styrke-validering nødvendig — boardet opdager selv en forkert adgangskode ved forbindelsesforsøget (se fejltilstande nedenfor) |
-| 3 | Netværkstype | Radioknapper: "DHCP (anbefalet)" / "Statisk IP" | Ja (default DHCP) | Ved "Statisk IP" foldes felt 4-6 ud |
-| 4 | IP-adresse (kun ved statisk) | Tekstfelt | Betinget | Standard IPv4-format-validering |
-| 5 | Subnetmaske (kun ved statisk) | Tekstfelt | Betinget | Standard IPv4-format-validering |
-| 6 | Gateway (kun ved statisk) | Tekstfelt | Betinget | Standard IPv4-format-validering |
-| 7 | PLC'ens IP-adresse | Tekstfelt | **Ja** | Seedes direkte ind i firewall-allowlisten (§4.3) — boardets data-plan-porte er ubrugelige indtil denne er sat korrekt. Kort hjælpetekst under feltet: "Find PLC'ens IP under System → Netværk" |
-| — | **Forbind**-knap | Submit | — | Deaktiveres under indsendelse (undgå dobbelt-submit), viser spinner/statustekst |
+**Kommandoer:**
 
-**Efter vellykket forbindelse (ny sidevisning, samme AP endnu ikke lukket, eller en "sidste besked" hvis AP allerede er lukket — vælg det der er nemmest at implementere robust):**
-
-| Element | Indhold |
+| Kommando | Beskrivelse |
 |---|---|
-| Statusbesked | "Forbundet til [SSID]. Boardets IP er nu: [IP]." |
-| **Management-API-token** | Vises i klartekst, med en "kopiér"-knap, og en tydelig advarsel: **"Denne nøgle vises kun én gang. Kopiér den nu og indsæt den i PLC'ens System-side under 'Modbus Expansion Boards'."** (§5.2) — ingen "vis igen senere"-mulighed, hverken via denne side (som forsvinder når AP-mode lukker) eller via management-API'et selv (tokenet er write-only fra det øjeblik det er genereret, se §4.4) |
-| Næste-skridt-tekst | Kort, nummereret: "1) Gå til PLC'ens System-side. 2) Tilføj et nyt board med IP + tokenet ovenfor. 3) Konfigurér kanalerne derfra." |
+| `wifi ssid <navn>` | SSID for produktionsnetværket (1-32 tegn, 802.11-grænsen) |
+| `wifi pass <kode>` | WPA2-adgangskode (8-63 tegn, WPA2-PSK-passphrase-grænserne) |
+| `wifi open` | Marker netværket som åbent (intet password) — alternativ til `wifi pass` |
+| `wifi mode dhcp\|static` | Netværkstype, default `dhcp` |
+| `wifi ip/mask/gw <a.b.c.d>` | Kun påkrævet ved `wifi mode static` |
+| `plc ip <a.b.c.d>` | PLC'ens IP-adresse — seedes ind i firewall-allowlisten (§4.3). Boardets data-plan-porte er ubrugelige indtil denne er sat korrekt |
+| `show` | Viser hvad der er sat indtil videre — password vises ALDRIG i klartekst (kun `********`/`(åbent)`), samme hemmeligheds-disciplin som management-API-tokenet (§4.4) |
+| `connect` | Anvender de indtastede felter, forsøger en rigtig forbindelse, og genstarter boardet ved succes. Afvises med en forklarende fejl (hvilke(t) felt(er) mangler) hvis påkrævede felter ikke er sat — ingen generisk "noget gik galt" |
+| `factory-reset confirm` | Samme effekt som en fysisk fabriksnulstillings-knap (§3.4 punkt 6) — kræver det eksplicitte `confirm`-argument for at undgå et utilsigtet tryk/enter |
+| `help` | Kommando-oversigt |
 
-**Fejltilstande siden skal håndtere eksplicit (ikke bare en generisk "noget gik galt"):**
-- Forkert WiFi-adgangskode → boardet forbliver i AP-mode, siden viser en tydelig fejl, formularen forbliver udfyldt (undtagen adgangskode-feltet af sikkerhedsvaner) så installatøren kun skal rette ét felt.
-- Netværk fundet, men PLC-IP'en (felt 7) ikke kan pinges/nås fra det nye netværk ved forbindelsestest → tillad alligevel at gemme (boardet kan ikke vide om PLC'en er tændt endnu), men vis en advarsel, ikke en blokerende fejl.
-- WiFi-timeout (SSID forsvinder, forkert kanal, osv.) → efter en rimelig timeout (fx 30 sek.), fald automatisk tilbage til AP-mode med en fejlbesked, i stedet for at hænge på "forbinder…" for evigt.
+**CLI'en er altid tilgængelig, ikke kun ved fabriksnyt board:** i modsætning til en engangs-AP-mode kræver seriel CLI ingen særlig "opsætningstilstand" — den lytter på USB fra boot, uanset om boardet allerede er forbundet og i drift. Det giver en indbygget recovery-vej hvis WiFi-adgangskoden ændres i felten (kør `wifi pass <ny kode>` + `connect` igen) uden at skulle igennem en fuld fabriksnulstilling (som også unødvendigt ville rydde management-token og firewall-allowlist).
 
-**Bevidst UDELADT fra denne side (jf. §0/§3.4 punkt 4):** boardets navn/label, kanal-konfiguration, baudrate/parity, firewall-liste udover PLC'ens ene IP, og alt andet driftsrelateret — det ville skabe en anden autoritativ kilde end PLC'ens System-side (§5.2) og er bevidst undladt, ikke glemt.
+**Efter et vellykket `connect`:** samme "vises kun én gang"-regel som ved første opsætning — et (gen)genereret management-API-token udskrives én gang over seriel med en tydelig advarsel om at det ikke kan hentes igen bagefter. Ved en REN WiFi-credential-opdatering (boardet er allerede provisioneret og har allerede et token) regenereres tokenet IKKE — kun ved provisionering af et fabriksnyt/fabriksnulstillet board uden eksisterende token.
+
+**Fejltilstande CLI'en skal håndtere eksplicit (ikke bare en generisk "noget gik galt"):**
+- Forkert WiFi-adgangskode → `connect` fejler, boardet forbliver på USB-CLI'en (ingen reboot), en tydelig fejlbesked udskrives, tidligere indtastede felter bevares i CLI'ens tilstand (undtagen password, af sikkerhedsvaner) så kun ét felt skal rettes.
+- PLC-IP'en kan ikke pinges/nås fra det nye netværk ved forbindelsestest → tillad alligevel at forbinde (boardet kan ikke vide om PLC'en er tændt endnu), men udskriv en advarsel, ikke en blokerende fejl.
+- WiFi-timeout (SSID forsvinder, forkert kanal, osv.) → efter en rimelig timeout (fx 30 sek.), afbryd forsøget med en fejlbesked i stedet for at hænge på "forbinder…" for evigt; CLI'en forbliver tilgængelig til et nyt forsøg.
+
+**Bevidst UDELADT fra denne CLI** (jf. §0/§3.4 punkt 5): boardets navn/label, kanal-konfiguration, baudrate/parity, firewall-liste udover PLC'ens ene IP, OTA, og alt andet driftsrelateret — det ville skabe en anden autoritativ kilde end PLC'ens System-side (§5.2) og er bevidst undladt, ikke glemt.
+
+**Implementering:** kommando-parsing/validering (tokenizer, felt-validering, tilstand indtil `connect`/`factory-reset` udløses) er 100% hardware-uafhængig og ligger i `lib/provisioning_cli/` (native-testbar, `pio test -e native`) — selve NVS-skrivningen, WiFi-forbindelsesforsøget og reboot sker i `src/provisioning.cpp` (ESP32-specifik, kræver fysisk hardware at teste fuldt ud), som kalder ind i `lib/provisioning_cli/`'s resultat. Samme adskillelse som `lib/modbus_pdu/` (protokol-logik) vs. den kommende `modbus_channel.cpp` (hardware-udførelse).
 
 ### 3.5 NVS-konfiguration og schema-versionering — en dyrekøbt lektion fra selve dette designs forhistorie
 
@@ -351,7 +357,7 @@ Expansion-boardets kanal-task modtager PDU'en + det udpakkede `Unit ID` (→ RTU
 
 ### 4.2 Management-plan: REST-API (port 8080)
 
-**Auth:** alle endpoints (undtagen selve provisioning-siden, som kun findes i AP-mode, §3.4) kræver header `Authorization: Bearer <token>` — token etableret under provisionering, gemt i NVS på boardet og i PLC'ens System-side-config (samme mønster som PLC'ens egen ACL/RBAC-hemmeligheder). Se §4.4.
+**Auth:** ALLE endpoints uden undtagelse kræver header `Authorization: Bearer <token>` — provisionering sker over seriel (§3.4), ikke HTTP, så der er intet unauthenticated endpoint at holde styr på her. Token etableret under seriel provisionering (§3.4.1), gemt i NVS på boardet og i PLC'ens System-side-config (samme mønster som PLC'ens egen ACL/RBAC-hemmeligheder). Se §4.4.
 
 **Fejl-/svarformat**, samme stil som PLC'ens egen REST-API:
 ```json
@@ -440,12 +446,12 @@ Rå baudrate-værdi (ikke et encoded index som i et tidligere register-baseret u
 **Kritiske sikkerhedsregler for implementeringen (undgå at boardet kan bricke sig selv):**
 1. **Allowlisten dækker KUN portene 502-509 (data-plan) — ALDRIG management-API-porten selv.** Management-API'et er allerede beskyttet af sin egen Bearer-token-auth (§4.4); hvis det også blev filtreret af allowlisten, kunne én fejlkonfigureret regel afskære PLC'en fra selv at kunne rette fejlen — kun en fysisk fabriksnulstilling ville kunne redde boardet igen.
 2. **Allowlisten kan aldrig sættes til en tom liste via `PUT`** — boardet validerer at mindst 1 IP altid er i listen. Et forsøg på at sende en tom liste afvises med en tydelig fejl, fremfor at blive accepteret og utilsigtet spærre ALT.
-3. **Allowlisten seedes under provisionering (§3.4) med PLC'ens IP**, indtastet manuelt på AP-mode-siden — boardet er derfor ALDRIG i en tilstand hvor data-planet er åbent for hele netværket efter provisionering, uden at nogen eksplicit har sat det sådan.
+3. **Allowlisten seedes under provisionering (§3.4) med PLC'ens IP**, indtastet manuelt via den serielle CLI (§3.4.1) — boardet er derfor ALDRIG i en tilstand hvor data-planet er åbent for hele netværket efter provisionering, uden at nogen eksplicit har sat det sådan.
 4. **Fabriksnulstilling rydder allowlisten** sammen med WiFi/token (§3.4, punkt 5) — konsistent "ét nulpunkt"-princip.
 
 ### 4.4 Autentificering og sikkerhed
 
-- **Management-planet (REST, §4.2):** Bearer-token-auth på ALLE endpoints (§3.4 etablerer tokenet under provisionering) — samme mønster som PLC'ens egen REST-API (`src/api_handlers.cpp`s auth-makroer). Manglende/ugyldigt token besvares med `401`, samme konvention som PLC'en allerede bruger. Tokenet er systemets mest kritiske hemmelighed (kompromitteres det, kan en angriber ændre firewall-regler, kanal-config OG uploade vilkårlig firmware via OTA) — det bør derfor kunne roteres via samme fysiske AP-mode-mekanisme som resten af provisioneringen, ikke kun sættes én gang for altid.
+- **Management-planet (REST, §4.2):** Bearer-token-auth på ALLE endpoints (§3.4 etablerer tokenet under seriel provisionering, §3.4.1) — samme mønster som PLC'ens egen REST-API (`src/api_handlers.cpp`s auth-makroer). Manglende/ugyldigt token besvares med `401`, samme konvention som PLC'en allerede bruger. Tokenet er systemets mest kritiske hemmelighed (kompromitteres det, kan en angriber ændre firewall-regler, kanal-config OG uploade vilkårlig firmware via OTA) — det bør derfor kunne roteres via samme serielle CLI-mekanisme som resten af provisioneringen, ikke kun sættes én gang for altid.
 - **Data-planet (Modbus TCP, §4.1):** ingen protokol-indbygget auth (industristandard-begrænsning, ikke en svaghed specifik for dette design) — beskyttet af to lag: netværkssegmentering (dedikeret VLAN, eller et direkte punkt-til-punkt-link mellem PLC og board) OG IP-allowlist-firewallet (§4.3). Ingen af de to alene er vandtæt (segmentering kan fejlkonfigureres i felten; en allowlist beskytter ikke mod IP-spoofing på samme segment) — sammen giver de reelt forsvar-i-dybden.
 - **Forbindelses-begrænsning** (maks. N samtidige TCP-forbindelser pr. data-port) anbefales som robusthedsforanstaltning mod utilsigtet socket-pool-udmattelse fra en tilladt, men fejlkonfigureret klient.
 - **Cleartext-forbehold:** management-API'et kører som udgangspunkt almindelig HTTP (matcher PLC'ens egen etablerede REST-stil) — Bearer-tokenet transporteres derfor i klartekst på netværket. Det er en accept­abel risiko UNDER FORUDSÆTNING AF at netværkssegmenteringen ovenfor faktisk overholdes; TLS er en mulig fremtidig hærdning, men ikke et krav for v1.
@@ -499,7 +505,7 @@ Meget af Master #2-arbejdet, der blev rullet tilbage i FEAT-408, er **stadig væ
 1. **Board-liste** (0-8 rækker, "Tilføj board"-knap):
    - Navn/label (fritekst, til visning — fx "Skab 3, RS485-panel")
    - IP-adresse (eller hostname)
-   - Management-token (indtastes én gang ved tilføjelse — kopieret fra boardets AP-mode-side, §3.4 — vises maskeret bagefter, samme UX-mønster som andre hemmeligheder i denne repos UI)
+   - Management-token (indtastes én gang ved tilføjelse — kopieret fra boardets serielle CLI-output ved provisionering, §3.4.1 — vises maskeret bagefter, samme UX-mønster som andre hemmeligheder i denne repos UI)
    - "Test forbindelse"-knap → autentificeret `GET /api/status` mod boardets management-port, viser firmware-version/uptime/aktive kanaler inline
    - "Opdatér firmware"-knap → uploader en `.bin`-fil via `POST /api/ota`, viser fremgang via periodisk poll af `GET /api/ota/status`, tilbyder reboot når status er `success`
    - "Fjern board"-knap
@@ -567,10 +573,10 @@ Fundet ved en kritisk analyse af dette dokument mod PLC-projektets egne, allered
 
 - **Management-planet (REST, §4.2)** er beskyttet af Bearer-token-auth fra dag 1 (§4.4) — token udstedes under provisionering (§3.4) og skal behandles som en hemmelighed på niveau med PLC'ens egne ACL-adgangskoder i PLC-sidens konfigurationslager.
 - **Data-planet (Modbus TCP, §4.1)** har fortsat ingen protokol-auth (§4.4) — beskyttet af netværkssegmentering OG et board-lokalt IP-allowlist (§4.3), som forsvar-i-dybden mod netop det scenarie hvor segmenteringen fejler eller omgås i felten (en almindelig fejlkilde i virkelige installationer).
-- WiFi-provisioning-AP'et (§3.4) er stadig den eneste reelt "åbne" angrebsflade (et fabriksnyt board før første opsætning) — en simpel adgangskode (ikke åbent netværk) og en **automatisk timeout** ud af AP-mode (fx 10 minutter uden modtaget konfiguration) anbefales.
+- **Ingen trådløs angrebsflade for et fabriksnyt board:** modsat en tidligere overvejet, droppet WiFi AP-mode-tilgang (§3.4) kræver den serielle provisioning-CLI (§3.4.1) FYSISK USB-adgang til boardet — der er derfor intet at angribe over netværket før boardet selv har valgt at forbinde sig, uanset boardets tilstand (fabriksnyt eller ej). Den fysiske USB-port er selve tillidsgrænsen her, på linje med den fysiske fabriksnulstillings-knap (§3.4 punkt 6).
 - **Forbindelses-begrænsning** på Modbus TCP-portene (§4.4) bevares som robusthedsforanstaltning mod utilsigtet socket-pool-udmattelse.
 - **OTA (§4.2) er den mest sikkerhedskritiske enkelt-funktion** — en kompromitteret Bearer-token giver ikke bare adgang til config, men til at erstatte hele boardets firmware. Der er ingen ekstra beskyttelse udover selve token-auth'en for dette specifikke endpoint i v1 — overvej signeret firmware (verificér en signatur før aktivering af den uploadede binary) som en fremtidig hærdning, hvis boardet forventes drevet i miljøer udenfor et fuldt tillidsforhold til PLC-siden.
-- **Token-rotation:** da tokenet er den centrale hemmelighed for hele management-planet (config + firewall + OTA), bør det kunne roteres/regenereres via samme fysiske AP-mode-mekanisme som resten af provisioneringen (§3.4), ikke kun sættes én gang for altid ved fabriksopsætning.
+- **Token-rotation:** da tokenet er den centrale hemmelighed for hele management-planet (config + firewall + OTA), bør det kunne roteres/regenereres via samme serielle CLI-mekanisme som resten af provisioneringen (§3.4.1), ikke kun sættes én gang for altid ved fabriksopsætning.
 
 ---
 
@@ -593,7 +599,7 @@ Fundet ved en kritisk analyse af dette dokument mod PLC-projektets egne, allered
 
 ## 10. Acceptance-kriterier (test før overlevering til PLC-integration)
 
-- [ ] WiFi-provisioning (§3.4): et fabriksnyt board kan sættes på et produktionsnetværk, få udstedt et management-token og få seedet firewall-allowlisten, udelukkende via AP-mode-flowet, uden andre lokale indtastninger.
+- [ ] WiFi-provisioning (§3.4): et fabriksnyt board kan sættes på et produktionsnetværk, få udstedt et management-token og få seedet firewall-allowlisten, udelukkende via den serielle CLI (§3.4.1), uden andre lokale indtastninger.
 - [ ] Kanal-auto-detektion (§2.2.2): på mindst to forskellige hardware-varianter (fx 2-kanals og 8-kanals bestykning, samme firmware-binary på begge) rapporterer `GET /api/status` det korrekte `active_channels`-tal, og kald mod ikke-eksisterende kanal-indekser svarer konsekvent `404`.
 - [ ] Alle 8 kanaler kan konfigureres uafhængigt (forskellig baudrate/parity pr. kanal) udelukkende via `PUT /api/channels/{n}/config` fra en autentificeret, ekstern klient (simulerer PLC'en), og verificeres ved `GET` tilbage.
 - [ ] Management-API'et afviser ALLE kald uden gyldigt Bearer-token med `401`, på tværs af samtlige endpoints (§4.2).
