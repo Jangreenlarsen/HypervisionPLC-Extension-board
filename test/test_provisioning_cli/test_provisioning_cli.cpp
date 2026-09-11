@@ -137,6 +137,57 @@ void test_plc_ip_missing_argument(void) {
   TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
 }
 
+void test_rest_user_sets_state(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest user admin", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_TRUE(state.has_rest_user);
+  TEST_ASSERT_EQUAL_STRING("admin", state.rest_user);
+}
+
+void test_rest_pass_sets_state(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest pass MyRestPass1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_TRUE(state.has_rest_pass);
+  TEST_ASSERT_EQUAL_STRING("MyRestPass1", state.rest_pass);
+}
+
+void test_rest_pass_rejects_too_short(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest pass short", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+  TEST_ASSERT_FALSE(state.has_rest_pass);
+}
+
+void test_rest_pass_confirmation_never_echoes_password(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest pass MyRestPass1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "MyRestPass1"), "REST-password laakkede i klartekst i bekraeftelsesbeskeden");
+}
+
+void test_rest_pass_never_leaks_in_show(void) {
+  mb_provisioning_apply_line(&state, "rest pass MyRestPass1", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "MyRestPass1"), "REST-password laakkede i klartekst i show-output");
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest.pass: ********"));
+}
+
+void test_rest_missing_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_rest_unknown_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest bogus value", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_UNKNOWN_COMMAND, r);
+}
+
+void test_status_action(void) {
+  // "status" delegerer selve indholdet til kaldstedet (uptime/heap/WiFi er
+  // runtime-data) — her verificeres kun at kommandoen genkendes korrekt.
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "status", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_STATUS, r);
+}
+
 void test_wifi_missing_subcommand(void) {
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "wifi", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
@@ -165,8 +216,16 @@ void test_show_action(void) {
   mb_provisioning_apply_line(&state, "wifi ssid Foo", msg, sizeof(msg));
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
-  TEST_ASSERT_NOT_NULL(strstr(msg, "ssid=Foo"));
-  TEST_ASSERT_NOT_NULL(strstr(msg, "mode=dhcp"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi.ssid: Foo"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi.mode: dhcp"));
+}
+
+void test_show_is_multiline(void) {
+  // Jan: "alle [beskeder] skal IKKE komme paa en linje" — verificerer at
+  // show reelt bruger \r\n mellem felter, ikke bare formaterer alt paa ét.
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "\r\n"));
 }
 
 void test_show_never_leaks_password(void) {
@@ -200,8 +259,21 @@ void test_help_action(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "show"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "connect"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "factory-reset confirm"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest user"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest pass"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "status"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "version"));
-  TEST_ASSERT_NOT_NULL(strstr(msg, "help"));
+  // Den SIDSTE linjes fulde tekst, ikke kun ordet "help" (som ogsaa optraeder
+  // i "wifi ssid <navn> for help"-agtige delstrenge andetsteds) — hvis
+  // MB_PROV_MSG_MAX_LEN er for lille, er dette den foerste streng der
+  // mangler, praecis den klasse bug BUGS.md beskriver.
+  TEST_ASSERT_NOT_NULL(strstr(msg, "help: denne kommandoliste"));
+}
+
+void test_help_is_multiline(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "help", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_HELP, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "\r\n"));
 }
 
 void test_version_action_without_build_flags(void) {
@@ -326,15 +398,25 @@ int main(int argc, char **argv) {
   RUN_TEST(test_wifi_ip_rejects_invalid);
   RUN_TEST(test_plc_ip_sets_state);
   RUN_TEST(test_plc_ip_missing_argument);
+  RUN_TEST(test_rest_user_sets_state);
+  RUN_TEST(test_rest_pass_sets_state);
+  RUN_TEST(test_rest_pass_rejects_too_short);
+  RUN_TEST(test_rest_pass_confirmation_never_echoes_password);
+  RUN_TEST(test_rest_pass_never_leaks_in_show);
+  RUN_TEST(test_rest_missing_subcommand);
+  RUN_TEST(test_rest_unknown_subcommand);
+  RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);
 
   RUN_TEST(test_command_words_are_case_insensitive);
 
   RUN_TEST(test_show_action);
+  RUN_TEST(test_show_is_multiline);
   RUN_TEST(test_show_never_leaks_password);
   RUN_TEST(test_wifi_pass_confirmation_never_echoes_password);
   RUN_TEST(test_help_action);
+  RUN_TEST(test_help_is_multiline);
   RUN_TEST(test_version_action_without_build_flags);
   RUN_TEST(test_empty_line);
   RUN_TEST(test_trailing_crlf_is_stripped);

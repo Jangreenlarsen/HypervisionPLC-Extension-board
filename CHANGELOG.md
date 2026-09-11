@@ -4,6 +4,24 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.5.0 build 0005] — 2026-09-11 — CLI-udvidelse (multi-linje, REST-auth, status, historik) + 3 designbeslutninger
+
+**Designdokument-revision (EXPANSION_BOARD_DESIGN.md), 3 beslutninger bekræftet af Jan:**
+1. **Variant A: 2 kanaler** (nyt §2.0) — første hardware-revision bruger ESP32's egne 2 frie UART-periferier direkte (UART1/UART2), ikke eksterne SPI-UART-expander-chips. Begrundet eksplicit mod §2.1's FEAT-408-regel: kun 2-3 UART-periferier aktive på en FRISK chip (UART0=CLI, UART1/UART2=kanaler) er indenfor den allerede-dokumenterede "1-2 kanaler uden dedikeret afprøvning er OK"-margin — IKKE en gentagelse af FEAT-408s "3. periferi på en chip der allerede havde 2 aktive"-scenarie. Forudsætning: ESP32 UDEN PSRAM (erratummet er PSRAM-cache-specifikt). Variant B (8 kanaler, SPI-expander) bevares i dokumentet som senere/større udgave.
+2. **Dual REST-auth** (§4.4) — Bearer-token (uændret) OG HTTP Basic Auth (nyt, brugernavn/adgangskode sat via CLI) accepteres BEGGE, ikke den ene i stedet for den anden.
+3. **Diagnostisk Modbus read/write via REST** (§4.2, nye endpoints `/api/channels/{n}/read`+`/write`) — et SUPPLEMENT til ad-hoc test/fejlsøgning (curl/Postman), ikke en erstatning for Modbus TCP-data-planet (§4.1), som forbliver PLC'ens høj-frekvente driftsvej (§1.3's JSON-overhead-analyse står stadig).
+4. §4.1 udvidet med et konkret register-mapping-eksempel: port vælger kanal, MBAP `Unit ID` vælger RTU-slave-adresse, PDU'en (og dermed registeradressen) rejser uændret igennem — boardet omnummererer intet.
+
+**CLI-udvidelse (Jan):**
+- **Multi-linje output** — `show`/`help` printer nu ét felt/én kommando pr. linje (`\r\n`-separeret) i stedet for pipe-separeret étlinjetekst. Ny `append_line()`-hjælper i `lib/provisioning_cli/provisioning_cli.cpp` (overflow-sikker mod `snprintf`s returværdi, som kan overstige den faktiske skrevne længde ved afkortning). `MB_PROV_MSG_MAX_LEN`: 192 → 1024 (fulde help-tekst målt til 717 bytes efter udvidelsen — god margin efter v0.4.0's afkortnings-bug).
+- **`rest user <navn>` / `rest pass <kode>`** — REST-API Basic Auth-credentials, nye felter i `mb_provisioning_state_t`. Password lækker aldrig i klartekst (samme disciplin som WiFi-password).
+- **`status`** — ny kommando, `PROV_ACTION_STATUS`-resultatkode. Selve indholdet (uptime, fri heap, WiFi-status/IP/RSSI) sammensættes i `src/provisioning.cpp` (runtime-data `lib/` ikke har adgang til).
+- **Kommando-historik** — op/ned-piletaster, 8-entry ringbuffer (`src/provisioning.cpp`), ANSI-escape-sekvens-genkendelse (`ESC [ A`/`ESC [ B`), skærm-redraw ved recall. Kun historik-navigation understøttes (ingen cursor-inde-i-linjen-redigering).
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.h/.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp` (34 nye tests, 67 i alt).
+
+**Verificeret på fysisk hardware:** scriptet pyserial-test — multi-linje-output (`\r\n`-optælling), `rest`/`status`-kommandoer, OG kommando-historik med faktisk afsendte raw ANSI-escape-byte-sekvenser (`\x1b[A`/`\x1b[B`) og verifikation af den redrawede linje samt korrekt genudførelse efter Enter. `pio test -e native` → 67/67 bestået.
+
 ## [0.4.0 build 0004] — 2026-09-11 — Seriel CLI koblet til rigtig hardware (første kørsel på fysisk board)
 
 **Version/build i selve firmwaren (Jan bemærkede at firmwaren ikke viste sit eget versionsnummer noget sted):** `version.json` var hidtil kun læst af dokumentation/commit-beskeder — firmwaren selv anede ikke sin egen version. `extract_version.py` (PlatformIO `extra_scripts`, kun `esp32dev`-target'et) injicerer nu `version.json`s `version`+`build` som `FW_VERSION`/`FW_BUILD`-compile-time-defines ved hver build, så `version.json` forbliver den ENESTE kilde (CLAUDE.md regel 1) også for den kørende firmware. Vises i boot-banneret og via en ny `version`-kommando. `native`-miljøet (unit-tests) får dem bevidst IKKE injiceret — testen verificerer fallback-teksten, ikke et hardkodet versionsnummer der ellers skulle opdateres ved hver bump.

@@ -125,11 +125,46 @@ Designet skalerer på to uafhængige niveauer:
 
 ## 2. Low-Level Design — Expansion Board Hardware
 
-### 2.1 Kritisk designregel (direkte lektion fra FEAT-408)
+### 2.0 To hardware-varianter — Variant A (2 kanaler, første revision) og Variant B (8 kanaler, senere)
+
+**Beslutning (revideret):** Boardet bygges i to trin. **Variant A** — beskrevet i dette afsnit — bruger gateway-MCU'ens (ESP32) egne resterende **2 frie interne UART-periferier** direkte, uden UART-expander-chips. Dette er den FØRSTE hardware-revision og er bevidst simplere/billigere: ingen SPI-driver til eksterne expander-chips, ingen modulær 1-8-bestykning (§2.2.2 gælder ikke for Variant A). **Variant B** (§2.1-§2.2.2 nedenfor, uændret) — op til 8 kanaler via eksterne UART-expander-ICs over SPI — bevares i dokumentet som en senere, større udgave, hvis 2 kanaler pr. board viser sig utilstrækkeligt i praksis.
+
+**Hvorfor 2 kanaler via intern UART er sikkert (og ikke gentager FEAT-408s fejl):** §2.1's regel forbyder EKSPLICIT kun "mere end 1-2 kanaler uden dedikeret afprøvning" — FEAT-408s heap-korruption opstod ved at aktivere en 3. samtidig UART-periferi (Slave + Master #1 var allerede aktive, og forsøget på en Master #2 var den udløsende 3. periferi) på PLC'ens ESP32-WROVER-chip (med PSRAM — roden var en PSRAM-cache/interrupt-erratum). Expansion-boardets gateway-MCU er en FRISK chip: kun `Serial`/UART0 er i brug (den serielle provisioning-CLI, §3.4), så at aktivere UART1+UART2 direkte er periferi #2 og #3 på DENNE chip — indenfor §2.1's eksplicit tilladte "1-2 kanaler"-margin, ikke en gentagelse af FEAT-408s "3. periferi"-scenarie. **Forudsætning:** vælg en gateway-MCU-variant UDEN PSRAM til Variant A (erratummet er PSRAM-cache-specifikt) — brug en almindelig ESP32 (ikke WROVER), medmindre PSRAM er nødvendig af andre grunde.
+
+**Variant A — arkitektur:**
+
+```
+┌───────────────────────────────┐
+│   Gateway-MCU (ESP32, IKKE     │
+│   WROVER/PSRAM — se ovenfor)    │
+│                                  │
+│   - WiFi (indbygget)             │
+│   - UART0: seriel provisioning-CLI (§3.4, USB) │
+│   - UART1: kanal 1 (RS232/RS485-switch pr. GPIO) │
+│   - UART2: kanal 2 (RS232/RS485-switch pr. GPIO) │
+│   - Modbus TCP data-server × 2 (§4.1, port 502-503) │
+│   - REST management-API (§4.2) — auth (§4.4) + OTA │
+└───────────────────────────────┘
+        │                    │
+  Kanal 1: RS232/RS485   Kanal 2: RS232/RS485
+  dual-populeret,        dual-populeret,
+  GPIO-valgt (§2.2.1's   GPIO-valgt (samme
+  princip, egen GPIO      princip)
+  i stedet for expander-
+  chip-GPIO)
+```
+
+Samme dual-populerings-princip som §2.2.1 (RS232 OG RS485-transceiver monteret pr. kanal, kun én aktiv ad gangen, valgt via en GPIO på selve ESP32'en i stedet for en UART-expander-chips GPIO) — resten af §2.2.1's elektriske beskrivelse (TX/RX-mux, DE/RE, connector) gælder uændret for Variant A, blot med "ESP32-GPIO" i stedet for "expander-GPIO" alle steder. §2.2.2's auto-detektion er ikke relevant for Variant A (kanaltallet er fast 2, ikke modulært bestykket) — men et board kan stadig rapportere om begge kanaler faktisk har en transceiver monteret (simpel til-stede-detektion, ikke SPI-baseret).
+
+**Konsekvens for resten af dokumentet:** hvor der står "8 kanaler"/"port 502-509"/"active_channels 1-8" nedenfor, gælder det Variant B — Variant A har fast **2 kanaler, port 502-503**. §1.4's "op til 8 boards × 8 kanaler = 64" bliver for Variant A "op til 8 boards × 2 kanaler = 16", indtil/hvis Variant B bygges.
+
+---
+
+### 2.1 Kritisk designregel (direkte lektion fra FEAT-408) — gælder Variant B
 
 > **Brug ALDRIG mikrocontrollerens interne UART-hardware-periferier til mere end 1-2 kanaler uden dedikeret afprøvning.** For 8 kanaler: brug **eksterne UART-expander-ICs over SPI**, hver med egen, isoleret interrupt-controller — undgå at flere højfrekvente UART-interrupt-kilder deler samme silicium-cache/heap-arkitektur som blev roden til FEAT-408s fejl.
 
-### 2.2 Anbefalet arkitektur: gateway-MCU + UART-expander-chips
+### 2.2 Anbefalet arkitektur: gateway-MCU + UART-expander-chips (Variant B, 8 kanaler)
 
 ```
                     ┌─────────────────────────────┐
@@ -345,9 +380,11 @@ Fejlkoder genbruges på tværs af begge planer — **1:1 med PLC'ens eksisterend
 
 Hvert board lytter på **9 TCP-porte** på sin egen IP: 8 Modbus TCP data-porte (502-509, §4.1) + 1 HTTP management-port (fx 8080, §4.2) — sidstnævnte er et helt andet protokol-lag (HTTP, ikke Modbus) og er **ikke** omfattet af firewall-allowlisten (§4.3), da den beskytter sig selv via auth (§4.4).
 
-### 4.1 Data-plan: Modbus TCP-gateway pr. kanal (port 502-509)
+### 4.1 Data-plan: Modbus TCP-gateway pr. kanal (port 502-509, Variant A: 502-503)
 
-**Ingen ny protokol at designe** — dette er standard Modbus TCP (IEC 61158), uændret. Port `502 + (n-1)` for kanal `n` (1-8). PLC'en er Modbus TCP-master mod hver port, med samme FC01-FC06/FC16-semantik som den allerede bruger mod sin egen, onboard Master #1 — kun MBAP-headeren (Transaction ID, Protocol ID=0, Length, Unit ID) er ny i forhold til RTU-framing, triviel at parse (7 bytes, ingen CRC nødvendig da TCP selv garanterer integritet).
+**Ingen ny protokol at designe** — dette er standard Modbus TCP (IEC 61158), uændret. Port `502 + (n-1)` for kanal `n` (Variant B: n=1-8; **Variant A (§2.0): n=1-2, altså port 502 og 503**). PLC'en er Modbus TCP-master mod hver port, med samme FC01-FC06/FC16-semantik som den allerede bruger mod sin egen, onboard Master #1 — kun MBAP-headeren (Transaction ID, Protocol ID=0, Length, Unit ID) er ny i forhold til RTU-framing, triviel at parse (7 bytes, ingen CRC nødvendig da TCP selv garanterer integritet).
+
+**Register-mapping — ingen oversættelse finder sted, gatewayen er transparent:** en registeradresse (fx holding register 100) rejser UÆNDRET fra PLC'ens Modbus TCP-forespørgsel til RTU-slavens frame — den ligger i PDU'en (function code + startadresse + antal), som er byte-for-byte identisk mellem RTU og TCP (kun rammen udenom, MBAP vs. adresse+CRC, er forskellig, jf. RETTELSEN nedenfor). Boardet omnummererer intet. De to koordinater der VÆLGER hvilken fysiske forbindelse en forespørgsel rammer er: (a) hvilken **port** PLC'en forbinder til (kanal), og (b) MBAP-headerens **Unit ID** (RTU-slavens adresse 1-247 på den buss). Eksempel (Variant A): læs holding register 100 fra slave-ID 5 på kanal 2 → PLC forbinder til `board_ip:503`, sender `Unit ID=5` + FC03/addr=100/qty=1 → boardet sender RTU-frame `[05][03][00 64][00 01][CRC]` ud ad kanal 2's UART.
 
 **RETTELSE (protokolfejl fundet ved analyse):** en tidligere version af dette afsnit påstod at `Unit ID` kunne sættes til en fast dummy-værdi fordi "slave-ID'et ligger i PDU'en" — det er faktuelt forkert. Hverken Modbus RTU's eller Modbus TCP's PDU (function code + data) indeholder noget slave-/enheds-ID; adressen ligger ALTID udenfor selve PDU'en (RTU: den indledende adresse-byte; TCP: `Unit ID`-feltet i MBAP-headeren). Korrekt, standard gateway-adfærd (præcis det Moxa/Advantech-gateways §1.3 selv refererer gør): **PLC'en sætter `Unit ID` til den ønskede fysiske slaves RTU-adresse (1-247, samme gyldighedsområde som `mb_error_code_t=6`, §4)**, og expansion-boardets kanal-task genbruger denne værdi 1:1 som adresse-byten i den udgående RTU-frame. Uden dette kan en RS485-kanal med flere slaver på samme bus (multi-drop, jf. §2.2.1) IKKE adresseres korrekt — kun ét slave-ID ville nogensinde kunne nås pr. kanal, hvilket modsiger designets egen multi-drop-antagelse og CLI/ST Logic-signaturen `MBX_READ_HOLDING(board, kanal, slave, addr)` (§5.1), som allerede forudsætter at `slave` rejser hele vejen ud til den fysiske bus.
 
@@ -368,18 +405,22 @@ Expansion-boardets kanal-task modtager PDU'en + det udpakkede `Unit ID` (→ RTU
 
 | Metode | Sti | Beskrivelse |
 |---|---|---|
-| GET | `/api/status` | Board-status: `api_version` (se nedenfor), `fw_version`, `uptime_s`, `heap_free_kb`, `active_channels` (**hardware-detekteret ved boot, §2.2.2 — 1-8, IKKE altid 8**), per-kanal fejl-bitmap |
-| GET | `/api/channels` | Liste af de faktisk tilstedeværende kanalers config+statistik (JSON-array, længde = `active_channels`, §2.2.2) |
+| GET | `/api/status` | Board-status: `api_version` (se nedenfor), `fw_version`, `uptime_s`, `heap_free_kb`, `active_channels` (**hardware-detekteret ved boot, §2.2.2 — 1-8, Variant A: altid 2, §2.0**), per-kanal fejl-bitmap |
+| GET | `/api/channels` | Liste af de faktisk tilstedeværende kanalers config+statistik (JSON-array, længde = `active_channels`) |
 | GET | `/api/channels/{n}` | Én kanals config+statistik (n=1..`active_channels`) — `n > active_channels` svarer `404` |
-| PUT | `/api/channels/{n}/config` | Sæt kanalens fulde konfiguration **atomisk** — hele objektet skal med i ét kald (samme "aldrig felt-for-felt"-princip som tidligere, nu håndhævet ved at endpointet kræver alle felter, ikke PATCH-semantik) |
+| PUT | `/api/channels/{n}/config` | Sæt kanalens fulde konfiguration **atomisk** (RS232/RS485-mode, baudrate, parity, stop-bits, timeout, §2.2.1) — hele objektet skal med i ét kald (samme "aldrig felt-for-felt"-princip som tidligere, nu håndhævet ved at endpointet kræver alle felter, ikke PATCH-semantik) |
+| POST | `/api/channels/{n}/read` | **Diagnostisk Modbus-læsning** (function code, slave-ID, adresse, quantity i request-body) — udfører ÉN synkron Modbus RTU-transaktion på kanal `n` og returnerer resultatet som JSON. IKKE data-planet — Modbus TCP (§4.1) forbliver den høj-frekvente vej for PLC'ens drift. Til ad-hoc test/diagnose (curl/Postman) uden at skulle åbne en Modbus TCP-forbindelse. Genbruger `lib/modbus_pdu/` til selve PDU'en. |
+| POST | `/api/channels/{n}/write` | **Diagnostisk Modbus-skrivning** — samme princip som `/read`, for FC05/06/16 |
 | POST | `/api/channels/{n}/reset-stats` | Nulstil én kanals tællere |
-| POST | `/api/stats/reset` | Nulstil alle aktive kanalers tællere (`active_channels`, §2.2.2) |
+| POST | `/api/stats/reset` | Nulstil alle aktive kanalers tællere |
 | POST | `/api/reboot` | Blødt, kontrolleret reboot |
 | GET | `/api/firewall` | Læs nuværende IP-allowlist (§4.3) |
 | PUT | `/api/firewall` | Erstat hele allowlisten atomisk (§4.3 — valideringsregler) |
 | POST | `/api/ota` | Upload ny firmware — rå binær body, **samme `--data-binary @firmware.bin`-mønster som PLC'ens egen OTA, IKKE multipart** (se `src/ota_handler.cpp` i denne repo for referenceimplementeringen) — skrives til inaktiv OTA-partition, verificeres, kræver eksplicit reboot (`POST /api/reboot`) for at aktivere |
 | GET | `/api/ota/status` | Seneste OTA-forsøgs status (`idle`/`in_progress`/`success`/`failed` + fejlbesked) |
 | POST | `/api/save` | Tving eksplicit gem til flash (normalt sker det automatisk ved hver config-skrivning — til fejlsøgning) |
+
+**Diagnostisk Modbus read/write vs. Modbus TCP data-planet (§4.1) — bevidst adskilt, ikke et alternativ til:** `/api/channels/{n}/read`/`write` er til enkeltstående test/fejlsøgning via et almindeligt REST-værktøj (curl/Postman), IKKE beregnet til høj-frekvent PLC-drift — JSON-overhead pr. transaktion er netop hvorfor §1.3 oprindeligt valgte Modbus TCP til data-planet, og den analyse står stadig. PLC'en skal fortsat tale Modbus TCP (§4.1) til port 502+ for sin faktiske drift; REST-endpointsene er et supplement til diagnose, ikke en erstatning.
 
 **API-versionering (protokol-kontrakten, ikke firmware-versionen):** `GET /api/status` inkluderer et separat `api_version`-heltal (start ved `1`, bumpes KUN ved et brydende skift i selve endpoint-kontrakten — nyt påkrævet felt, ændret feltbetydning, fjernet endpoint — aldrig ved en ren tilføjelse af et nyt, valgfrit felt). Da både PLC- og board-firmware nu kan OTA'es uafhængigt af hinanden (§4.2/§7), er dette den eneste måde PLC-siden kan opdage et board der kører en ældre/nyere kontrakt end forventet, FØR det fejler uforklarligt på et manglende/uventet felt — samme "envejs-dør"-tankegang som §3.5's NVS-schema-regel, blot anvendt på selve grænsefladen. PLC-sidens `expansion_api_client.cpp` (§5.2) bør logge en tydelig advarsel (ikke en stille fejl) hvis et boards `api_version` ikke matcher det, klienten er skrevet imod.
 
@@ -451,7 +492,13 @@ Rå baudrate-værdi (ikke et encoded index som i et tidligere register-baseret u
 
 ### 4.4 Autentificering og sikkerhed
 
-- **Management-planet (REST, §4.2):** Bearer-token-auth på ALLE endpoints (§3.4 etablerer tokenet under seriel provisionering, §3.4.1) — samme mønster som PLC'ens egen REST-API (`src/api_handlers.cpp`s auth-makroer). Manglende/ugyldigt token besvares med `401`, samme konvention som PLC'en allerede bruger. Tokenet er systemets mest kritiske hemmelighed (kompromitteres det, kan en angriber ændre firewall-regler, kanal-config OG uploade vilkårlig firmware via OTA) — det bør derfor kunne roteres via samme serielle CLI-mekanisme som resten af provisioneringen, ikke kun sættes én gang for altid.
+- **Management-planet (REST, §4.2) — TO accepterede auth-metoder, ikke kun én (revideret):**
+  1. **Bearer-token** (uændret) — auto-genereret under seriel provisionering (§3.4.1), vist én gang. Header `Authorization: Bearer <token>`.
+  2. **HTTP Basic Auth** (nyt, tilføjet ved siden af — ikke i stedet for) — brugernavn+adgangskode sat via CLI'en (`rest user <navn>` / `rest pass <kode>`, §3.4.1), valgt af installatøren selv frem for et system-genereret token. Header `Authorization: Basic <base64(user:pass)>`.
+
+     Et endpoint kræver blot ÉN af de to gyldige — hvilken metode klienten bruger er ligegyldigt for boardet, begge giver samme adgang. Manglende/ugyldige credentials af begge slags besvares med `401`, samme konvention som PLC'en allerede bruger.
+
+     Begrundelsen for at beholde begge: tokenet er maskinvenligt (PLC'ens `expansion_api_client.cpp`, §5.2, kan gemme det uden menneskelig indblanding hver gang), mens brugernavn/adgangskode er nemmere for en installatør at sætte og huske manuelt via CLI'en uden en "vis kun én gang"-affære. Begge er lige kritiske hemmeligheder (kompromitteres én af dem, kan en angriber ændre firewall-regler, kanal-config OG uploade vilkårlig firmware via OTA) og bør begge kunne roteres/ændres via samme serielle CLI-mekanisme som resten af provisioneringen.
 - **Data-planet (Modbus TCP, §4.1):** ingen protokol-indbygget auth (industristandard-begrænsning, ikke en svaghed specifik for dette design) — beskyttet af to lag: netværkssegmentering (dedikeret VLAN, eller et direkte punkt-til-punkt-link mellem PLC og board) OG IP-allowlist-firewallet (§4.3). Ingen af de to alene er vandtæt (segmentering kan fejlkonfigureres i felten; en allowlist beskytter ikke mod IP-spoofing på samme segment) — sammen giver de reelt forsvar-i-dybden.
 - **Forbindelses-begrænsning** (maks. N samtidige TCP-forbindelser pr. data-port) anbefales som robusthedsforanstaltning mod utilsigtet socket-pool-udmattelse fra en tilladt, men fejlkonfigureret klient.
 - **Cleartext-forbehold:** management-API'et kører som udgangspunkt almindelig HTTP (matcher PLC'ens egen etablerede REST-stil) — Bearer-tokenet transporteres derfor i klartekst på netværket. Det er en accept­abel risiko UNDER FORUDSÆTNING AF at netværkssegmenteringen ovenfor faktisk overholdes; TLS er en mulig fremtidig hærdning, men ikke et krav for v1.

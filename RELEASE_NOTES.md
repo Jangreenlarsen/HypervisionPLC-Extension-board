@@ -2,6 +2,16 @@
 
 ---
 
+## v0.5.0 — 2026-09-11 — CLI-udvidelse + 3 designbeslutninger
+
+Tre arkitekturbeslutninger er bekræftet og indarbejdet i EXPANSION_BOARD_DESIGN.md: (1) boardets første hardware-revision bliver **Variant A — 2 kanaler via ESP32's egne UART1/UART2**, ikke det oprindelige 8-kanals SPI-expander-design (som bevares i dokumentet som en senere Variant B); (2) REST-API'et vil acceptere **både** det eksisterende Bearer-token **og** et nyt Basic Auth brugernavn/adgangskode; (3) kommende REST-endpoints for Modbus read/write bliver et **diagnostisk supplement**, ikke en erstatning for Modbus TCP-data-planet.
+
+CLI'en er udvidet på Jans opfordring: `show`/`help` er nu multi-linje (ikke længere étlinjetekst), nye kommandoer `rest user`/`rest pass` (REST-credentials) og `status` (systemstatus: uptime, heap, WiFi), samt kommando-historik via op/ned-piletaster. Alt testet native (67/67) og interaktivt på fysisk hardware, inkl. et scriptet test der sender ægte ANSI-escape-byte-sekvenser for piletasterne.
+
+**Næste skridt**: `config.cpp` (NVS-persistering, resten af Fase 3) er den naturlige næste byggesten — uden den kan `connect`/`rest user`/`rest pass` ikke overleve en genstart, og REST-API'ets auth kan ikke rent faktisk håndhæves. Herefter Fase 4 (Modbus TCP-server, 2 porte) og Fase 5 (den fulde REST-management-API, §4.2 — kanal-config, diagnostisk read/write, OTA, status).
+
+---
+
 ## v0.4.0 — 2026-09-11 — Første kørsel på fysisk hardware
 
 Den serielle provisioning-CLI er nu koblet til rigtig `Serial`-I/O og et rigtigt `WiFi.begin()`-forbindelsesforsøg (`src/provisioning.cpp`) — og er compileret, uploadet og testet interaktivt på et fysisk ESP32-board (USB/CH340) for første gang. Et scriptet seriel-smoke-test fandt og bekræftede rettelsen af en rigtig bug: `help`-kommandoens svartekst blev afkortet midt i en sætning fordi buffer-konstanten var for lille (se BUGS.md) — noget den native testsuite ikke kunne fange, fordi den delte samme (forkerte) konstant med produktionskoden.
