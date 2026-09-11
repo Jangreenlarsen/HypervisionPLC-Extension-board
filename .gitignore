@@ -1,0 +1,6 @@
+# PlatformIO build-output og downloadede toolchains/libraries — regenereres af `pio run`/`pio test`
+.pio/
+.vscode/.browse.c_cpp.db*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch

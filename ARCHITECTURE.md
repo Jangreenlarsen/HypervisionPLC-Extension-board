@@ -83,11 +83,14 @@
 ├── reference-plc-source/           # statiske kode-referencer fra Hypervision PLC-repoet
 ├── .claude/
 │   └── settings.local.json
-├── platformio.ini                  # PlatformIO build-config (ESP32) — oprettes Fase 1
-├── src/                             # Lag 1-3 + cross-cutting, se filliste ovenfor
-│   └── ...
-├── include/                         # delte headers (fejlkoder, datastrukturer — matcher PLC-repoets include/types.h)
-│   └── ...
-└── test/                            # PlatformIO native unit-tests (protokol-/config-logik uden hardware)
-    └── ...
+├── .gitignore                      # udelukker .pio/ (build-cache/toolchains)
+├── platformio.ini                  # PlatformIO build-config: esp32dev (target) + native (host-side unit-tests)
+├── src/                             # Lag 1-3 + cross-cutting orchestration (ESP32/Arduino-specifik, IKKE native-testbar)
+│   └── main.cpp                    # (stub — provisioning/net_driver/modbus_tcp_server/... følger i Fase 1+)
+├── lib/                             # Hardware-uafhængig, native-testbar logik — se note nedenfor
+│   └── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (Lag 2's protokol-kerne, delt med Lag 1)
+└── test/                            # PlatformIO native unit-tests (`pio test -e native`, ingen hardware nødvendig)
+    └── test_modbus_pdu/
 ```
+
+**Hvorfor `lib/` og ikke `src/include/` for hardware-uafhængig logik:** PlatformIOs Library Dependency Finder linker kun et `lib/<modul>` ind der hvor det faktisk `#include`s (af enten `src/` eller `test/`) — modsat `src/`, som for `native`-miljøet ellers skal ekskluderes fil for fil for at undgå at trække Arduino/FreeRTOS/SPI-afhængige filer ind i en testbuild der ikke har den slags hardware til rådighed. Enhver fremtidig logik der skal kunne køre i `pio test -e native` (config-parsing, cache/dedup, schema-migration, §3.5) hører derfor til i `lib/`, ikke i `src/`.

@@ -7,6 +7,10 @@ Backlog seedet fra implementeringsfaserne i [EXPANSION_BOARD_DESIGN.md](EXPANSIO
 
 ---
 
+## Færdige features
+
+- [x] done — v0.2.0 — Modbus RTU PDU-kerne (`lib/modbus_pdu/`): CRC16, RTU-frame-opbygning, FC-baseret svar-længde-prædiktion og svar-parsing (exception-detektion, CRC/slave-validering) for FC01/02/03/04/05/06/16. Hardware-uafhængig, genbruges af både den kommende kanal-eksekvering (Lag 2, RTU-framing) og TCP-serveren (Lag 1, MBAP i stedet for RTU-framing om samme PDU) — port af mønsteret i `reference-plc-source/src/modbus_master.cpp`. 23 unit-tests (`pio test -e native`), CRC-værdier krydsverificeret med en uafhængig Python-implementering. Bygger også rent for ESP32-target (`pio run -e esp32dev`).
+
 ## Planlagte features
 
 - [ ] planned — Fase 1: Hardware-bring-up — gateway-MCU (ESP32) + WiFi + 1 UART-expander-chip (2-4 kanaler) på breadboard; verificér SPI-kommunikation og én RS485-kanal mod en kendt Modbus RTU-slave
