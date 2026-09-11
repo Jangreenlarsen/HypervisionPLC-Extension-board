@@ -114,7 +114,7 @@ HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og ha
 
 ## Projektstruktur
 
-Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `src/` indeholder p.t. kun en stub-`main.cpp` — `provisioning.cpp` osv. tilføjes fra Fase 1:
+Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og resten fra `modbus_tcp_server.cpp` og nedefter tilføjes i takt med faserne i FEATURES.md:
 
 ```
 .
@@ -132,9 +132,10 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `src/` indeholder p.
 │   └── settings.local.json
 ├── .gitignore                      # udelukker .pio/ (build-cache/toolchains)
 ├── platformio.ini                  # PlatformIO build-config: esp32dev (target) + native (host-side unit-tests)
+├── extract_version.py              # injicerer version.json som FW_VERSION/FW_BUILD i firmwaren (kun esp32dev)
 ├── src/                             # firmware-kildekode (ESP32/Arduino-specifik — se ARCHITECTURE.md for hvorfor)
-│   ├── main.cpp                    # stub — resten tilføjes i takt med faserne i FEATURES.md
-│   ├── provisioning.cpp/.h         # WiFi-bootstrap via seriel CLI (§3.4), bruger lib/provisioning_cli/ — Fase 3
+│   ├── main.cpp
+│   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect (§3.4), bruger lib/provisioning_cli/ — v0.4.0, NVS/token/firewall-seed mangler (resten af Fase 3)
 │   ├── net_driver.cpp/.h           # WiFi/Ethernet, DHCP/statisk IP
 │   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-509 (§4.1) — Fase 4
 │   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — Fase 5

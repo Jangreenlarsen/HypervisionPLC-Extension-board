@@ -188,7 +188,30 @@ void test_wifi_pass_confirmation_never_echoes_password(void) {
 void test_help_action(void) {
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "help", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_ACTION_HELP, r);
-  TEST_ASSERT_TRUE(strlen(msg) > 0);
+  // Tjek at ALLE kommandoer reelt fremgår, ikke kun at strengen er ikke-tom —
+  // en for lille MB_PROV_MSG_MAX_LEN ville snprintf-afkorte teksten midt i en
+  // sætning uden at gøre strlen(msg)==0 (fanget ved manuel test mod rigtig
+  // hardware, ikke af en tidligere, svagere version af denne test).
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi ssid"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi pass"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi open"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi mode"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "plc ip"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "show"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "connect"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "factory-reset confirm"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "version"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "help"));
+}
+
+void test_version_action_without_build_flags(void) {
+  // native-miljøet faar bevidst IKKE FW_VERSION/FW_BUILD injiceret (kun
+  // esp32dev-target'et faar dem fra extract_version.py) — denne test
+  // verificerer derfor fallback-stien, ikke et hardkodet versionsnummer der
+  // ville skulle opdateres ved hver versionsbump.
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "version", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_VERSION, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "HypervisionPLC Extension board"));
 }
 
 void test_empty_line(void) {
@@ -312,6 +335,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_show_never_leaks_password);
   RUN_TEST(test_wifi_pass_confirmation_never_echoes_password);
   RUN_TEST(test_help_action);
+  RUN_TEST(test_version_action_without_build_flags);
   RUN_TEST(test_empty_line);
   RUN_TEST(test_trailing_crlf_is_stripped);
   RUN_TEST(test_unknown_command);
