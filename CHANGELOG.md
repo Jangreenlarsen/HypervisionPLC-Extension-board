@@ -4,6 +4,19 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.9.0.3 build 0012] — 2026-09-12 — fix: FØRSTE VELLYKKEDE live Modbus RTU-transaktion (Fase 4 afsluttet)
+
+**Afslutter debug-serien fra v0.9.0.1/.2** — Jan har fysisk slave-device 9 på kanal A, og efter 3 rettelser fungerer hele kæden nu ende-til-ende på rigtig hardware.
+
+**Rettelser (se BUGS.md for fuld detalje):**
+1. `src/modbus_channel.cpp`: støj-tømningsløkke før afsendelse tidsbegrænset til 50 ms (var ubegrænset — kunne hænge hele kanal-tasken permanent).
+2. `src/modbus_channel.cpp`: inter-character-timeouten i svar-læsningen måles nu korrekt fra sidste modtagne byte (var fejlagtigt målt fra transaktionens start — ville afbryde efter 1 byte).
+3. `src/modbus_tcp_server.cpp`: `WiFiClient::readBytes()` erstattet med en selv-tidsbegrænset `read_exact()` (ikke-blokerende `available()`/`read()`) — ESP32's egen `setTimeout()` viste sig ikke pålidelig, og kunne lade en enkelt klient blokere hele portens lyttetask permanent.
+
+**Live-resultat:** 17+ sammenhængende, korrekte Modbus TCP→RTU-transaktioner (FC03, slave 9, kanal A, register 0 = `0x4616`), heap stabil (ingen lækage) gennem hele testen.
+
+**Filer ændret:** `src/modbus_channel.cpp`, `src/modbus_tcp_server.cpp`.
+
 ## [0.9.0.1 build 0010] — 2026-09-12 — debug: kanal-fejl-logging (live RTU-test, slave 9 på kanal A)
 
 **Baggrund:** Jan har nu et rigtigt Modbus-device på slave-adresse 9, kanal A. Første scan-forsøg (FC03, addr 0, qty 1) via Modbus TCP gav en gateway-exception (0x0B) uden nogen forklaring på HVORFOR — `src/modbus_channel.cpp` manglede den seriel-logning CLAUDE.md regel 11 kræver for kanal-fejl.

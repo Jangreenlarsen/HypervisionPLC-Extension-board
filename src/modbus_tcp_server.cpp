@@ -62,6 +62,35 @@ uint8_t gateway_exception_for(mb_error_code_t error) {
   }
 }
 
+// BUGS.md v0.9.0.1/.2: `WiFiClient::readBytes()`s indbyggede `setTimeout()`
+// viste sig IKKE pålideligt at give tasken sit tidsbudget tilbage på ESP32
+// (en klient der forbinder og derefter aldrig sender mere kunne blokere
+// denne funktion langt ud over `timeout_ms`, og dermed hele portens
+// lyttetask permanent). Denne erstatning bruger UDELUKKENDE
+// `client.available()`/`client.read()` (ikke-blokerende på ESP32's
+// WiFiClient) i en løkke vi selv tidsbegrænser via `millis()` — garanterer
+// at funktionen ALTID returnerer inden for `timeout_ms` (+ få ms), uanset
+// hvordan det underliggende bibliotek håndterer sin egen timeout.
+bool read_exact(WiFiClient &client, uint8_t *buf, size_t len, uint32_t timeout_ms) {
+  size_t received = 0;
+  const uint32_t start = millis();
+  while (received < len) {
+    if (client.available()) {
+      const int c = client.read();
+      if (c < 0) {
+        return false;
+      }
+      buf[received++] = static_cast<uint8_t>(c);
+      continue;
+    }
+    if (!client.connected() || millis() - start > timeout_ms) {
+      return false;
+    }
+    delay(1);
+  }
+  return true;
+}
+
 // Læser og besvarer ÉN Modbus TCP-forespørgsel på en allerede-accepteret,
 // permit-godkendt forbindelse. Returnerer false hvis forbindelsen skal
 // lukkes (framing-fejl, timeout på selve socket-læsningen, eller klienten er
@@ -69,8 +98,7 @@ uint8_t gateway_exception_for(mb_error_code_t error) {
 // fleste Modbus TCP-mastere genbruger forbindelsen, §4.1).
 bool handle_one_request(WiFiClient &client, ModbusChannelId channel) {
   uint8_t header_buf[MB_MBAP_HEADER_LEN];
-  const size_t header_read = client.readBytes(header_buf, sizeof(header_buf));
-  if (header_read != sizeof(header_buf)) {
+  if (!read_exact(client, header_buf, sizeof(header_buf), kSocketReadTimeoutMs)) {
     return false;  // klienten lukkede, eller intet nåede frem inden read-timeout
   }
 
@@ -85,8 +113,7 @@ bool handle_one_request(WiFiClient &client, ModbusChannelId channel) {
   const size_t pdu_len = header.length - 1;
 
   uint8_t request_pdu[MB_PDU_MAX_LEN];
-  const size_t pdu_read = client.readBytes(request_pdu, pdu_len);
-  if (pdu_read != pdu_len) {
+  if (!read_exact(client, request_pdu, pdu_len, kSocketReadTimeoutMs)) {
     return false;
   }
 
@@ -136,7 +163,6 @@ void tcp_server_task(void *param) {
       continue;
     }
 
-    client.setTimeout(kSocketReadTimeoutMs);
     while (client.connected()) {
       if (!handle_one_request(client, ctx->channel)) {
         break;

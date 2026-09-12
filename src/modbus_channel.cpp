@@ -114,8 +114,16 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     return MB_INVALID_ADDRESS;
   }
 
-  while (ctx.serial->available()) {
-    ctx.serial->read();  // tøm evt. støj fra bussen inden vi selv sender
+  // Tøm evt. støj fra bussen inden vi selv sender — TIDSBEGRÆNSET (§BUGS.md
+  // v0.9.0.1): uden denne grænse kan en kontinuerligt støjende/floating
+  // RX-linje (fx manglende terminering/bias-modstande på en RS485-bus)
+  // holde denne løkke kørende for evigt, og dermed hænge HELE kanal-tasken
+  // permanent efter blot ét kald.
+  {
+    const uint32_t drain_start = millis();
+    while (ctx.serial->available() && millis() - drain_start < 50) {
+      ctx.serial->read();
+    }
   }
 
   // RS485 (§2.2.1/§2.0.1): DE/RE toggles omkring selve sendingen. RS232:
@@ -143,16 +151,23 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   if (interchar_ms < 2) interchar_ms = 2;
   if (interchar_ms > 20) interchar_ms = 20;
 
-  const uint32_t start = millis();
+  // BUGS.md v0.9.0.1: `last_byte_time` opdateres PR. modtaget byte — måles
+  // inter-character-timeouten mod den samlede transaktions starttidspunkt
+  // (fast `start`) i stedet, udløber den næsten altid med det samme efter
+  // FØRSTE byte (normal transmissions-/propagations-forsinkelse alene
+  // overstiger typisk de 2-20 ms's interchar-vindue), og en ægte
+  // fler-byte-respons ville aldrig kunne læses færdig.
+  uint32_t last_byte_time = millis();
   bool timed_out = false;
   while (received < sizeof(response)) {
     const uint32_t active_timeout = (received == 0) ? ctx.timeout_ms : interchar_ms;
-    if (millis() - start > active_timeout) {
+    if (millis() - last_byte_time > active_timeout) {
       timed_out = true;
       break;
     }
     if (ctx.serial->available()) {
       response[received++] = static_cast<uint8_t>(ctx.serial->read());
+      last_byte_time = millis();
       if (mb_pdu_response_frame_complete(pdu, pdu_len, response, received)) {
         break;
       }
