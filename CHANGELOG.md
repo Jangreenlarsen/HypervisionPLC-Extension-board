@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.11.0 build 0014] — 2026-09-12 — Diagnostisk Modbus read/write REST-endpoints (Fase 5, fortsat)
+
+**Baggrund:** fortsætter FEATURES.md's roadmap — `POST /api/channels/{n}/read` (FC01/02/03/04) og `POST /api/channels/{n}/write` (FC05/06/16), §4.2's ad-hoc diagnose-endpoints (curl/Postman, supplement til Modbus TCP-data-planet, §4.1, ikke en erstatning).
+
+**`lib/diagnostic_modbus/` (ny, hardware-uafhængig):** `mb_diag_parse_read_request()`/`mb_diag_parse_write_request()` — atomisk JSON-parsing (samme "alle felter eller afvis"-princip som kanal-config); `mb_diag_build_read_pdu()`/`mb_diag_build_write_pdu()` — bygger den rå PDU (FC05: JSON-bool mappes til Modbus-spec'ens 0xFF00/0x0000-tråd-niveau; FC16: variabelt antal registre, maks `MB_DIAG_MAX_WRITE_VALUES`=32); `mb_diag_build_read_values_json()` — skriver DIREKTE ind i output-bufferen uden en mellemliggende kopi (et diagnostisk read kan i teorien indeholde op til ~2000 bit-værdier — en ekstra kopi af den størrelse ville belaste en ESP32 HTTP-worker-tasks stak unødigt); `mb_diag_is_exception()`/`mb_diag_build_exception_json()`. 21 nye unit-tests (fangede undervejs en fejl i selve TESTEN — en forkert forventet FC16-PDU-længde, ikke i produktionskoden).
+
+**`src/http_server.cpp`:** ny `channel_read_write_post_handler()`, registreret på `POST /api/channels/*` (dispatcher internt mellem `/read`- og `/write`-suffiks). En Modbus-exception FRA slaven selv giver stadig HTTP 200 (REST-kaldet lykkedes — indholdet rapporterer trofast hvad slaven sagde); en kanal-niveau-fejl (timeout/deaktiveret/CRC, §4) giver 502 med `error_code` = `mb_error_code_t`-værdien. HTTP-serverens `stack_size` hævet fra ESP-IDF's default (4096) til 10240 bytes — handleren kan have en JSON-body, request-/response-PDU og et svar med ~2000 værdier i sine lokale buffere samtidig.
+
+**Filer ændret:** `lib/diagnostic_modbus/diagnostic_modbus.h/.cpp` (nye), `test/test_diagnostic_modbus/` (nyt), `src/http_server.cpp`.
+
+**Live-verificeret PÅ FYSISK HARDWARE:** `POST /api/channels/1/read` (FC03, slave 9) gav korrekte værdier, identiske med den tidligere manuelle registerscan. Mod en ikke-eksisterende slave (99): korrekt `502 channel_error` med `error_code:1` (MB_TIMEOUT). Ufuldstændig body: korrekt `400`. `POST /api/channels/1/write` afslørede at slave 9 tilsyneladende KUN understøtter læsning: FC06 timer ud (`502`), FC16 giver en RIGTIG Modbus-exception fra slaven selv ("Illegal Function", kode 1) — validerer BEGGE fejl-veje i koden (kanal-niveau-fejl vs. ægte slave-exception) på ægte hardware. Enhedens manglende skrive-understøttelse er en egenskab ved DEVICET, ikke en kodefejl.
+
+**Status:** 163/163 native-tests bestået, bygger rent for esp32dev.
+
 ## [0.10.0 build 0013] — 2026-09-12 — UART-kanal-config REST-endpoints (Fase 5, fortsat)
 
 **Baggrund:** Jan bad om at fortsætte med FEATURES.md's roadmap efter Fase 4's live-verifikation — næste punkt var kanal-config-endpointsene (§4.2), der hidtil kun eksisterede som hardkodede 9600-baud/RS485-værdier i `modbus_channel.cpp`.
