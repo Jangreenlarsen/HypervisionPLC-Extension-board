@@ -158,6 +158,28 @@ Samme dual-populerings-princip som §2.2.1 (RS232 OG RS485-transceiver monteret 
 
 **Konsekvens for resten af dokumentet:** hvor der står "8 kanaler"/"port 502-509"/"active_channels 1-8" nedenfor, gælder det Variant B — Variant A har fast **2 kanaler, port 502-503**. §1.4's "op til 8 boards × 8 kanaler = 64" bliver for Variant A "op til 8 boards × 2 kanaler = 16", indtil/hvis Variant B bygges.
 
+### 2.0.1 GPIO-allokering, Variant A (ESP32-WROOM-32 DevKit, IKKE WROVER/PSRAM)
+
+Pr. kanal kræves 4 signaler — ikke kun 2 (TX/RX), fordi mode-valget (RS232/RS485) er STATISK (sat én gang ved kanal-konfiguration) mens retningsstyringen (DE/RE) er DYNAMISK (toggles omkring hver enkelt transmission i RS485 half-duplex, §3.2) — de kan derfor ikke dele én GPIO:
+
+| Signal | Kanal A | Kanal B | Formål |
+|---|---|---|---|
+| UART TX | GPIO17 | GPIO18 | Fodrer BEGGE transceiveres driver-input (§2.2.1's princip, uændret for Variant A) |
+| UART RX | GPIO16 | GPIO19 | Fra den 2:1-mux der kombinerer begge transceiveres modtager-output |
+| MODE_SEL (RS232/RS485-valg) | GPIO4 | GPIO23 | Statisk — sat ved `PUT /api/channels/{n}/config`, styrer mux-valg + RS232-transceiverens SHDN |
+| DIR (DE/RE, RS485-retning) | GPIO27 | GPIO25 | Dynamisk — toggles af kanal-tasken omkring hver sending, KUN relevant når MODE_SEL=RS485 |
+| Aktivitets-LED (valgfri) | GPIO26 | GPIO33 | §2.2's anbefalede diagnostik-LED, én pr. kanal |
+
+**Hardware-detalje — RS485-driveren skal IKKE aktiveres af DIR alene:** DE-benet på RS485-transceiveren (SP3485) skal kun være aktiv når BÅDE `MODE_SEL=RS485` OG `DIR=send` — ellers ville et RS232-konfigureret kanal utilsigtet aktivere RS485-driveren når DIR'ens boot-default tilfældigvis er høj. Løses med en simpel 2-input AND-gate (eller en enkelt transistor) mellem MODE_SEL og DIR, hvis output fodrer RS485-transceiverens DE-ben; RS232-transceiverens SHDN/enable-ben fodres separat, direkte (evt. inverteret) af MODE_SEL alene — samme "kun én transceiver aktiv ad gangen"-garanti som §2.2.1 kræver, blot implementeret med 2 GPIO'er + en logikport i stedet for expander-chippens indbyggede GPIO.
+
+**Bevidst undgåede GPIO'er (ESP32-WROOM-32-specifikke begrænsninger, ikke vilkårlige):**
+- **GPIO1/GPIO3 (UART0 TX/RX):** i brug af den serielle provisioning-CLI (§3.4) — kan ikke genbruges.
+- **GPIO6-11:** forbundet internt til SPI-flashen — brug ALDRIG disse, uanset formål.
+- **GPIO0, GPIO2, GPIO5, GPIO12, GPIO15:** boot-strapping-pins (påvirker boot-mode/flash-spænding/log-output ved reset) — undgået for at eliminere enhver risiko for utilsigtet boot-adfærd, selvom nogle (fx GPIO2) ofte bruges problemfrit i praksis.
+- **GPIO34-39:** kun input (ingen output-kapabilitet) — kan ikke bruges til MODE_SEL/DIR (skal kunne styres som output), men er reserveret til fremtidigt brug (fx den fysiske fabriksnulstillings-knap, §3.4 punkt 6, som kun kræver input).
+
+**Forudsætning:** denne allokering gælder et STANDARD ESP32-WROOM-32 DevKitC-lignende board (30/38-pin), ikke en WROVER/PSRAM-variant (§2.0's egen forudsætning) og ikke et board med afvigende pin-breakout — tjek mod det faktiske boards silketryk/pinout-diagram før tilslutning.
+
 ---
 
 ### 2.1 Kritisk designregel (direkte lektion fra FEAT-408) — gælder Variant B
