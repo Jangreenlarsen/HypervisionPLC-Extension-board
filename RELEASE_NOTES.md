@@ -2,6 +2,18 @@
 
 ---
 
+## v0.11.0 — 2026-09-12 — Diagnostisk Modbus read/write REST-endpoints
+
+To nye endpoints til ad-hoc test/fejlsøgning uden at skulle åbne en Modbus TCP-forbindelse: `POST /api/channels/{n}/read` (læs coils/discrete inputs/holding-/input-registre) og `POST /api/channels/{n}/write` (skriv én coil/ét register eller flere registre). Begge tager en simpel JSON-body (function code, slave-ID, adresse, quantity/value(s)) og returnerer resultatet som JSON — perfekt til at teste en ny feltbus-slave direkte med `curl` eller Postman, uden om PLC'ens egen drift på Modbus TCP-data-planet.
+
+En Modbus-exception fra selve slaven (fx "Illegal Data Address") rapporteres som et almindeligt, vellykket REST-svar med exception-koden i indholdet — kun rigtige kanal-/transport-fejl (timeout, deaktiveret kanal) giver en HTTP-fejlstatus.
+
+**Live-verificeret**: læsning mod en rigtig slave gav korrekte værdier; forsøg på skrivning afslørede at test-devicet kun understøtter læsning (FC06 timer ud, FC16 giver en ægte "Illegal Function"-exception fra slaven) — begge fejl-veje bekræftet at virke korrekt.
+
+**Næste skridt**: OTA-firmwareopdatering (`POST /api/ota`), som afslutter Fase 5's planlagte endpoints.
+
+---
+
 ## v0.10.0 — 2026-09-12 — UART-kanal-config REST-endpoints
 
 Boardets to Modbus-kanaler kan nu konfigureres over netværket i stedet for at være hardkodet: `GET /api/channels`, `GET /api/channels/{n}` og `PUT /api/channels/{n}/config` lader en autentificeret klient (fremover: PLC'ens System-side) sætte baudrate, RS232/RS485-mode, paritet, stop-bits, timeout og inter-frame-delay pr. kanal — persisteret i flash, og anvendt live uden en genstart. Hver kanal har nu også løbende statistik (antal forespørgsler, fejltyper, seneste fejl) tilgængelig via samme `GET`.

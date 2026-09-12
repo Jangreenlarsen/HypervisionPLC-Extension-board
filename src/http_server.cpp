@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "config.h"
+#include "diagnostic_modbus.h"
 #include "modbus_channel.h"
 #include "rest_auth.h"
 #include "rest_status.h"
@@ -77,6 +78,37 @@ bool parse_channels_uri(const char *uri, int *out_channel_number, bool *out_has_
     return true;
   }
   return false;  // ukendt trailing-sti
+}
+
+// Samme grundmønster som parse_channels_uri(), men for de simple
+// "/api/channels/{n}/<action>"-stier (§4.2's diagnostiske read/write) hvor
+// kun ÉN bestemt handling er relevant — undgår at overbelaste
+// parse_channels_uri()'s enum-lignende out-parametre med endnu en variant.
+bool parse_channel_number_with_suffix(const char *uri, const char *expected_suffix, int *out_channel_number) {
+  static const char kPrefix[] = "/api/channels/";
+  const size_t prefix_len = sizeof(kPrefix) - 1;
+  if (strncmp(uri, kPrefix, prefix_len) != 0) {
+    return false;
+  }
+  const char *rest = uri + prefix_len;
+
+  char *end = nullptr;
+  const long n = strtol(rest, &end, 10);
+  if (end == rest) {
+    return false;
+  }
+  rest = end;
+
+  const size_t suffix_len = strlen(expected_suffix);
+  if (strncmp(rest, expected_suffix, suffix_len) != 0) {
+    return false;
+  }
+  const char after = rest[suffix_len];
+  if (after != '\0' && after != '?') {
+    return false;
+  }
+  *out_channel_number = static_cast<int>(n);
+  return true;
 }
 
 // §4.3: allowlisten dækker KUN data-plan-portene (502-509/502-503) — ALDRIG
@@ -258,6 +290,108 @@ esp_err_t channel_config_put_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+// POST /api/channels/{n}/read og POST /api/channels/{n}/write (§4.2) — ad-hoc
+// diagnose via curl/Postman, IKKE data-planet (Modbus TCP, §4.1, forbliver
+// PLC'ens høj-frekvente vej). Genbruger modbus_channel_submit() direkte —
+// samme indgang til Lag 2 som TCP-serveren, jf. ARCHITECTURE.md regel 2.
+esp_err_t channel_read_write_post_handler(httpd_req_t *req) {
+  if (!require_auth(req)) return ESP_OK;
+
+  int channel_number = -1;
+  const bool is_read = parse_channel_number_with_suffix(req->uri, "/read", &channel_number);
+  const bool is_write = !is_read && parse_channel_number_with_suffix(req->uri, "/write", &channel_number);
+  if (!is_read && !is_write) {
+    send_json_error(req, "404 Not Found", -1, "not_found", "Ukendt sti — forventede /api/channels/{n}/read eller /write");
+    return ESP_OK;
+  }
+
+  ModbusChannelId id;
+  if (!channel_id_from_number(channel_number, &id)) {
+    send_json_error(req, "404 Not Found", -1, "not_found", "Ukendt kanal-nummer (§4.2: n=1..active_channels)");
+    return ESP_OK;
+  }
+
+  if (req->content_len == 0 || req->content_len >= 512) {
+    send_json_error(req, "400 Bad Request", -1, "bad_request", "Tom eller for stor request-body (maks 511 bytes)");
+    return ESP_OK;
+  }
+  char body[512];
+  const int received = httpd_req_recv(req, body, static_cast<size_t>(req->content_len));
+  if (received <= 0) {
+    send_json_error(req, "400 Bad Request", -1, "bad_request", "Kunne ikke læse request-body");
+    return ESP_OK;
+  }
+  body[received] = '\0';
+
+  mb_diag_read_request_t read_req{};
+  mb_diag_write_request_t write_req{};
+  uint8_t request_pdu[8 + MB_DIAG_MAX_WRITE_VALUES * 2];
+  size_t request_pdu_len = 0;
+  uint8_t slave_id = 0;
+
+  if (is_read) {
+    if (!mb_diag_parse_read_request(body, static_cast<size_t>(received), &read_req)) {
+      send_json_error(req, "400 Bad Request", -1, "invalid_request",
+                       "Ugyldig eller ufuldstændig read-request (kræver function_code 1/2/3/4, slave_id, address, quantity)");
+      return ESP_OK;
+    }
+    request_pdu_len = mb_diag_build_read_pdu(&read_req, request_pdu, sizeof(request_pdu));
+    slave_id = read_req.slave_id;
+  } else {
+    if (!mb_diag_parse_write_request(body, static_cast<size_t>(received), &write_req)) {
+      send_json_error(
+          req, "400 Bad Request", -1, "invalid_request",
+          "Ugyldig eller ufuldstændig write-request (kræver function_code 5/6/16, slave_id, address, value/values)");
+      return ESP_OK;
+    }
+    request_pdu_len = mb_diag_build_write_pdu(&write_req, request_pdu, sizeof(request_pdu));
+    slave_id = write_req.slave_id;
+  }
+
+  if (request_pdu_len == 0) {
+    send_json_error(req, "500 Internal Server Error", -1, "internal_error", "Kunne ikke bygge Modbus-PDU'en");
+    return ESP_OK;
+  }
+
+  uint8_t response_pdu[MB_PDU_MAX_LEN];
+  size_t response_pdu_len = 0;
+  const mb_error_code_t result = modbus_channel_submit(id, slave_id, request_pdu, request_pdu_len, response_pdu,
+                                                         &response_pdu_len, sizeof(response_pdu));
+
+  if (result != MB_OK) {
+    // Kanal-niveau-fejl (timeout/deaktiveret/CRC osv., §4) — IKKE en
+    // Modbus-exception fra slaven selv (den håndteres nedenfor). Samme
+    // error_code-konvention som resten af API'et (mb_error_code_t-værdien).
+    send_json_error(req, "502 Bad Gateway", static_cast<int>(result), "channel_error",
+                     "Kanalen kunne ikke gennemføre transaktionen — se error_code (mb_error_code_t)");
+    return ESP_OK;
+  }
+
+  if (mb_diag_is_exception(response_pdu, response_pdu_len)) {
+    // En Modbus-exception FRA SLAVEN er stadig et vellykket REST-kald — det
+    // diagnostiske svar rapporterer trofast hvad slaven faktisk sagde.
+    char err_body[192];
+    const size_t err_len = mb_diag_build_exception_json(slave_id, response_pdu, response_pdu_len, err_body, sizeof(err_body));
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, err_body, err_len > 0 ? err_len : HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+  }
+
+  char resp_body[4608];  // FC01/02 kan i teorien returnere op til ~2000 bit-vaerdier
+  const size_t resp_len = is_read
+                               ? mb_diag_build_read_values_json(&read_req, response_pdu, response_pdu_len, resp_body,
+                                                                 sizeof(resp_body))
+                               : mb_diag_build_write_confirmation_json(&write_req, response_pdu, response_pdu_len,
+                                                                        resp_body, sizeof(resp_body));
+  if (resp_len == 0) {
+    send_json_error(req, "500 Internal Server Error", -1, "internal_error", "Kunne ikke bygge svar-JSON'en");
+    return ESP_OK;
+  }
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, resp_body, resp_len);
+  return ESP_OK;
+}
+
 }  // namespace
 
 void http_server_begin() {
@@ -266,6 +400,10 @@ void http_server_begin() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 8080;  // §4.2 — bevidst IKKE 80, adskilt fra evt. fremtidig provisioning-relateret HTTP
   config.uri_match_fn = httpd_uri_match_wildcard;  // kræves for "/api/channels*"-stierne (§4.2's {n})
+  // Default-stakken (4096 bytes) er for lille til channel_read_write_post_handler,
+  // der kan holde en JSON-body, en request-/response-PDU og et svar med op til
+  // ~2000 diagnostiske bit-værdier i sine egne lokale buffere samtidig.
+  config.stack_size = 10240;
 
   if (httpd_start(&g_server, &config) != ESP_OK) {
     Serial.println("FEJL: kunne ikke starte REST management-API (port 8080).");
@@ -296,5 +434,13 @@ void http_server_begin() {
   };
   httpd_register_uri_handler(g_server, &channel_config_put_uri);
 
-  Serial.println("REST management-API startet paa port 8080 (status/channels).");
+  const httpd_uri_t channel_read_write_uri = {
+      .uri = "/api/channels/*",
+      .method = HTTP_POST,
+      .handler = channel_read_write_post_handler,
+      .user_ctx = nullptr,
+  };
+  httpd_register_uri_handler(g_server, &channel_read_write_uri);
+
+  Serial.println("REST management-API startet paa port 8080 (status/channels/diagnostic read-write).");
 }
