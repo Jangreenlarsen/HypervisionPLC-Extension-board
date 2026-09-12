@@ -2,6 +2,14 @@
 
 ---
 
+## v0.9.0.1 (debug) — 2026-09-12 — kanal-fejl-logging til live RTU-fejlsøgning
+
+Under den første live Modbus RTU-test (slave 9, kanal A) manglede boardet struktureret fejl-logging for kanal-transaktioner (CLAUDE.md regel 11). Tilføjet nu — enhver kanal-fejl vises på seriel konsol med kanal, slave-ID, function code og fejlkode.
+
+Første test-resultat: `MB_TIMEOUT` — intet svar fra slave 9 overhovedet. Fejlsøgningen fortsætter (baudrate/wiring).
+
+---
+
 ## v0.9.0 — 2026-09-12 — Fase 4: Modbus TCP-data-plan + rigtig kanal-eksekvering
 
 Boardet kan nu rent faktisk udføre Modbus RTU-transaktioner over de to fysiske UART-kanaler og videreformidle dem som Modbus TCP (port 502=kanal A, 503=kanal B) — Fase 4 er kodemæssigt på plads, nu hvor Jan har den fysiske hardware (RS485/RS232 wired til UART1/UART2) klar.

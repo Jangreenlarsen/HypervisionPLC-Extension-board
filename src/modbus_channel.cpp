@@ -39,6 +39,7 @@ struct ChannelRequest {
 };
 
 struct ChannelContext {
+  const char *name;
   HardwareSerial *serial;
   int dir_pin;
   int mode_sel_pin;
@@ -47,6 +48,25 @@ struct ChannelContext {
   uint32_t timeout_ms;
   QueueHandle_t queue;
 };
+
+// §CLAUDE.md regel 11: kanal-fejl skal logges struktureret via seriel konsol
+// — uden dette er en fejlende RTU-transaktion usynlig for installatøren,
+// der kun ser en generisk Modbus TCP-gateway-exception hos PLC'en.
+const char *error_name(mb_error_code_t error) {
+  switch (error) {
+    case MB_OK: return "MB_OK";
+    case MB_TIMEOUT: return "MB_TIMEOUT";
+    case MB_CRC_ERROR: return "MB_CRC_ERROR";
+    case MB_EXCEPTION: return "MB_EXCEPTION";
+    case MB_MAX_REQUESTS_EXCEEDED: return "MB_MAX_REQUESTS_EXCEEDED";
+    case MB_NOT_ENABLED: return "MB_NOT_ENABLED";
+    case MB_INVALID_SLAVE: return "MB_INVALID_SLAVE";
+    case MB_INVALID_ADDRESS: return "MB_INVALID_ADDRESS";
+    case MB_BUS_BUSY: return "MB_BUS_BUSY";
+    case MB_CHANNEL_UNREACHABLE: return "MB_CHANNEL_UNREACHABLE";
+    default: return "?";
+  }
+}
 
 HardwareSerial g_serialA(1);  // UART-periferi #1 (§2.0: udelukkende brugt her, ikke af CLI'en som ejer UART0)
 HardwareSerial g_serialB(2);  // UART-periferi #2
@@ -157,6 +177,16 @@ void channel_task(void *param) {
     if (xQueueReceive(ctx->queue, &req, portMAX_DELAY) == pdTRUE && req != nullptr) {
       req->result = execute_transaction(*ctx, req->slave_id, req->pdu, req->pdu_len, req->out_pdu, req->out_pdu_len,
                                          req->out_pdu_capacity);
+      if (req->result != MB_OK) {
+        Serial.print("MODBUS-FEJL kanal ");
+        Serial.print(ctx->name);
+        Serial.print(": slave=");
+        Serial.print(req->slave_id);
+        Serial.print(" fc=");
+        Serial.print(req->pdu_len > 0 ? req->pdu[0] : 0);
+        Serial.print(" -> ");
+        Serial.println(error_name(req->result));
+      }
       xSemaphoreGive(req->done);
     }
   }
@@ -164,6 +194,7 @@ void channel_task(void *param) {
 
 void init_channel(ChannelContext &ctx, HardwareSerial &serial, int tx_pin, int rx_pin, int mode_sel_pin, int dir_pin,
                    const char *task_name) {
+  ctx.name = task_name;
   ctx.serial = &serial;
   ctx.dir_pin = dir_pin;
   ctx.mode_sel_pin = mode_sel_pin;

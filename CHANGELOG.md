@@ -4,6 +4,18 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.9.0.1 build 0010] — 2026-09-12 — debug: kanal-fejl-logging (live RTU-test, slave 9 på kanal A)
+
+**Baggrund:** Jan har nu et rigtigt Modbus-device på slave-adresse 9, kanal A. Første scan-forsøg (FC03, addr 0, qty 1) via Modbus TCP gav en gateway-exception (0x0B) uden nogen forklaring på HVORFOR — `src/modbus_channel.cpp` manglede den seriel-logning CLAUDE.md regel 11 kræver for kanal-fejl.
+
+**Tilføjet:** `channel_task()` logger nu til seriel konsol ved enhver ikke-OK `mb_error_code_t` fra `execute_transaction()` — kanal-navn, slave-ID, function code, og fejlkode som tekst (`MODBUS-FEJL kanal mb_ch_a: slave=9 fc=3 -> MB_TIMEOUT`).
+
+**Live-test-resultat med den nye logging:** `MB_TIMEOUT` — boardet sendte forespørgslen korrekt, men modtog INTET svar fra slave 9 (ikke en CRC- eller adresse-fejl, ren stilhed på bussen). Peger på baudrate-mismatch (kanalen er hardkodet 9600 baud, RS485), forkert A/B-polaritet, manglende fælles GND, eller manglende terminering — afventer flere detaljer fra Jan om det fysiske device.
+
+**Midlertidig test-config:** `plc_ip` er sat til denne test-maskines IP (10.1.1.75) i stedet for den rigtige PLC (10.1.1.153) for at kunne scanne fra en almindelig PC under fejlsøgningen — skal sættes tilbage til PLC'ens IP når den fysiske RTU-fejl er fundet.
+
+**Filer ændret:** `src/modbus_channel.cpp`.
+
 ## [0.9.0 build 0009] — 2026-09-12 — Fase 4: Modbus TCP-data-plan + rigtig kanal-eksekvering
 
 **Baggrund:** Jan har nu Fase 1-hardwaren fysisk på plads (RS485/RS232 wired til UART1/UART2) og bad om at fortsætte direkte med den rigtige (ikke-stub) Fase 4-implementering.
