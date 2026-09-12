@@ -285,7 +285,7 @@ main.cpp
   ├─ net_driver.cpp/.h         — WiFi-init (og valgfrit Ethernet/W5500), DHCP/statisk IP, genopkobling
   ├─ modbus_tcp_server.cpp/.h  — 8× Modbus TCP-lyttesocket (data-plan, port 502-509, §4.1) — MBAP-parsing, PDU videresendes til kanal-task
   ├─ http_server.cpp/.h        — REST management-API (§4.2), autentificeret (Bearer-token, §4.4) — kanal-config, statistik, board-status, firewall-styring (§4.3), OTA (§4.2). Ingen provisioning her — det sker udelukkende over seriel (§3.4), ALLE HTTP-endpoints kræver derfor token uden undtagelse
-  ├─ firewall.cpp/.h           — IP-allowlist håndhævelse på Modbus TCP-lyttesocketsne (502-509) — tjekker peer-IP FØR accept(), regelsæt styret via REST (§4.3)
+  ├─ firewall.cpp/.h           — ét fast PLC-IP-permit på Modbus TCP-lyttesocketsne (502-503, §4.3, revideret) — tjekker peer-IP mod `config_get().plc_ip` FØR accept(), IKKE en administrerbar allowlist
   ├─ ota_handler.cpp/.h        — modtager ny firmware som strømmet binær body (§4.2), skriver til inaktiv OTA-partition, verificerer, kræver reboot for aktivering — spejler `src/ota_handler.cpp` i PLC-repoet
   ├─ uart_expander.cpp/.h      — SPI-driver for MAX14830/SC16IS752, abstraherer 8 UART-kanaler bag samme interface som en almindelig UART
   ├─ modbus_channel.cpp/.h × 8 instanser (eller 1 fil, N instanser af samme struct)
@@ -293,7 +293,7 @@ main.cpp
   │       - egen request-kø (FreeRTOS-kø, IKKE delt mellem kanaler — undgår enhver cross-channel race)
   │       - Modbus RTU frame-opbygning/CRC/parsing (kan læses direkte af `src/modbus_master.cpp` i PLC-repoet som reference — samme protokol, samme CRC16-algoritme, PDU'en er identisk med det Modbus TCP-serveren modtager)
   │       - egen statistik (total/success/timeout/crc/exception pr. kanal)
-  └─ config.cpp/.h              — kanal-konfiguration + firewall-allowlist + auth-token, gemt i NVS/flash, overlever reboot — modtages KUN via management-API'et (§4.2) fra PLC'en, ingen lokal indtastning
+  └─ config.cpp/.h              — kanal-konfiguration + PLC-IP-permit (§4.3) + auth-token, gemt i NVS/flash, overlever reboot — modtages KUN via management-API'et (§4.2) fra PLC'en, ingen lokal indtastning
 ```
 
 ### 3.2 Per-kanal task-model — direkte genbrug af et allerede-afprøvet mønster
@@ -314,6 +314,8 @@ Dette er **identisk arkitektur** til PLC'ens `mb_async.cpp` (den ÉN-motor-versi
 ### 3.4 Provisioning — den ENESTE lokale, egne konfiguration boardet har
 
 **Princip (§0):** Alt driftsrelateret konfigureres fra PLC'en. Expansion-boardet har kun brug for lokal indgriben for at løse "hønen og ægget"-problemet: uden netværk kan intet API nås.
+
+**Ufravigeligt (Jan, bekræftet): CLI'en eksisterer UDELUKKENDE på seriebussen (USB/UART0) — aldrig over netværk.** Der findes ingen telnet/SSH/WebSocket-adgang til kommandoerne i §3.4.1, hverken nu eller som fremtidig bekvemmelighed — kun fysisk USB-adgang giver adgang. Dette er selve grundlaget for §8's sikkerhedsargument ("ingen trådløs angrebsflade for et fabriksnyt board") og må ikke undermineres af en senere "nem fjernadgang til CLI'en over WiFi"-tilføjelse. REST-API'et (§4.2, port 8080) er en helt separat grænseflade (JSON, ikke CLI-kommandoer) og ændrer ikke ved dette.
 
 **Mekanisme: seriel CLI over USB — IKKE en midlertidig WiFi AP-mode + webside.** En tidligere revision af dette afsnit foreslog det velkendte IoT-mønster (board starter sit eget, midlertidige access point med en indbygget webside). Det er droppet til fordel for en seriel CLI over boardets USB-forbindelse (samme fysiske port som bruges til at flashe/debugge firmwaren, §3.6) — se §3.4.1 for kommandoerne. Begrundelse:
 - Seriel/USB er et fysisk UAFHÆNGIGT kanal fra WiFi — løser "hønen og ægget"-problemet uden nogen mode-switching-logik overhovedet (ingen AP→station-overgang, ingen captive portal, ingen WiFi-scan-UI, ingen indlejret HTML/HTTP-server kun til bootstrap). Enklere firmware, mindre kode, mindre angrebsflade.
@@ -438,8 +440,6 @@ Expansion-boardets kanal-task modtager PDU'en + det udpakkede `Unit ID` (→ RTU
 | POST | `/api/channels/{n}/reset-stats` | Nulstil én kanals tællere |
 | POST | `/api/stats/reset` | Nulstil alle aktive kanalers tællere |
 | POST | `/api/reboot` | Blødt, kontrolleret reboot |
-| GET | `/api/firewall` | Læs nuværende IP-allowlist (§4.3) |
-| PUT | `/api/firewall` | Erstat hele allowlisten atomisk (§4.3 — valideringsregler) |
 | POST | `/api/ota` | Upload ny firmware — rå binær body, **samme `--data-binary @firmware.bin`-mønster som PLC'ens egen OTA, IKKE multipart** (se `src/ota_handler.cpp` i denne repo for referenceimplementeringen) — skrives til inaktiv OTA-partition, verificeres, kræver eksplicit reboot (`POST /api/reboot`) for at aktivere |
 | GET | `/api/ota/status` | Seneste OTA-forsøgs status (`idle`/`in_progress`/`success`/`failed` + fejlbesked) |
 | POST | `/api/save` | Tving eksplicit gem til flash (normalt sker det automatisk ved hver config-skrivning — til fejlsøgning) |
@@ -500,19 +500,22 @@ Expansion-boardets kanal-task modtager PDU'en + det udpakkede `Unit ID` (→ RTU
 ```
 Rå baudrate-værdi (ikke et encoded index som i et tidligere register-baseret udkast) — JSON har ingen af registerlayoutets 16-bit-begrænsninger, så indirektionen er ikke længere nødvendig; boardet validerer stadig mod samme gyldige sæt som PLC'ens `mb_is_valid_baudrate()`. `mode` er `"rs485"` eller `"rs232"` (§2.2.1) — styrer både den fysiske transceiver-valg-GPIO og om kanal-tasken toggler `DE/RE` (§3.2). Skift af `mode` for en kanal, der allerede har aktive transaktioner i kø, bør boardet håndtere ved at lade igangværende transaktioner færdiggøres på den GAMLE mode før omkobling — undgår at rive en transmission midt i et frame.
 
-### 4.3 Firewall / IP-allowlist (beskytter data-planet, som ikke selv kan autentificere)
+**Driftsmæssig kontekst (Jan, bekræftet):** de to transceivere på en kanal er ALDRIG begge aktive samtidig — dette er allerede garanteret på hardware-niveau (§2.0.1's AND-gate mellem MODE_SEL og DIR for Variant A). `mode` er i praksis en beslutning taget ÉN GANG ved deployment af boardet (installatøren vælger RS232 eller RS485 for en given kanal ud fra hvilket udstyr der reelt tilsluttes) — IKKE noget der forventes ændret løbende under normal drift. Ovenstående "afslut igangværende transaktioner først"-regel er derfor en robusthedsforanstaltning mod en sjælden administrativ handling, ikke en hot-path der skal optimeres — `modbus_channel.cpp` (Fase 1) bør ikke overimplementere live-mode-skift-håndtering ud over dette.
 
-**Formål:** Modbus TCP (§4.1) har ingen protokol-auth — hvem som helst der kan nå en data-plan-port kan sende gyldige Modbus-forespørgsler. Et IP-allowlist håndhævet på selve TCP-forbindelsen (før noget Modbus-indhold overhovedet parses) er et andet forsvarslag, oveni netværkssegmentering (§4.4).
+### 4.3 Data-plan-adgang: ét fast PLC-IP-permit, ikke en generel allowlist (revideret)
 
-**Hvad det er (og ikke er):** et simpelt kilde-IP-allowlist på TCP `accept()`-niveau for portene 502-509 — IKKE en fuld stateful firewall (ingen NAT, ingen protokolinspektion, ingen outbound-filtrering). ESP32'en har hverken behov for eller ressourcer til mere end det — kald det aldrig "firewall" i kode/variabelnavne uden denne præcisering, så den næste udvikler ikke forsøger at bygge et netfilter-agtigt regelsæt.
+**Beslutning (forenklet fra en tidligere generel IP-allowlist):** boardet er per design bundet til ÉN given PLC — det giver ingen mening at understøtte flere tilladte IP'er. Data-plan-portene (502-503) accepterer derfor UDELUKKENDE TCP-forbindelser fra den ene IP-adresse der blev sat under provisionering (`plc ip <a.b.c.d>`, §3.4.1, allerede persisteret i `config.cpp`, §3.5) — ikke en administrerbar liste af flere IP'er.
 
-**Hvordan det styres:** udelukkende via management-API'et (§4.2, autentificeret) — `GET`/`PUT /api/firewall`.
+**Formål (uændret):** Modbus TCP (§4.1) har ingen protokol-auth — hvem som helst der kan nå en data-plan-port kan sende gyldige Modbus-forespørgsler. Dette permit, håndhævet på selve TCP-forbindelsen (før noget Modbus-indhold overhovedet parses), er et andet forsvarslag oveni netværkssegmentering (§4.4).
 
-**Kritiske sikkerhedsregler for implementeringen (undgå at boardet kan bricke sig selv):**
-1. **Allowlisten dækker KUN portene 502-509 (data-plan) — ALDRIG management-API-porten selv.** Management-API'et er allerede beskyttet af sin egen Bearer-token-auth (§4.4); hvis det også blev filtreret af allowlisten, kunne én fejlkonfigureret regel afskære PLC'en fra selv at kunne rette fejlen — kun en fysisk fabriksnulstilling ville kunne redde boardet igen.
-2. **Allowlisten kan aldrig sættes til en tom liste via `PUT`** — boardet validerer at mindst 1 IP altid er i listen. Et forsøg på at sende en tom liste afvises med en tydelig fejl, fremfor at blive accepteret og utilsigtet spærre ALT.
-3. **Allowlisten seedes under provisionering (§3.4) med PLC'ens IP**, indtastet manuelt via den serielle CLI (§3.4.1) — boardet er derfor ALDRIG i en tilstand hvor data-planet er åbent for hele netværket efter provisionering, uden at nogen eksplicit har sat det sådan.
-4. **Fabriksnulstilling rydder allowlisten** sammen med WiFi/token (§3.4, punkt 5) — konsistent "ét nulpunkt"-princip.
+**Konsekvens for §4.2's endpoints:** `GET`/`PUT /api/firewall` UDGÅR som selvstændige CRUD-endpoints — der er intet at CRUD'e, kun ét felt. Det aktuelle permit er allerede synligt via `GET /api/status` (samme `plc_ip`-felt som den serielle `status`-kommando viser). Ændring af hvilken IP der er tilladt sker ved at gen-provisionere `plc ip` (seriel CLI, §3.4.1) — samme vej som resten af provisioneringen, ikke et separat REST-endpoint.
+
+**Implementering (uændret logik, blot simplere data-model):**
+1. **Permittet dækker KUN portene 502-503 (data-plan) — ALDRIG management-API-porten (8080).** Management-API'et er allerede beskyttet af sin egen auth (§4.4); hvis det også var IP-begrænset til PLC'en alene, kunne en fejlkonfigureret/skiftet PLC-IP afskære administratoren fra selv at kunne rette fejlen — kun en fysisk fabriksnulstilling ville kunne redde boardet igen.
+2. **Ingen `plc_ip` sat (`has_plc_ip == false`) → data-planet er lukket for ALLE**, ikke åbent for alle — fejl-lukket, ikke fejl-åbent. Matcher allerede `is_ready_to_connect()`s krav om `plc ip` for at kunne `connect` overhovedet (§3.4.1) — der findes derfor ikke en mellemtilstand hvor boardet er WiFi-forbundet uden et sat PLC-IP.
+3. **Fabriksnulstilling rydder `plc_ip`** sammen med WiFi/token (§3.4, punkt 6) — konsistent "ét nulpunkt"-princip, uændret.
+
+**Kald det aldrig "firewall" i kode/variabelnavne** — det er et enkelt kilde-IP-sammenligning ved `accept()`, ikke et netfilter-agtigt regelsæt. Foretræk `mb_data_plane_permit_check()`/tilsvarende i den kommende `src/`-implementering (Fase 5, resten).
 
 ### 4.4 Autentificering og sikkerhed
 
@@ -586,9 +589,7 @@ Meget af Master #2-arbejdet, der blev rullet tilbage i FEAT-408, er **stadig væ
    - Baudrate/parity/stop-bits/timeout — samme dropdown/input-felter som det eksisterende "Modbus Master"-korts config-sektion, genbrugt visuelt
    - Live status: forbundet/ikke-forbundet, seneste fejl, request-tæller (poller `GET /api/channels/{n}` periodisk — samme UX-mønster som dashboardets eksisterende polling af `/api/metrics`)
    - "Gem"-knap pr. kanal (eller én samlet "Gem alle kanaler på dette board") → ét `PUT /api/channels/{n}/config`-kald pr. kanal, bevidst atomisk, aldrig felt-for-felt
-3. **Pr. board, "Firewall"-sektion** (kollapset som standard):
-   - Viser nuværende IP-allowlist (`GET /api/firewall`) — PLC'ens egen IP er altid til stede efter provisionering (§3.4)
-   - "Tilføj IP"/"Fjern IP" → `PUT /api/firewall` med den fulde, opdaterede liste (klient-side validering forhindrer at sende en tom liste, som backend alligevel ville afvise, §4.3)
+3. **Pr. board, PLC-IP-permit** (revideret — ikke længere en "Firewall"-sektion med flere IP'er): boardet er bundet til ÉN PLC, så der er intet at tilføje/fjerne — det tilladte IP vises blot (samme felt som `GET /api/status`s `plc_ip`, §4.3) som en READ-ONLY oplysning på board-listen. Ændres det (fx PLC'en skifter IP), gen-provisioneres boardet via dets serielle CLI (§3.4.1), ikke via web-UI'en.
 4. **Ingen "avanceret" sektion udover ovenstående, ingen genvej til at logge ind på et board selv** — bevidst, for at holde ét sted som eneste sandhed.
 
 **Dashboard-integration:** Et nyt kort (eller en udvidelse af det eksisterende "Modbus Master"-kort) der viser alle tilsluttede boards' kanaler kompakt — samme layout-mønster som denne repos øvrige dashboard-kort (`data-card-id`-konventionen, se `web/dashboard.html`).
@@ -661,7 +662,7 @@ Fundet ved en kritisk analyse af dette dokument mod PLC-projektets egne, allered
 2. **Fase 2 — Alle 8 kanaler (ét board):** Udvid til fuld hardware (2× expander-chip), verificér alle 8 kanaler kan køre SAMTIDIGT uden krydsforstyrrelse (parallel test på alle 8 mod 8 forskellige test-busser, eller mod samme testbus-adresse-range på isolerede busser). **Verificér også auto-detektionen (§2.2.2)** med en bevidst delvist bestykket testopstilling (fx kun 2 af 8 positioner monteret) — bekræft `active_channels` rapporterer præcis 2, og at `GET`/`PUT` mod kanal 3-8 konsekvent svarer `404`, ikke en falsk "0 fejl"-status for ikke-eksisterende kanaler.
 3. **Fase 3 — Provisioning:** Implementér WiFi-bootstrap + token-udstedelse + firewall-seed (§3.4). Test at et fabriksnyt board kan bringes på produktionsnetværket, og at management-API'et bagefter kræver det udstedte token og afviser alt andet.
 4. **Fase 4 — Data-plan (ét board):** Implementér Modbus TCP-serveren for de 8 data-porte (§4.1). Test med et standard Modbus TCP-testværktøj (fx `mbpoll`) mod en kendt fysisk slave pr. kanal.
-5. **Fase 5 — Management-API (ét board):** Implementér REST-endpoints for status/kanal-config/firewall/OTA (§4.2). Test med `curl`/Postman: skriv kanal-config via `PUT`, læs den tilbage via `GET`, bekræft identisk; test firewall-endpointet afviser en tom liste; test en gyldig OTA-upload aktiveres korrekt efter reboot, og en korrupt upload afvises uden at bricke boardet.
+5. **Fase 5 — Management-API (ét board):** Implementér REST-endpoints for status/kanal-config/diagnostisk read-write/OTA (§4.2). Test med `curl`/Postman: skriv kanal-config via `PUT`, læs den tilbage via `GET`, bekræft identisk; test at data-planet afviser forbindelser fra andre IP'er end det provisionerede `plc_ip` (§4.3); test en gyldig OTA-upload aktiveres korrekt efter reboot, og en korrupt upload afvises uden at bricke boardet.
 6. **Fase 6 — PLC-side integration (i denne repo, separat feature), ÉT board:** Byg `modbus_expansion.cpp` (data) og `expansion_api_client.cpp` (management) som beskrevet i §5.1, med kø/cache-designet fra §5.1.1 genbrugt tæt efter `mb_async.cpp`/`mb_async2.cpp`'s struktur (ikke genopfundet fra bunden) — test grundigt mod ÉT board først, inkl. bevidst fejl-injektion (afbryd en slave midt i drift) for at verificere backoff/PENDING-recovery reelt virker som i originalen. Byg derefter det nye "Modbus Expansion Board"-kort i `web/system.html` (§5.2), stadig for ét board.
 7. **Fase 7 — Multi-board (op til 8):** Udvid PLC-sidens konfiguration og UI (§1.4/§5.2) til en liste af boards. Verificér kø/cache-koden fra Fase 6 kræver INGEN ændring udover at nøglerne udvides med et board-felt (§5.1.1's anbefaling) — hvis det gør, er det et signal om at board-dimensionen blev "hardkodet" et sted i Fase 6 og bør rettes der, ikke omgås her.
 8. **Fase 8 — Robusthedstest (fuld skala):** Afbryd netværksforbindelsen til ét board midt i drift, verificér de øvrige boards er upåvirkede og PLC-siden håndterer det tabte board gracefuldt; kortslut/afbryd én RS485-kanal, verificér de andre 7 på samme board (og alle kanaler på andre boards) upåvirkede; genstart et board midt i drift, verificér automatisk re-konfiguration fra PLC'en; forsøg at nå data-portene fra en IP UDENFOR allowlisten, bekræft afvisning; kør alle op til 64 kanaler samtidig ved realistisk pollingfrekvens i en længere periode (jf. §10's 24-timers-kriterium) og verificér ingen af §5.1.1's kendte fejlklasser (voksende PENDING-lager, ubegrænset backoff-akkumulering, mutex-sult) opstår under vedvarende belastning.
@@ -676,7 +677,7 @@ Fundet ved en kritisk analyse af dette dokument mod PLC-projektets egne, allered
 - [ ] Management-API'et afviser ALLE kald uden gyldigt Bearer-token med `401`, på tværs af samtlige endpoints (§4.2).
 - [ ] Alle 8 Modbus TCP data-porte (502-509) svarer korrekt til en standard Modbus TCP-klient, med korrekt FC01-FC06/FC16-semantik og MBAP-framing.
 - [ ] Alle 8 kanaler kan udføre en Modbus RTU-transaktion SAMTIDIGT (målt: start alle 8 indenfor samme 10ms-vindue via 8 parallelle TCP-forbindelser, verificér alle svarer indenfor deres respektive timeout uden krydskontaminering af data).
-- [ ] En TCP-forbindelse til en data-plan-port (502-509) fra en IP UDENFOR firewall-allowlisten afvises ved `accept()`, uden at nå Modbus-parsing; et forsøg på at `PUT` en tom allowlist afvises med en tydelig fejl.
+- [ ] En TCP-forbindelse til en data-plan-port (502-503) fra en IP FORSKELLIG FRA det provisionerede `plc_ip` afvises ved `accept()`, uden at nå Modbus-parsing; ingen `plc_ip` sat → data-planet er lukket for ALLE (§4.3, fejl-lukket, ikke fejl-åbent).
 - [ ] En gyldig firmware uploadet via `POST /api/ota` aktiveres korrekt efter `POST /api/reboot`; en korrupt/ugyldig upload afvises og boardet forbliver funktionsdygtigt på den hidtidige firmware.
 - [ ] Fysisk afbrydelse af én kanals RS485-bus midt i drift påvirker IKKE de andre 7 kanaler (0 fejl på dem i samme periode).
 - [ ] Expansion-boardet overlever 24 timers kontinuerlig drift ved høj pollingfrekvens (alle 8 kanaler, 100ms mellem forespørgsler) uden heap-fragmentering/hukommelseslæk (mål `heap_free` ved start og efter 24t, forskellen bør være < 5%).
