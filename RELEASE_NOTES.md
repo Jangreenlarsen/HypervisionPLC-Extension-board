@@ -2,6 +2,16 @@
 
 ---
 
+## v0.9.0.3 — 2026-09-12 — Fase 4 afsluttet: FØRSTE vellykkede live Modbus RTU-transaktion
+
+Efter tre rettede firmware-bugs (se CHANGELOG/BUGS.md) fungerer expansion-boardet nu ende-til-ende på rigtig hardware: en Modbus TCP-forespørgsel fra en PC (fremover: PLC'en) bliver korrekt relayet til en fysisk RTU-slave over kanal A og svaret sendt retur — 17+ sammenhængende, korrekte transaktioner verificeret, ingen heap-lækage.
+
+De tre bugs var alle robusthedsproblemer der kunne få boardet til at hænge permanent (kanal-tasken eller TCP-lyttesocket'en) — ikke wiring/RS485-problemer, som ellers var den oprindelige mistanke.
+
+**Næste skridt**: samme test på kanal B, samt de resterende REST-endpoints (kanal-config, diagnostisk read/write, OTA, Fase 5).
+
+---
+
 ## v0.9.0.1 (debug) — 2026-09-12 — kanal-fejl-logging til live RTU-fejlsøgning
 
 Under den første live Modbus RTU-test (slave 9, kanal A) manglede boardet struktureret fejl-logging for kanal-transaktioner (CLAUDE.md regel 11). Tilføjet nu — enhver kanal-fejl vises på seriel konsol med kanal, slave-ID, function code og fejlkode.
