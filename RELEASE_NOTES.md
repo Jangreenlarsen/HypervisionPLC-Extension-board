@@ -2,6 +2,18 @@
 
 ---
 
+## v0.12.0 — 2026-09-12 — OTA-firmwareopdatering (Fase 5 afsluttet)
+
+Boardet kan nu opdateres over netværket: `POST /api/ota` (upload en `.bin`-fil som rå body — samme mønster som `curl --data-binary @firmware.bin`), `GET /api/ota/status` (følg fremdriften), `POST /api/reboot` (aktivér den uploadede firmware). Uploadet skrives direkte til den inaktive OTA-partition og verificeres automatisk — men aktiveres først når du selv kalder `/api/reboot`, så en ny firmware aldrig kommer som en overraskelse.
+
+Med denne feature er hele Fase 5's oprindelige plan for management-API'et gennemført: status, kanal-config, diagnostisk read/write og nu OTA.
+
+**Live-verificeret:** en ugyldig upload afvises korrekt uden at påvirke boardet; et rigtigt firmware-upload (816 KB) blev skrevet, verificeret og — først efter et eksplicit `/api/reboot` — aktiveret. Al persisteret config (kanal-indstillinger, PLC-firewall) overlevede uændret.
+
+**Næste skridt**: ingen flere planlagte Fase 5-punkter tilbage — se FEATURES.md for hvad der herefter står for tur (kanal B-test, Variant B, robusthedstest).
+
+---
+
 ## v0.11.0 — 2026-09-12 — Diagnostisk Modbus read/write REST-endpoints
 
 To nye endpoints til ad-hoc test/fejlsøgning uden at skulle åbne en Modbus TCP-forbindelse: `POST /api/channels/{n}/read` (læs coils/discrete inputs/holding-/input-registre) og `POST /api/channels/{n}/write` (skriv én coil/ét register eller flere registre). Begge tager en simpel JSON-body (function code, slave-ID, adresse, quantity/value(s)) og returnerer resultatet som JSON — perfekt til at teste en ny feltbus-slave direkte med `curl` eller Postman, uden om PLC'ens egen drift på Modbus TCP-data-planet.

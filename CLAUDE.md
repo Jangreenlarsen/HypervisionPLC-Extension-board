@@ -137,25 +137,32 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 ├── platformio.ini                  # PlatformIO build-config: esp32dev (target) + native (host-side unit-tests)
 ├── extract_version.py              # injicerer version.json som FW_VERSION/FW_BUILD i firmwaren (kun esp32dev)
 ├── src/                             # firmware-kildekode (ESP32/Arduino-specifik — se ARCHITECTURE.md for hvorfor)
-│   ├── main.cpp
-│   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect + config.cpp-kobling (§3.4) — v0.6.0, firewall-seed mangler (hører til Fase 5)
-│   ├── config.cpp/.h               # NVS (ESP32 Preferences) omkring lib/board_config/ — v0.6.0, færdig
-│   ├── net_driver.cpp/.h           # WiFi/Ethernet, DHCP/statisk IP
-│   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-503 (Variant A, §2.0/§4.1) — Fase 4
-│   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — v0.7.0, kun GET /api/status indtil videre (resten af Fase 5)
-│   ├── firewall.cpp/.h             # IP-allowlist for data-planet (§4.3) — Fase 5
-│   ├── ota_handler.cpp/.h          # firmware-opdatering, dual-partition — Fase 5
-│   └── modbus_channel.cpp/.h       # × 2 (Variant A), én FreeRTOS-task pr. kanal — bruger lib/modbus_pdu/ — Fase 1
+│   ├── main.cpp                    # setup(): config_begin() FØR modbus_channel_init_all() (raekkefoelgen er kritisk, se BUGS.md v0.10.0)
+│   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect + config.cpp-kobling (§3.4) — v0.6.0, faerdig
+│   ├── config.cpp/.h               # NVS (ESP32 Preferences) omkring lib/board_config/, inkl. pr.-kanal-config — v0.10.0, faerdig
+│   ├── modbus_channel.cpp/.h       # × 2 (Variant A), én FreeRTOS-task pr. kanal, laeser config fra NVS, live-omkonfigurering + statistik — bruger lib/modbus_pdu/ — v0.11.0, live-verificeret (kanal A)
+│   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-503 (Variant A, §2.0/§4.1), plc_ip-permit (§4.3) inline — Fase 4, live-verificeret
+│   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — status/channels(get/put/post read-write) — v0.11.0, faerdig
+│   ├── http_helpers.h/.cpp         # require_auth()/send_json_error(), delt mellem http_server.cpp og ota_handler.cpp — v0.12.0
+│   └── ota_handler.cpp/.h          # POST /api/ota, GET /api/ota/status, POST /api/reboot — v0.12.0, faerdig
 ├── lib/                             # hardware-uafhængig, native-testbar logik (se ARCHITECTURE.md)
 │   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (FC01-06/16) — v0.2.0, færdig
+│   ├── modbus_tcp/                 # MBAP-header parsing/bygning (§4.1) — v0.9.0, faerdig
 │   ├── provisioning_cli/           # seriel CLI-kommando-parsing/validering (§3.4.1) — v0.5.0, færdig
-│   ├── board_config/               # persisteret config-schema + serialisering (§3.5) — v0.6.0, færdig
+│   ├── board_config/               # persisteret config-schema (schema 3, inkl. pr.-kanal-config) + serialisering (§3.5) — v0.10.0, faerdig
+│   ├── channel_config/             # mb_is_valid_baudrate(), JSON build/parse for §4.2's kanal-config — v0.10.0, faerdig
+│   ├── diagnostic_modbus/          # JSON<->PDU for §4.2's diagnostiske read/write — v0.11.0, faerdig
+│   ├── ota_validation/             # ESP32-firmware-magic-byte-tjek — v0.12.0, faerdig
 │   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — v0.7.0, færdig
 │   └── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — v0.7.0, færdig
-└── test/                            # PlatformIO native unit-tests (`pio test -e native`)
+└── test/                            # PlatformIO native unit-tests (`pio test -e native`) — 167 tests i alt
     ├── test_modbus_pdu/
+    ├── test_modbus_tcp/
     ├── test_provisioning_cli/
     ├── test_board_config/
+    ├── test_channel_config/
+    ├── test_diagnostic_modbus/
+    ├── test_ota_validation/
     ├── test_rest_auth/
     └── test_rest_status/
 ```

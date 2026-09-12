@@ -4,6 +4,22 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.12.0 build 0015] — 2026-09-12 — OTA-firmwareopdatering (Fase 5 afsluttet)
+
+**Baggrund:** sidste planlagte Fase 5-endpoint — `POST /api/ota`, `GET /api/ota/status`, `POST /api/reboot` (§4.2). Med denne feature er ALLE Jans oprindelige 6 punkter for management-API'et implementeret.
+
+**`lib/ota_validation/` (ny, hardware-uafhængig):** `mb_ota_is_valid_firmware_magic()` — tjekker ESP32-firmware-imagets kendte magic byte (0xE9) i den FØRSTE modtagne chunk, før noget skrives til flash. 4 nye tests.
+
+**`src/ota_handler.cpp` (ny):** `POST /api/ota` streamer den rå binære body (IKKE multipart, samme `--data-binary`-mønster som referenceimplementeringen i `reference-plc-source/src/ota_handler.cpp`) i 2KB-bidder direkte til den inaktive OTA-partition via Arduino-corets `Update`-bibliotek — ingen fuld-fil-buffering i RAM. Konkurrence-lås forhindrer to samtidige uploads. Et vellykket upload VERIFICERER firmwaren (`Update.end(true)`s indbyggede checksum-tjek) og sætter den som boot-partition — men boardet genstarter IKKE af sig selv. `POST /api/reboot` er det eksplicitte, separate skridt der rent faktisk aktiverer den (bevidst adskilt, jf. designdokumentets §4.2: en operatør skal aktivt vælge at genstarte, ikke overraskes af det). `GET /api/ota/status` rapporterer state/received/total/percent/error.
+
+**Bevidst UDELADT** ift. referenceimplementeringen: GitHub-Releases-baseret auto-opdatering (TLS-klient, CA-bundling, baggrundstasks til DNS/download) — betydelig ekstra angrebsflade/kompleksitet som hverken vores design eller Fase 5's scope kræver.
+
+**Refaktorering undervejs:** `require_auth()`/`send_json_error()` var duplikeret hvis de skulle bruges i to filer — udtrukket til nyt `src/http_helpers.h/.cpp`, delt mellem `http_server.cpp` og `ota_handler.cpp`, så selve AUTH-TJEKKET (sikkerhedskritisk) kun findes ét sted. `httpd_config_t`s `max_uri_handlers` hævet fra ESP-IDF's default (8) til 16 — de eksisterende 4 endpoints + denne features 3 nye ramte allerede 7, tæt på en stille fejlgrænse (`httpd_register_uri_handler()`s returværdi tjekkes ikke i koden, så en overskredet grænse ville have fejlet TAVST).
+
+**Filer ændret:** `lib/ota_validation/ota_validation.h/.cpp` (nye), `test/test_ota_validation/` (nyt), `src/http_helpers.h/.cpp` (nye), `src/ota_handler.h/.cpp` (nye), `src/http_server.cpp`.
+
+**Live-verificeret PÅ FYSISK HARDWARE:** (1) En ugyldig upload (forkert magic byte) afvist korrekt med `500`, boardet upåvirket, `GET /api/ota/status` viste `"failed"` med den rigtige fejlbesked. (2) Et rigtigt `.bin`-upload (816.832 bytes, den faktisk byggede v0.12.0-firmware — bevidst identisk med den kørende, for at teste selve OTA-mekanismen uden at risikere en reelt anderledes/fejlbehæftet image) gennemførtes: `{"ok":true,...,"bytes":816832}`, status gik til `"success"`/100%. Boardet blev IKKE genstartet af sig selv (uptime blev ved med at stige) — først efter et eksplicit `POST /api/reboot` genstartede det (bekræftet: uptime faldt til 20s). Efter genstart: WiFi-genforbindelse automatisk, REST/Modbus TCP-servere startet igen, `GET /api/channels` viste uændret persisteret kanal-config, og `plc_ip`-firewallet virkede stadig korrekt (afviste denne test-maskines forbindelse til port 502, som forventet). Hele OTA-kæden — upload, verifikation, den bevidste ikke-automatiske aktivering, og at al persisteret config overlever — er dermed bekræftet at virke ende-til-ende.
+
 ## [0.11.0 build 0014] — 2026-09-12 — Diagnostisk Modbus read/write REST-endpoints (Fase 5, fortsat)
 
 **Baggrund:** fortsætter FEATURES.md's roadmap — `POST /api/channels/{n}/read` (FC01/02/03/04) og `POST /api/channels/{n}/write` (FC05/06/16), §4.2's ad-hoc diagnose-endpoints (curl/Postman, supplement til Modbus TCP-data-planet, §4.1, ikke en erstatning).
