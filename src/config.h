@@ -23,3 +23,10 @@ void config_factory_reset();
 void config_ensure_mgmt_token(char *out_token, size_t out_capacity);
 
 void config_mark_provisioned();
+
+// §4.2: persisterer ét kanals config (index 0=kanal A, 1=kanal B) — kaldes
+// efter en vellykket `PUT /api/channels/{n}/config` (src/http_server.cpp),
+// EFTER kanalen selv er live-omkonfigureret (modbus_channel_apply_config()),
+// så et strømudfald midt i et PUT-kald ikke kan efterlade flash og den
+// faktisk kørende UART-konfiguration i to forskellige tilstande.
+void config_set_channel(size_t index, const mb_channel_config_t &cfg);

@@ -4,6 +4,26 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.10.0 build 0013] — 2026-09-12 — UART-kanal-config REST-endpoints (Fase 5, fortsat)
+
+**Baggrund:** Jan bad om at fortsætte med FEATURES.md's roadmap efter Fase 4's live-verifikation — næste punkt var kanal-config-endpointsene (§4.2), der hidtil kun eksisterede som hardkodede 9600-baud/RS485-værdier i `modbus_channel.cpp`.
+
+**NVS-skema 3 (`lib/board_config/`):** ny persisteret `mb_channel_config_t channel[2]` (enabled, mode RS485/RS232, baudrate, parity, stop_bits, timeout_ms, inter_frame_delay_ms). `mb_board_config_v2_t` frosset som migrationskilde, migrationskæde v1→v2→v3 implementeret (nye felter får defaults der matcher v0.9.0's tidligere hardkodede adfærd — intet eksisterende board ændrer opførsel ved opgraderingen). 4 nye tests.
+
+**`lib/channel_config/` (ny, hardware-uafhængig):** `mb_is_valid_baudrate()`; `mb_channel_build_json()` til `GET`-svaret (§4.2's eksempel-skema: mode/baudrate/parity/stop_bits/timeout/inter_frame_delay + status + fuld statistik); `mb_channel_parse_config_json()` — en bevidst ikke-generisk JSON-parser (fast, kendt skema, ingen grund til en fuld rekursiv parser) til `PUT`-bodyen, ATOMISK som designdokumentet kræver: mangler eller er blot ét felt ugyldigt, afvises hele requestet. 13 nye tests.
+
+**`src/modbus_channel.cpp`:** læser nu config fra NVS ved boot (`config_get().channel[n]`) i stedet for hardkodede konstanter. Ny `modbus_channel_apply_config()` — live-omkonfigurering routet gennem kanalens EGEN kø (samme mekanisme som almindelige transaktioner), så en igangværende transaktion altid færdiggøres på den GAMLE config før omkobling, uden en separat lås. Ny pr.-kanal-statistik (`mb_channel_stats_t`): total/successful requests, timeout/CRC/exception-tællere, seneste fejls slave-ID/adresse/type/uptime. Deaktiverede kanaler (`enabled:false`) afvises øjeblikkeligt med `MB_NOT_ENABLED` uden UART-adgang.
+
+**`src/http_server.cpp`:** `GET /api/channels` (liste), `GET /api/channels/{n}`, `PUT /api/channels/{n}/config` — wildcard-URI-matching aktiveret (`httpd_uri_match_wildcard`) og en håndskrevet sti-parser, da ESP-IDF's `esp_http_server` ikke selv understøtter path-parametre. `src/config.cpp` fik en ny `config_set_channel()` der persisterer EFTER kanalen selv er live-omkonfigureret (aldrig omvendt — et strømudfald midt i kaldet må aldrig efterlade en UART der kører med en config, flash ikke kender).
+
+**Filer ændret:** `lib/board_config/board_config.h/.cpp`, `lib/channel_config/channel_config.h/.cpp` (nye), `test/test_channel_config/` (nyt), `test/test_board_config/test_board_config.cpp`, `src/modbus_channel.h/.cpp`, `src/http_server.cpp`, `src/config.h/.cpp`.
+
+**To fejl fundet og rettet UNDER selve live-verifikationen:**
+1. **Boot-rækkefølge:** `modbus_channel_init_all()` blev kaldt FØR `config_begin()` i `main.cpp` — kanalerne læste dermed et nul-initialiseret (baudrate=0!) `g_config`, hvilket fik `HardwareSerial::begin()` til at forsøge baud-auto-detektion og hænge boardet ved boot. Rettet: `config_begin()` flyttet til `main.cpp::setup()`, kaldt FØR `modbus_channel_init_all()`; det nu overflødige kald i `provisioning.cpp::provisioning_begin()` fjernet.
+2. **Forkert gateway-exception for deaktiverede kanaler:** `MB_NOT_ENABLED` faldt til `default`-grenen i `modbus_tcp_server.cpp`s `gateway_exception_for()` og gav fejlagtigt 0x0B ("Target Device Failed to Respond") i stedet for det korrekte 0x0A ("Gateway Path Unavailable") — en deaktiveret kanal er en util-tilgængelig sti, ikke en tavs slave.
+
+**Live-verificeret PÅ FYSISK HARDWARE (efter begge rettelser):** schema 2→3-migration af boardets allerede-gemte config (rigtig WiFi/PLC-IP/REST-credentials/token) uden datatab, verificeret over en ÆGTE hardware-genstart (DTR/RTS-reset). `curl` mod alle tre endpoints: `GET /api/channels` (liste), `GET /api/channels/{n}`, `PUT /api/channels/{n}/config` — inkl. 404 for `n=3`, 401 uden auth, atomisk afvisning (400) af en ufuldstændig PUT-body UDEN sideeffekt (efterfølgende GET viste uændret config). Ny config overlevede en ægte reboot. En rigtig Modbus TCP-transaktion mod slave 9 på kanal A opdaterede korrekt `total_requests`/`successful_requests` i `GET /api/channels/1`. En deaktiveret kanal B afviste et forsøg med den nu-korrekte 0x0A-exception, uden at røre UART'en.
+
 ## [0.9.0.3 build 0012] — 2026-09-12 — fix: FØRSTE VELLYKKEDE live Modbus RTU-transaktion (Fase 4 afsluttet)
 
 **Afslutter debug-serien fra v0.9.0.1/.2** — Jan har fysisk slave-device 9 på kanal A, og efter 3 rettelser fungerer hele kæden nu ende-til-ende på rigtig hardware.

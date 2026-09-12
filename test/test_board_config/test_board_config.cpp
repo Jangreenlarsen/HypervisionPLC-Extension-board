@@ -24,6 +24,23 @@ void test_defaults_are_unprovisioned(void) {
   TEST_ASSERT_FALSE(config.has_rest_pass);
 }
 
+void test_defaults_include_sane_channel_config(void) {
+  // §4.2: defaults skal matche v0.9.0's tidligere HARDKODEDE adfaerd i
+  // modbus_channel.cpp (9600 baud, RS485, 500 ms timeout) - ingen
+  // eksisterende board maa aendre adfaerd blot ved schema-migrationen.
+  mb_board_config_t config;
+  mb_config_set_defaults(&config);
+  for (size_t i = 0; i < MB_CHANNEL_COUNT; i++) {
+    TEST_ASSERT_TRUE(config.channel[i].enabled);
+    TEST_ASSERT_EQUAL(MB_CHANNEL_MODE_RS485, config.channel[i].mode);
+    TEST_ASSERT_EQUAL_UINT32(9600, config.channel[i].baudrate);
+    TEST_ASSERT_EQUAL(MB_CHANNEL_PARITY_NONE, config.channel[i].parity);
+    TEST_ASSERT_EQUAL_UINT8(1, config.channel[i].stop_bits);
+    TEST_ASSERT_EQUAL_UINT32(500, config.channel[i].timeout_ms);
+    TEST_ASSERT_EQUAL_UINT32(0, config.channel[i].inter_frame_delay_ms);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Blob round-trip
 // ---------------------------------------------------------------------------
@@ -53,6 +70,35 @@ void test_save_and_load_roundtrip(void) {
   TEST_ASSERT_TRUE(loaded.provisioned);
   TEST_ASSERT_EQUAL_STRING("abcd1234abcd1234abcd1234abcd1234", loaded.mgmt_token);
   TEST_ASSERT_TRUE(loaded.has_mgmt_token);
+}
+
+void test_save_and_load_roundtrip_channel_config(void) {
+  mb_board_config_t config;
+  mb_config_set_defaults(&config);
+  config.channel[0].enabled = false;
+  config.channel[0].mode = MB_CHANNEL_MODE_RS232;
+  config.channel[0].baudrate = 19200;
+  config.channel[0].parity = MB_CHANNEL_PARITY_EVEN;
+  config.channel[0].stop_bits = 2;
+  config.channel[0].timeout_ms = 1000;
+  config.channel[0].inter_frame_delay_ms = 20;
+
+  uint8_t blob[sizeof(mb_board_config_t)];
+  const size_t written = mb_config_save_to_blob(&config, blob, sizeof(blob));
+
+  mb_board_config_t loaded;
+  mb_config_load_from_blob(blob, written, &loaded);
+
+  TEST_ASSERT_FALSE(loaded.channel[0].enabled);
+  TEST_ASSERT_EQUAL(MB_CHANNEL_MODE_RS232, loaded.channel[0].mode);
+  TEST_ASSERT_EQUAL_UINT32(19200, loaded.channel[0].baudrate);
+  TEST_ASSERT_EQUAL(MB_CHANNEL_PARITY_EVEN, loaded.channel[0].parity);
+  TEST_ASSERT_EQUAL_UINT8(2, loaded.channel[0].stop_bits);
+  TEST_ASSERT_EQUAL_UINT32(1000, loaded.channel[0].timeout_ms);
+  TEST_ASSERT_EQUAL_UINT32(20, loaded.channel[0].inter_frame_delay_ms);
+  // Kanal B er urørt - skal stadig staa paa defaults.
+  TEST_ASSERT_TRUE(loaded.channel[1].enabled);
+  TEST_ASSERT_EQUAL(MB_CHANNEL_MODE_RS485, loaded.channel[1].mode);
 }
 
 void test_save_rejects_undersized_buffer(void) {
@@ -148,6 +194,64 @@ void test_load_migrates_v1_blob_without_data_loss(void) {
   TEST_ASSERT_EQUAL_STRING("RestApiTest123", migrated.rest_pass);
   TEST_ASSERT_EQUAL_MESSAGE(MB_REST_AUTH_MODE_BOTH, migrated.rest_auth_mode,
                              "nyt felt skal faa default-vaerdien (BOTH), ikke vaere udefineret");
+  TEST_ASSERT_TRUE_MESSAGE(migrated.channel[0].enabled, "schema-3-felt (channel[]) skal faa sin default via v1->v2->v3-kaeden");
+  TEST_ASSERT_EQUAL(MB_CHANNEL_MODE_RS485, migrated.channel[0].mode);
+  TEST_ASSERT_EQUAL_UINT32(9600, migrated.channel[0].baudrate);
+}
+
+void test_load_migrates_v2_blob_without_data_loss(void) {
+  // Samme situation som v1-testen ovenfor, men for et board der allerede
+  // naaede at opgradere til schema 2 (v0.8.0) foer schema 3 (kanal-config)
+  // fandtes.
+  mb_board_config_v2_t v2{};
+  v2.schema_version = 2;
+  v2.provisioned = true;
+  strncpy(v2.wifi_ssid, "V2Network", sizeof(v2.wifi_ssid) - 1);
+  v2.wifi_has_ssid = true;
+  strncpy(v2.plc_ip, "10.1.1.153", sizeof(v2.plc_ip) - 1);
+  v2.has_plc_ip = true;
+  strncpy(v2.mgmt_token, "f4353305b96b5f1e61e5e70b49b18e1c", sizeof(v2.mgmt_token) - 1);
+  v2.has_mgmt_token = true;
+  strncpy(v2.rest_user, "testadmin", sizeof(v2.rest_user) - 1);
+  v2.has_rest_user = true;
+  strncpy(v2.rest_pass, "RestApiTest123", sizeof(v2.rest_pass) - 1);
+  v2.has_rest_pass = true;
+  v2.rest_auth_mode = MB_REST_AUTH_MODE_TOKEN_ONLY;
+  v2.checksum = mb_config_calc_checksum_v2(&v2);
+
+  mb_board_config_t migrated;
+  mb_config_load_from_blob(reinterpret_cast<const uint8_t *>(&v2), sizeof(v2), &migrated);
+
+  TEST_ASSERT_EQUAL_MESSAGE(MB_CONFIG_SCHEMA_VERSION, migrated.schema_version,
+                             "migreret config skal have den AKTUELLE schema-version, ikke 2");
+  TEST_ASSERT_TRUE(migrated.provisioned);
+  TEST_ASSERT_EQUAL_STRING("V2Network", migrated.wifi_ssid);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.153", migrated.plc_ip);
+  TEST_ASSERT_EQUAL_STRING("f4353305b96b5f1e61e5e70b49b18e1c", migrated.mgmt_token);
+  TEST_ASSERT_EQUAL_STRING("testadmin", migrated.rest_user);
+  TEST_ASSERT_EQUAL_STRING("RestApiTest123", migrated.rest_pass);
+  TEST_ASSERT_EQUAL_MESSAGE(MB_REST_AUTH_MODE_TOKEN_ONLY, migrated.rest_auth_mode,
+                             "eksisterende v2-felt maa ikke tabes/overskrives under migration");
+  TEST_ASSERT_TRUE_MESSAGE(migrated.channel[0].enabled, "nyt schema-3-felt skal faa sin default");
+  TEST_ASSERT_EQUAL_UINT32(9600, migrated.channel[0].baudrate);
+  TEST_ASSERT_EQUAL_UINT32(9600, migrated.channel[1].baudrate);
+}
+
+void test_load_rejects_corrupt_v2_blob(void) {
+  mb_board_config_v2_t v2{};
+  v2.schema_version = 2;
+  v2.provisioned = true;
+  strncpy(v2.wifi_ssid, "V2Network", sizeof(v2.wifi_ssid) - 1);
+  v2.checksum = mb_config_calc_checksum_v2(&v2);
+
+  uint8_t blob[sizeof(v2)];
+  memcpy(blob, &v2, sizeof(blob));
+  blob[10] ^= 0xFF;
+
+  mb_board_config_t loaded;
+  mb_config_load_from_blob(blob, sizeof(blob), &loaded);
+  TEST_ASSERT_FALSE_MESSAGE(loaded.provisioned, "korrupt v2-blob blev fejlagtigt migreret");
+  TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
 }
 
 void test_load_rejects_corrupt_v1_blob(void) {
@@ -255,8 +359,10 @@ int main(int argc, char **argv) {
   UNITY_BEGIN();
 
   RUN_TEST(test_defaults_are_unprovisioned);
+  RUN_TEST(test_defaults_include_sane_channel_config);
 
   RUN_TEST(test_save_and_load_roundtrip);
+  RUN_TEST(test_save_and_load_roundtrip_channel_config);
   RUN_TEST(test_save_rejects_undersized_buffer);
 
   RUN_TEST(test_load_with_no_stored_data_gives_defaults);
@@ -264,6 +370,8 @@ int main(int argc, char **argv) {
   RUN_TEST(test_load_detects_corruption_via_checksum);
   RUN_TEST(test_load_migrates_v1_blob_without_data_loss);
   RUN_TEST(test_load_rejects_corrupt_v1_blob);
+  RUN_TEST(test_load_migrates_v2_blob_without_data_loss);
+  RUN_TEST(test_load_rejects_corrupt_v2_blob);
   RUN_TEST(test_load_rejects_future_schema_version);
 
   RUN_TEST(test_token_from_random_bytes);

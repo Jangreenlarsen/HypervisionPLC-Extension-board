@@ -3,10 +3,23 @@
 #include <cstddef>
 #include <cstring>
 
+void mb_channel_config_set_defaults(mb_channel_config_t *config) {
+  config->enabled = true;
+  config->mode = MB_CHANNEL_MODE_RS485;
+  config->baudrate = 9600;
+  config->parity = MB_CHANNEL_PARITY_NONE;
+  config->stop_bits = 1;
+  config->timeout_ms = 500;
+  config->inter_frame_delay_ms = 0;
+}
+
 void mb_config_set_defaults(mb_board_config_t *config) {
   memset(config, 0, sizeof(*config));
   config->schema_version = MB_CONFIG_SCHEMA_VERSION;
   config->provisioned = false;
+  for (size_t i = 0; i < MB_CHANNEL_COUNT; i++) {
+    mb_channel_config_set_defaults(&config->channel[i]);
+  }
 }
 
 namespace {
@@ -34,13 +47,17 @@ uint16_t mb_config_calc_checksum_v1(const mb_board_config_v1_t *config) {
   return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v1_t, checksum));
 }
 
-// Migrerer en verificeret v1-kandidat til nuværende (v2) layout. Nye felter
-// får deres default — her `rest_auth_mode = MB_REST_AUTH_MODE_BOTH`, som
-// matcher adfærden FØR denne indstilling fandtes (§3.5: migration tilføjer,
-// nulstiller aldrig eksisterende data).
-static void migrate_v1_to_current(const mb_board_config_v1_t &v1, mb_board_config_t *out_config) {
-  mb_config_set_defaults(out_config);
+uint16_t mb_config_calc_checksum_v2(const mb_board_config_v2_t *config) {
+  return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v2_t, checksum));
+}
 
+// Migrerer en verificeret v1-kandidat til v2-layout. Nye felter får deres
+// default — her `rest_auth_mode = MB_REST_AUTH_MODE_BOTH`, som matcher
+// adfærden FØR denne indstilling fandtes (§3.5: migration tilføjer,
+// nulstiller aldrig eksisterende data).
+static void migrate_v1_to_v2(const mb_board_config_v1_t &v1, mb_board_config_v2_t *out_config) {
+  memset(out_config, 0, sizeof(*out_config));
+  out_config->schema_version = 2;
   out_config->provisioned = v1.provisioned;
   memcpy(out_config->wifi_ssid, v1.wifi_ssid, sizeof(out_config->wifi_ssid));
   out_config->wifi_has_ssid = v1.wifi_has_ssid;
@@ -62,6 +79,35 @@ static void migrate_v1_to_current(const mb_board_config_v1_t &v1, mb_board_confi
   out_config->rest_auth_mode = MB_REST_AUTH_MODE_BOTH;  // nyt felt — default, ikke i v1
 }
 
+// Migrerer en verificeret v2-kandidat til nuværende (v3) layout. Nyt felt:
+// `channel[]` — får defaults der matcher v0.9.0's hidtidige HARDKODEDE
+// adfærd (9600 baud, RS485, 500 ms timeout), så et allerede-kørende board
+// ikke ændrer adfærd blot ved firmware-opdateringen til schema 3.
+static void migrate_v2_to_current(const mb_board_config_v2_t &v2, mb_board_config_t *out_config) {
+  mb_config_set_defaults(out_config);  // saetter ogsaa channel[]-defaults
+
+  out_config->provisioned = v2.provisioned;
+  memcpy(out_config->wifi_ssid, v2.wifi_ssid, sizeof(out_config->wifi_ssid));
+  out_config->wifi_has_ssid = v2.wifi_has_ssid;
+  memcpy(out_config->wifi_password, v2.wifi_password, sizeof(out_config->wifi_password));
+  out_config->wifi_has_password = v2.wifi_has_password;
+  out_config->wifi_open_network = v2.wifi_open_network;
+  out_config->wifi_static_ip = v2.wifi_static_ip;
+  memcpy(out_config->wifi_ip, v2.wifi_ip, sizeof(out_config->wifi_ip));
+  memcpy(out_config->wifi_mask, v2.wifi_mask, sizeof(out_config->wifi_mask));
+  memcpy(out_config->wifi_gw, v2.wifi_gw, sizeof(out_config->wifi_gw));
+  memcpy(out_config->plc_ip, v2.plc_ip, sizeof(out_config->plc_ip));
+  out_config->has_plc_ip = v2.has_plc_ip;
+  memcpy(out_config->mgmt_token, v2.mgmt_token, sizeof(out_config->mgmt_token));
+  out_config->has_mgmt_token = v2.has_mgmt_token;
+  memcpy(out_config->rest_user, v2.rest_user, sizeof(out_config->rest_user));
+  out_config->has_rest_user = v2.has_rest_user;
+  memcpy(out_config->rest_pass, v2.rest_pass, sizeof(out_config->rest_pass));
+  out_config->has_rest_pass = v2.has_rest_pass;
+  out_config->rest_auth_mode = v2.rest_auth_mode;
+  // out_config->channel[] beholder de defaults mb_config_set_defaults() satte ovenfor.
+}
+
 void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_board_config_t *out_config) {
   if (stored_blob == nullptr || stored_len == 0) {
     mb_config_set_defaults(out_config);
@@ -76,9 +122,22 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
       *out_config = candidate;
       return;
     }
-    // Størrelsen matcher v2, men checksum eller schema_version gør ikke —
+    // Størrelsen matcher v3, men checksum eller schema_version gør ikke —
     // korruption, eller en fremtidig schema-version koden (i strid med
     // §3.5) er blevet nedgraderet i forhold til. Fald sikkert til defaults.
+    mb_config_set_defaults(out_config);
+    return;
+  }
+
+  if (stored_len == sizeof(mb_board_config_v2_t)) {
+    mb_board_config_v2_t v2_candidate;
+    memcpy(&v2_candidate, stored_blob, sizeof(v2_candidate));
+    if (v2_candidate.checksum == mb_config_calc_checksum_v2(&v2_candidate) && v2_candidate.schema_version == 2) {
+      migrate_v2_to_current(v2_candidate, out_config);
+      return;
+    }
+    // Størrelsen matcher v2, men checksum eller schema_version gør ikke —
+    // korrupt v2-blob, ikke en gyldig ældre version. Fald til defaults.
     mb_config_set_defaults(out_config);
     return;
   }
@@ -87,7 +146,10 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
     mb_board_config_v1_t v1_candidate;
     memcpy(&v1_candidate, stored_blob, sizeof(v1_candidate));
     if (v1_candidate.checksum == mb_config_calc_checksum_v1(&v1_candidate) && v1_candidate.schema_version == 1) {
-      migrate_v1_to_current(v1_candidate, out_config);
+      mb_board_config_v2_t v2_intermediate;
+      migrate_v1_to_v2(v1_candidate, &v2_intermediate);
+      v2_intermediate.checksum = mb_config_calc_checksum_v2(&v2_intermediate);
+      migrate_v2_to_current(v2_intermediate, out_config);
       return;
     }
     // Størrelsen matcher v1, men checksum eller schema_version gør ikke —

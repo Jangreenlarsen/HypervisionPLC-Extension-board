@@ -2,6 +2,18 @@
 
 ---
 
+## v0.10.0 — 2026-09-12 — UART-kanal-config REST-endpoints
+
+Boardets to Modbus-kanaler kan nu konfigureres over netværket i stedet for at være hardkodet: `GET /api/channels`, `GET /api/channels/{n}` og `PUT /api/channels/{n}/config` lader en autentificeret klient (fremover: PLC'ens System-side) sætte baudrate, RS232/RS485-mode, paritet, stop-bits, timeout og inter-frame-delay pr. kanal — persisteret i flash, og anvendt live uden en genstart. Hver kanal har nu også løbende statistik (antal forespørgsler, fejltyper, seneste fejl) tilgængelig via samme `GET`.
+
+En kanal kan slås fra (`enabled:false`) og afvises så øjeblikkeligt uden at røre UART-hardwaren — nu med den korrekte 0x0A-gateway-exception (var fejlagtigt 0x0B, rettet under live-testen).
+
+**Live-verificeret på fysisk hardware:** boardets eksisterende config migrerede korrekt til det nye skema (verificeret over en ægte genstart), alle tre endpoints afprøvet med `curl` (inkl. 404/401/atomisk 400-afvisning), en rigtig Modbus-transaktion opdaterede kanal-statistikken korrekt. Fandt og rettede undervejs en boot-hæng (forkert initialiseringsrækkefølge kunne give baudrate=0 ved opstart).
+
+**Næste skridt**: de resterende Fase 5-endpoints (diagnostisk read/write, OTA).
+
+---
+
 ## v0.9.0.3 — 2026-09-12 — Fase 4 afsluttet: FØRSTE vellykkede live Modbus RTU-transaktion
 
 Efter tre rettede firmware-bugs (se CHANGELOG/BUGS.md) fungerer expansion-boardet nu ende-til-ende på rigtig hardware: en Modbus TCP-forespørgsel fra en PC (fremover: PLC'en) bliver korrekt relayet til en fysisk RTU-slave over kanal A og svaret sendt retur — 17+ sammenhængende, korrekte transaktioner verificeret, ingen heap-lækage.
