@@ -53,6 +53,7 @@ uint8_t gateway_exception_for(mb_error_code_t error) {
     case MB_CHANNEL_UNREACHABLE:
     case MB_BUS_BUSY:
     case MB_INVALID_ADDRESS:
+    case MB_NOT_ENABLED:  // §4.2: en deaktiveret kanal er en util-gaengelig sti, ikke en tavs slave
       return kGatewayPathUnavailable;
     case MB_TIMEOUT:
     case MB_CRC_ERROR:

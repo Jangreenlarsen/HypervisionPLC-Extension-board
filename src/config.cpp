@@ -83,3 +83,9 @@ void config_mark_provisioned() {
   g_config.provisioned = true;
   save_current_config();
 }
+
+void config_set_channel(size_t index, const mb_channel_config_t &cfg) {
+  if (index >= MB_CHANNEL_COUNT) return;
+  g_config.channel[index] = cfg;
+  save_current_config();
+}

@@ -262,7 +262,8 @@ void provisioning_begin() {
   g_history_browse = -1;
   g_esc_state = EscState::kNone;
 
-  config_begin();
+  // config_begin() kaldes nu fra main.cpp::setup() - FOER modbus_channel_init_all(),
+  // som ogsaa afhaenger af den. Kaldes IKKE her igen (ville blot vaere overfloedigt).
   print_boot_banner();
 
   // Automatisk genforbindelse ved boot, hvis boardet allerede er

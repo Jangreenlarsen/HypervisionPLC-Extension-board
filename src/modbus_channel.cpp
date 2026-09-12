@@ -6,9 +6,14 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
+#include "config.h"
+
 namespace {
 
 // GPIO-allokering — EXPANSION_BOARD_DESIGN.md §2.0.1, ESP32-WROOM-32 DevKit.
+// Disse er FYSISK faste (loddet på boardet) og derfor ikke en del af den
+// konfigurerbare §4.2-config — kun baudrate/mode/parity/stop-bits/timeout/
+// inter-frame-delay/enabled er det.
 constexpr int kChannelATx = 17;
 constexpr int kChannelARx = 16;
 constexpr int kChannelAModeSel = 4;
@@ -19,39 +24,50 @@ constexpr int kChannelBRx = 19;
 constexpr int kChannelBModeSel = 23;
 constexpr int kChannelBDir = 25;
 
-// v1-placeholder: kanal-config-REST-endpointet (Fase 5, resten) findes ikke
-// endnu, så baudrate/parity/mode er fast hardkodet her — samme defaults som
-// PLC-repoets egen Master #1 (`reference-plc-source`). Erstattes af rigtig
-// pr.-kanal-config når `PUT /api/channels/{n}/config` bygges.
-constexpr uint32_t kDefaultBaud = 9600;
-constexpr uint32_t kDefaultTimeoutMs = 500;
-constexpr bool kDefaultIsRs485 = true;  // begge kanaler RS485 som default (§2.2.1's mode-valg er endnu ikke REST-styret)
+enum class ChannelRequestType : uint8_t { kTransaction, kReconfigure };
 
 struct ChannelRequest {
+  ChannelRequestType type;
+
+  // kTransaction:
   uint8_t slave_id;
   const uint8_t *pdu;
   size_t pdu_len;
   uint8_t *out_pdu;
   size_t *out_pdu_len;
   size_t out_pdu_capacity;
+
+  // kReconfigure:
+  mb_channel_config_t new_config;
+
   mb_error_code_t result;
   SemaphoreHandle_t done;
 };
 
 struct ChannelContext {
   const char *name;
+  size_t config_index;  // 0=A, 1=B — index ind i mb_board_config_t::channel[]
   HardwareSerial *serial;
+  int tx_pin;
+  int rx_pin;
   int dir_pin;
   int mode_sel_pin;
-  bool is_rs485;
-  uint32_t baud;
-  uint32_t timeout_ms;
+  mb_channel_config_t config;
+  mb_channel_stats_t stats;
   QueueHandle_t queue;
 };
 
-// §CLAUDE.md regel 11: kanal-fejl skal logges struktureret via seriel konsol
-// — uden dette er en fejlende RTU-transaktion usynlig for installatøren,
-// der kun ser en generisk Modbus TCP-gateway-exception hos PLC'en.
+HardwareSerial g_serialA(1);  // UART-periferi #1 (§2.0: udelukkende brugt her, ikke af CLI'en som ejer UART0)
+HardwareSerial g_serialB(2);  // UART-periferi #2
+
+ChannelContext g_channelA;
+ChannelContext g_channelB;
+
+ChannelContext &context_for(ModbusChannelId channel) { return (channel == ModbusChannelId::kA) ? g_channelA : g_channelB; }
+
+// §BUGS.md v0.9.0.1: kanal-fejl skal logges struktureret via seriel konsol
+// (CLAUDE.md regel 11) — uden dette er en fejlende RTU-transaktion usynlig
+// for installatøren, der kun ser en generisk Modbus TCP-gateway-exception.
 const char *error_name(mb_error_code_t error) {
   switch (error) {
     case MB_OK: return "MB_OK";
@@ -68,33 +84,40 @@ const char *error_name(mb_error_code_t error) {
   }
 }
 
-HardwareSerial g_serialA(1);  // UART-periferi #1 (§2.0: udelukkende brugt her, ikke af CLI'en som ejer UART0)
-HardwareSerial g_serialB(2);  // UART-periferi #2
-
-ChannelContext g_channelA;
-ChannelContext g_channelB;
-
-ChannelContext &context_for(ModbusChannelId channel) { return (channel == ModbusChannelId::kA) ? g_channelA : g_channelB; }
-
-// Mapper mb_pdu_parse_rtu_response()'s resultat til mb_error_code_t (§4).
-// MB_PDU_RESULT_EXCEPTION regnes IKKE som en kanal-fejl — det er stadig et
-// gyldigt, modtaget svar (en Modbus-exception er semantisk indhold, ikke en
-// transportfejl) — out_pdu er allerede udfyldt med exception-PDU'en af
-// parse-funktionen, og TCP-laget skal blot relaye den uændret.
-mb_error_code_t map_parse_result(mb_pdu_parse_result_t result) {
-  switch (result) {
-    case MB_PDU_RESULT_OK:
-    case MB_PDU_RESULT_EXCEPTION:
-      return MB_OK;
-    case MB_PDU_RESULT_CRC_ERROR:
-      return MB_CRC_ERROR;
-    case MB_PDU_RESULT_SLAVE_MISMATCH:
-      return MB_INVALID_SLAVE;
-    case MB_PDU_RESULT_TOO_SHORT:
-    case MB_PDU_RESULT_BUFFER_TOO_SMALL:
-    default:
-      return MB_CHANNEL_UNREACHABLE;
+// Mapper mb_channel_parity_t/stop_bits til Arduino/ESP32's SERIAL_8xx-config.
+// Altid 8 databits — hverken §4.2 eller Modbus RTU-praksis eksponerer andet.
+uint32_t serial_config_for(mb_channel_parity_t parity, uint8_t stop_bits) {
+  if (stop_bits == 2) {
+    switch (parity) {
+      case MB_CHANNEL_PARITY_EVEN: return SERIAL_8E2;
+      case MB_CHANNEL_PARITY_ODD: return SERIAL_8O2;
+      case MB_CHANNEL_PARITY_NONE:
+      default: return SERIAL_8N2;
+    }
   }
+  switch (parity) {
+    case MB_CHANNEL_PARITY_EVEN: return SERIAL_8E1;
+    case MB_CHANNEL_PARITY_ODD: return SERIAL_8O1;
+    case MB_CHANNEL_PARITY_NONE:
+    default: return SERIAL_8N1;
+  }
+}
+
+// Anvender en (ny eller initial) config på kanalens rigtige UART/GPIO'er.
+// Kaldes UDELUKKENDE fra kanalens egen task (channel_task) — aldrig direkte
+// fra REST-/TCP-lagets tasks, jf. modbus_channel_apply_config()'s
+// kø-baserede design.
+void apply_config_now(ChannelContext &ctx, const mb_channel_config_t &new_config) {
+  ctx.config = new_config;
+
+  digitalWrite(ctx.dir_pin, LOW);
+  pinMode(ctx.mode_sel_pin, OUTPUT);
+  // §2.0.1: modevalg-GPIO, HIGH=RS485 (vilkårlig men dokumenteret polaritet).
+  digitalWrite(ctx.mode_sel_pin, (ctx.config.mode == MB_CHANNEL_MODE_RS485) ? HIGH : LOW);
+
+  ctx.serial->end();
+  ctx.serial->begin(ctx.config.baudrate, serial_config_for(ctx.config.parity, ctx.config.stop_bits), ctx.rx_pin,
+                     ctx.tx_pin);
 }
 
 // Selve RTU-transaktionen — direkte portering af mønsteret i
@@ -114,6 +137,8 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     return MB_INVALID_ADDRESS;
   }
 
+  const bool is_rs485 = ctx.config.mode == MB_CHANNEL_MODE_RS485;
+
   // Tøm evt. støj fra bussen inden vi selv sender — TIDSBEGRÆNSET (§BUGS.md
   // v0.9.0.1): uden denne grænse kan en kontinuerligt støjende/floating
   // RX-linje (fx manglende terminering/bias-modstande på en RS485-bus)
@@ -129,7 +154,7 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // RS485 (§2.2.1/§2.0.1): DE/RE toggles omkring selve sendingen. RS232:
   // fuld-duplex, dir-pinden røres slet ikke (§4.2's afklaring — mode er en
   // deployment-tids-beslutning, ikke noget der skifter live).
-  if (ctx.is_rs485) {
+  if (is_rs485) {
     digitalWrite(ctx.dir_pin, HIGH);
     delayMicroseconds(50);
   }
@@ -137,8 +162,8 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   ctx.serial->write(frame, frame_len);
   ctx.serial->flush();
 
-  if (ctx.is_rs485) {
-    const uint32_t byte_us = (11UL * 1000000UL) / ctx.baud;
+  if (is_rs485) {
+    const uint32_t byte_us = (11UL * 1000000UL) / ctx.config.baudrate;
     delayMicroseconds(byte_us + 100);
     digitalWrite(ctx.dir_pin, LOW);
   }
@@ -147,20 +172,18 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // timeout herefter (samme filosofi som reference-implementeringen).
   uint8_t response[MB_RTU_FRAME_MAX_LEN];
   size_t received = 0;
-  uint32_t interchar_ms = 38500UL / ctx.baud;
+  uint32_t interchar_ms = 38500UL / ctx.config.baudrate;
   if (interchar_ms < 2) interchar_ms = 2;
   if (interchar_ms > 20) interchar_ms = 20;
 
   // BUGS.md v0.9.0.1: `last_byte_time` opdateres PR. modtaget byte — måles
   // inter-character-timeouten mod den samlede transaktions starttidspunkt
   // (fast `start`) i stedet, udløber den næsten altid med det samme efter
-  // FØRSTE byte (normal transmissions-/propagations-forsinkelse alene
-  // overstiger typisk de 2-20 ms's interchar-vindue), og en ægte
-  // fler-byte-respons ville aldrig kunne læses færdig.
+  // FØRSTE byte, og en ægte fler-byte-respons ville aldrig kunne læses færdig.
   uint32_t last_byte_time = millis();
   bool timed_out = false;
   while (received < sizeof(response)) {
-    const uint32_t active_timeout = (received == 0) ? ctx.timeout_ms : interchar_ms;
+    const uint32_t active_timeout = (received == 0) ? ctx.config.timeout_ms : interchar_ms;
     if (millis() - last_byte_time > active_timeout) {
       timed_out = true;
       break;
@@ -176,53 +199,118 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     }
   }
 
+  if (ctx.config.inter_frame_delay_ms > 0) {
+    delay(ctx.config.inter_frame_delay_ms);
+  }
+
   if (timed_out || received == 0) {
     return MB_TIMEOUT;
   }
 
   const mb_pdu_parse_result_t parse_result =
       mb_pdu_parse_rtu_response(slave_id, response, received, out_pdu, out_pdu_len, out_pdu_capacity);
-  return map_parse_result(parse_result);
+  switch (parse_result) {
+    case MB_PDU_RESULT_OK:
+    case MB_PDU_RESULT_EXCEPTION:
+      // MB_PDU_RESULT_EXCEPTION er IKKE en kanal-fejl — det er stadig et
+      // gyldigt, modtaget svar (en Modbus-exception er semantisk indhold,
+      // ikke en transportfejl) — out_pdu er allerede udfyldt med
+      // exception-PDU'en, og TCP-laget skal blot relaye den uændret.
+      return MB_OK;
+    case MB_PDU_RESULT_CRC_ERROR:
+      return MB_CRC_ERROR;
+    case MB_PDU_RESULT_SLAVE_MISMATCH:
+      return MB_INVALID_SLAVE;
+    case MB_PDU_RESULT_TOO_SHORT:
+    case MB_PDU_RESULT_BUFFER_TOO_SMALL:
+    default:
+      return MB_CHANNEL_UNREACHABLE;
+  }
+}
+
+void record_stats(ChannelContext &ctx, const ChannelRequest &req) {
+  ctx.stats.total_requests++;
+  if (req.result == MB_OK) {
+    ctx.stats.successful_requests++;
+    return;
+  }
+
+  switch (req.result) {
+    case MB_TIMEOUT:
+      ctx.stats.timeout_errors++;
+      break;
+    case MB_CRC_ERROR:
+      ctx.stats.crc_errors++;
+      break;
+    case MB_EXCEPTION:
+      ctx.stats.exception_errors++;
+      break;
+    default:
+      break;
+  }
+
+  ctx.stats.has_last_error = true;
+  ctx.stats.last_error_slave_id = req.slave_id;
+  // FC01-06/16's adresse ligger altid i PDU-byte 1-2 (big-endian) — se
+  // lib/modbus_pdu's understøttede function codes.
+  ctx.stats.last_error_address = (req.pdu_len >= 3) ? static_cast<uint16_t>((req.pdu[1] << 8) | req.pdu[2]) : 0;
+  ctx.stats.last_error_type = static_cast<uint8_t>(req.result);
+  ctx.stats.last_error_at_uptime_s = millis() / 1000;
 }
 
 void channel_task(void *param) {
   ChannelContext *ctx = static_cast<ChannelContext *>(param);
   for (;;) {
     ChannelRequest *req = nullptr;
-    if (xQueueReceive(ctx->queue, &req, portMAX_DELAY) == pdTRUE && req != nullptr) {
+    if (xQueueReceive(ctx->queue, &req, portMAX_DELAY) != pdTRUE || req == nullptr) {
+      continue;
+    }
+
+    if (req->type == ChannelRequestType::kReconfigure) {
+      apply_config_now(*ctx, req->new_config);
+      req->result = MB_OK;
+      xSemaphoreGive(req->done);
+      continue;
+    }
+
+    if (!ctx->config.enabled) {
+      req->result = MB_NOT_ENABLED;
+    } else {
       req->result = execute_transaction(*ctx, req->slave_id, req->pdu, req->pdu_len, req->out_pdu, req->out_pdu_len,
                                          req->out_pdu_capacity);
-      if (req->result != MB_OK) {
-        Serial.print("MODBUS-FEJL kanal ");
-        Serial.print(ctx->name);
-        Serial.print(": slave=");
-        Serial.print(req->slave_id);
-        Serial.print(" fc=");
-        Serial.print(req->pdu_len > 0 ? req->pdu[0] : 0);
-        Serial.print(" -> ");
-        Serial.println(error_name(req->result));
-      }
-      xSemaphoreGive(req->done);
     }
+
+    record_stats(*ctx, *req);
+
+    if (req->result != MB_OK) {
+      Serial.print("MODBUS-FEJL kanal ");
+      Serial.print(ctx->name);
+      Serial.print(": slave=");
+      Serial.print(req->slave_id);
+      Serial.print(" fc=");
+      Serial.print(req->pdu_len > 0 ? req->pdu[0] : 0);
+      Serial.print(" -> ");
+      Serial.println(error_name(req->result));
+    }
+    xSemaphoreGive(req->done);
   }
 }
 
-void init_channel(ChannelContext &ctx, HardwareSerial &serial, int tx_pin, int rx_pin, int mode_sel_pin, int dir_pin,
-                   const char *task_name) {
+void init_channel(ChannelContext &ctx, HardwareSerial &serial, size_t config_index, int tx_pin, int rx_pin,
+                   int mode_sel_pin, int dir_pin, const char *task_name) {
   ctx.name = task_name;
+  ctx.config_index = config_index;
   ctx.serial = &serial;
+  ctx.tx_pin = tx_pin;
+  ctx.rx_pin = rx_pin;
   ctx.dir_pin = dir_pin;
   ctx.mode_sel_pin = mode_sel_pin;
-  ctx.is_rs485 = kDefaultIsRs485;
-  ctx.baud = kDefaultBaud;
-  ctx.timeout_ms = kDefaultTimeoutMs;
+  ctx.stats = mb_channel_stats_t{};
 
   pinMode(ctx.dir_pin, OUTPUT);
   digitalWrite(ctx.dir_pin, LOW);
-  pinMode(ctx.mode_sel_pin, OUTPUT);
-  digitalWrite(ctx.mode_sel_pin, ctx.is_rs485 ? HIGH : LOW);  // §2.0.1: modevalg-GPIO, HIGH=RS485 (vilkårlig men dokumenteret polaritet)
 
-  serial.begin(ctx.baud, SERIAL_8N1, rx_pin, tx_pin);
+  apply_config_now(ctx, config_get().channel[config_index]);  // §4.2: persisteret config, ikke hardkodet
 
   ctx.queue = xQueueCreate(4, sizeof(ChannelRequest *));
   xTaskCreate(channel_task, task_name, 4096, &ctx, tskIDLE_PRIORITY + 1, nullptr);
@@ -231,15 +319,20 @@ void init_channel(ChannelContext &ctx, HardwareSerial &serial, int tx_pin, int r
 }  // namespace
 
 void modbus_channel_init_all() {
-  init_channel(g_channelA, g_serialA, kChannelATx, kChannelARx, kChannelAModeSel, kChannelADir, "mb_ch_a");
-  init_channel(g_channelB, g_serialB, kChannelBTx, kChannelBRx, kChannelBModeSel, kChannelBDir, "mb_ch_b");
+  init_channel(g_channelA, g_serialA, 0, kChannelATx, kChannelARx, kChannelAModeSel, kChannelADir, "mb_ch_a");
+  init_channel(g_channelB, g_serialB, 1, kChannelBTx, kChannelBRx, kChannelBModeSel, kChannelBDir, "mb_ch_b");
 }
 
 mb_error_code_t modbus_channel_submit(ModbusChannelId channel, uint8_t slave_id, const uint8_t *pdu, size_t pdu_len,
                                        uint8_t *out_pdu, size_t *out_pdu_len, size_t out_pdu_capacity) {
   ChannelContext &ctx = context_for(channel);
 
+  if (!ctx.config.enabled) {
+    return MB_NOT_ENABLED;  // hurtig afvisning — ingen grund til at vaekke kanal-tasken
+  }
+
   ChannelRequest req;
+  req.type = ChannelRequestType::kTransaction;
   req.slave_id = slave_id;
   req.pdu = pdu;
   req.pdu_len = pdu_len;
@@ -260,7 +353,7 @@ mb_error_code_t modbus_channel_submit(ModbusChannelId channel, uint8_t slave_id,
 
   // Vent lidt laengere end kanalens egen timeout, saa vi altid faar
   // kanal-tasken resultat (MB_TIMEOUT) fremfor selv at time ud foerst.
-  if (xSemaphoreTake(req.done, pdMS_TO_TICKS(ctx.timeout_ms + 1000)) != pdTRUE) {
+  if (xSemaphoreTake(req.done, pdMS_TO_TICKS(ctx.config.timeout_ms + 1000)) != pdTRUE) {
     vSemaphoreDelete(req.done);
     return MB_TIMEOUT;
   }
@@ -268,3 +361,30 @@ mb_error_code_t modbus_channel_submit(ModbusChannelId channel, uint8_t slave_id,
   vSemaphoreDelete(req.done);
   return req.result;
 }
+
+bool modbus_channel_apply_config(ModbusChannelId channel, const mb_channel_config_t &new_config) {
+  ChannelContext &ctx = context_for(channel);
+
+  ChannelRequest req;
+  req.type = ChannelRequestType::kReconfigure;
+  req.new_config = new_config;
+  req.result = MB_CHANNEL_UNREACHABLE;
+  req.done = xSemaphoreCreateBinary();
+  if (req.done == nullptr) {
+    return false;
+  }
+
+  ChannelRequest *req_ptr = &req;
+  if (xQueueSend(ctx.queue, &req_ptr, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    vSemaphoreDelete(req.done);
+    return false;
+  }
+
+  const bool ok = xSemaphoreTake(req.done, pdMS_TO_TICKS(2000)) == pdTRUE && req.result == MB_OK;
+  vSemaphoreDelete(req.done);
+  return ok;
+}
+
+mb_channel_config_t modbus_channel_get_config(ModbusChannelId channel) { return context_for(channel).config; }
+
+mb_channel_stats_t modbus_channel_get_stats(ModbusChannelId channel) { return context_for(channel).stats; }
