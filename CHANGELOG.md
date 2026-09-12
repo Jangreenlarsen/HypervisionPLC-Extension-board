@@ -4,6 +4,19 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.7.0 build 0007] — 2026-09-11 — REST-management-API-fundament (Fase 5, start)
+
+**Filer tilføjet:**
+- `lib/rest_auth/rest_auth.h/.cpp` — hardware-uafhængig: egen base64-decoder (RFC 4648, ingen ekstern afhængighed — vektorer krydsverificeret med Pythons `base64`-modul), `mb_rest_auth_check()` der prøver `Authorization: Bearer <token>` og `Authorization: Basic <base64(user:pass)>` (§4.4's dual auth-model — én af de to skal matche). Konstant-tids strengsammenligning for selve credential-tjekket (ikke header-parsing) for at undgå en timing-side-channel. Adgangskoder kan indeholde `:` (split kun på FØRSTE `:`, jf. RFC 7617).
+- `lib/rest_status/rest_status.h/.cpp` — `mb_status_build_json()` (samme skema som designdokumentets `GET /api/status`-eksempel, §4.2, udvidet med `wifi`/`provisioned`) og `mb_status_build_error_json()` (samme `{"ok":false,...}`-stil som PLC-repoets REST-API). `error_code` udelades bevidst for rene HTTP-/auth-lags-fejl (ingen `mb_error_code_t`-værdi repræsenterer "unauthorized" — tvang ind i det skema ville være forkert, ikke kun upraktisk).
+- `src/http_server.h/.cpp` — ESP-IDF `esp_http_server` på port 8080 (§4.2). `GET /api/status`, autentificeret. Startes automatisk fra `src/provisioning.cpp`'s `attempt_connect()` ved vellykket forbindelse (både manuel `connect` og automatisk genforbindelse ved boot).
+- `test/test_rest_auth/test_rest_auth.cpp` — 18 tests: base64-decode (gyldig/ugyldig længde/tegn/kapacitet), Bearer (match/mismatch/ikke-konfigureret/versalfølsomhed), Basic (match/mismatch/ikke-konfigureret/password-med-kolon/ugyldig-base64/manglende-kolon), manglende header, ukendt scheme.
+- `test/test_rest_status/test_rest_status.cpp` — 6 tests: status-JSON forbundet/ikke-forbundet (ip/rssi udelades korrekt), for lille buffer, balancerede `{}`, fejl-JSON med/uden `error_code`.
+
+**Filer ændret:** `src/provisioning.cpp` (kalder `http_server_begin()`, viser REST-API-URL i `status`).
+
+**Verificeret LIVE på fysisk hardware, over det RIGTIGE netværk (ikke simuleret):** boardet var allerede forbundet til et rigtigt WiFi (Jan havde selv provisioneret det via CLI'en undervejs) — satte `rest user`/`rest pass` via CLI'en og kørte `curl` fra udviklingsmaskinen mod boardets IP: ingen auth → `401` + korrekt fejl-JSON; forkert password → `401`; korrekt Basic Auth → `200` + korrekt status-JSON (`api_version`, `fw_version`/`fw_build` matcher `version.json`, `active_channels:2`, `wifi.connected:true` med rigtig IP/RSSI). `pio test -e native` → 127/127 bestået.
+
 ## [0.6.0 build 0006] — 2026-09-11 — NVS-persistering (config.cpp) — Fase 3 afsluttet
 
 **Filer tilføjet:**

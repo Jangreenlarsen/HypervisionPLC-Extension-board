@@ -139,16 +139,20 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 │   ├── config.cpp/.h               # NVS (ESP32 Preferences) omkring lib/board_config/ — v0.6.0, færdig
 │   ├── net_driver.cpp/.h           # WiFi/Ethernet, DHCP/statisk IP
 │   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-503 (Variant A, §2.0/§4.1) — Fase 4
-│   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — Fase 5
+│   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — v0.7.0, kun GET /api/status indtil videre (resten af Fase 5)
 │   ├── firewall.cpp/.h             # IP-allowlist for data-planet (§4.3) — Fase 5
 │   ├── ota_handler.cpp/.h          # firmware-opdatering, dual-partition — Fase 5
 │   └── modbus_channel.cpp/.h       # × 2 (Variant A), én FreeRTOS-task pr. kanal — bruger lib/modbus_pdu/ — Fase 1
 ├── lib/                             # hardware-uafhængig, native-testbar logik (se ARCHITECTURE.md)
 │   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (FC01-06/16) — v0.2.0, færdig
 │   ├── provisioning_cli/           # seriel CLI-kommando-parsing/validering (§3.4.1) — v0.5.0, færdig
-│   └── board_config/               # persisteret config-schema + serialisering (§3.5) — v0.6.0, færdig
+│   ├── board_config/               # persisteret config-schema + serialisering (§3.5) — v0.6.0, færdig
+│   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — v0.7.0, færdig
+│   └── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — v0.7.0, færdig
 └── test/                            # PlatformIO native unit-tests (`pio test -e native`)
     ├── test_modbus_pdu/
     ├── test_provisioning_cli/
-    └── test_board_config/
+    ├── test_board_config/
+    ├── test_rest_auth/
+    └── test_rest_status/
 ```

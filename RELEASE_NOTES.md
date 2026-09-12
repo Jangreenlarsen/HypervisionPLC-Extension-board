@@ -2,6 +2,14 @@
 
 ---
 
+## v0.7.0 — 2026-09-11 — REST-management-API-fundament (Fase 5, start)
+
+Boardet har nu et rigtigt, autentificeret REST-API på port 8080 — `GET /api/status` accepterer enten det auto-genererede Bearer-token eller brugernavn/adgangskode (§4.4's dual auth-model). Testet LIVE med `curl` mod det fysiske board over det rigtige netværk (boardet var allerede forbundet, provisioneret af Jan selv via CLI'en): manglende/forkert auth giver `401`, korrekt Basic Auth giver `200` og en korrekt status-JSON med firmware-version, uptime, heap, WiFi-status og kanaltal.
+
+**Næste skridt**: de resterende REST-endpoints — kanal-config, diagnostisk Modbus read/write, firewall-allowlist, OTA — er stadig tilbage af Fase 5. Fase 4 (Modbus TCP-server) og Fase 1 (fysisk UART1/UART2-hardware) venter fortsat på fysisk hardware.
+
+---
+
 ## v0.6.0 — 2026-09-11 — NVS-persistering (Fase 3 afsluttet)
 
 Boardets konfiguration overlever nu en genstart. `config.cpp`/`lib/board_config/` gemmer WiFi, PLC-IP og REST-credentials i NVS (schema-versioneret, §3.5), og udsteder automatisk et management-API-token ved første vellykkede `connect` (vist én gang, som designet). Ny CLI-kommando `save` gemmer uden at forsøge en forbindelse. Boardet forsøger nu selv at genoprette WiFi-forbindelsen ved boot, hvis det allerede er provisioneret. Verificeret med et scriptet test der beviser ægte persistering på tværs af rigtige hardware-genstarter, ikke kun in-memory-tilstand.
