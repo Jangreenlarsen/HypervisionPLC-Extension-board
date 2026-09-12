@@ -32,16 +32,19 @@ bool require_auth(httpd_req_t *req) {
   const mb_board_config_t &cfg = config_get();
   const mb_rest_credentials_t creds = {
       cfg.mgmt_token, cfg.has_mgmt_token, cfg.rest_user, cfg.rest_pass,
-      cfg.has_rest_user && cfg.has_rest_pass,
+      cfg.has_rest_user && cfg.has_rest_pass, cfg.rest_auth_mode,
   };
 
-  if (mb_rest_auth_check(auth_header, &creds) == MB_REST_AUTH_OK) {
+  const mb_rest_auth_result_t auth_result = mb_rest_auth_check(auth_header, &creds);
+  if (auth_result == MB_REST_AUTH_OK) {
     return true;
   }
 
+  const char *message = (auth_result == MB_REST_AUTH_METHOD_DISABLED)
+                            ? "Denne auth-metode er slaaet fra (se 'rest auth' i den serielle CLI)"
+                            : "Manglende eller ugyldig Authorization-header";
   char body[160];
-  const size_t body_len =
-      mb_status_build_error_json(-1, "unauthorized", "Manglende eller ugyldig Authorization-header", body, sizeof(body));
+  const size_t body_len = mb_status_build_error_json(-1, "unauthorized", message, body, sizeof(body));
   httpd_resp_set_status(req, "401 Unauthorized");
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, body, body_len > 0 ? body_len : HTTPD_RESP_USE_STRLEN);

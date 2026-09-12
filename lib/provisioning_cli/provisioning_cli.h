@@ -2,6 +2,8 @@
 
 #include <cstddef>
 
+#include "rest_auth.h"
+
 // Grænser hentet fra spec, ikke gættet: 802.11 SSID max 32 bytes; WPA2-PSK
 // ASCII-passphrase er 8-63 tegn (kortere/længere er ugyldigt for WPA2-PSK).
 constexpr size_t MB_PROV_SSID_MAX_LEN = 32;
@@ -55,6 +57,11 @@ struct mb_provisioning_state_t {
   bool has_rest_user;
   char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
   bool has_rest_pass;
+
+  // Hvilke(n) auth-metode(r) REST-API'et accepterer (Jan: "auth-metoden vi
+  // bruger skal kunne config'es i CLI'en") — sat via "rest auth
+  // token|basic|both", default BOTH (mb_provisioning_state_init()).
+  mb_rest_auth_mode_t rest_auth_mode;
 };
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state);

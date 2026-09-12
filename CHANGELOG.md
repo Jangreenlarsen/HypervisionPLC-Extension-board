@@ -4,6 +4,18 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.8.0 build 0008] — 2026-09-12 — CLI-synlighed, REST-auth-mode, første skema-migration
+
+**Politik-reversering (Jan): al config synlig i CLI'en.** CLAUDE.md regel 6 og EXPANSION_BOARD_DESIGN.md §4.4/§3.4.1 opdateret: den serielle CLI (fysisk USB-adgang, samme tillidsniveau som boardet selv/en factory-reset) maskerer IKKE længere WiFi/REST-adgangskoder eller management-tokenet — `show`/`status` viser dem i klartekst. Gælder UDELUKKENDE denne CLI, aldrig REST-API'et. `show`/`status` viser nu også firmware-version+build (var kun i den separate `version`-kommando før).
+
+**`rest auth token|basic|both`** (Jan: "auth-metoden vi bruger skal kunne config'es i CLI'en") — ny CLI-kommando + `mb_rest_auth_mode_t` (persisteret felt). `lib/rest_auth`s `mb_rest_auth_check()` afviser nu eksplicit en slået-fra metode med en ny, adskilt resultatkode (`MB_REST_AUTH_METHOD_DISABLED`) i stedet for at blande den sammen med "forkerte credentials".
+
+**Første rigtige NVS-skema-migration (schema 1→2, §3.5):** `mb_board_config_v1_t` tilføjet som en frossen kopi af schema 1's layout. `mb_config_load_from_blob()` genkender nu en v1-blob (ved størrelse + v1-checksum + `schema_version==1`) og migrerer den til v2 i stedet for at falde til fabriksdefaults — `rest_auth_mode` får default-værdien `BOTH`. `mb_rest_auth_mode_t` fik en eksplicit `: uint8_t`-underliggende type (var implicit `int`, upålideligt i en persisteret `#pragma pack(1)`-blob).
+
+**Filer ændret:** `lib/rest_auth/rest_auth.h/.cpp` (auth_mode, METHOD_DISABLED), `lib/board_config/board_config.h/.cpp` (v1-struct, migration, checksum_v1), `lib/provisioning_cli/provisioning_cli.h/.cpp` (rest_auth_mode-felt, `rest auth`-kommando, firmware-linje i show), `src/http_server.cpp` (sender auth_mode, skelner method-disabled-besked), `src/provisioning.cpp` (token+auth_mode i status, token i show, rest-save udvidet til "rest"-præfiks generelt).
+
+**Verificeret PÅ FYSISK HARDWARE, inkl. den præcise situation §3.5 er skrevet for:** boardet havde allerede en schema-1-config gemt fra tidligere sessioner (rigtig WiFi, REST-credentials, management-token). Efter opgradering til dette build blev den migreret korrekt — IDENTISK WiFi-ssid/password, REST-user/pass og (kritisk) SAMME management-token som før, ikke nulstillet til fabriksdefaults. `rest auth token` sat via CLI, derefter `curl` med Basic Auth mod boardet → `401` "denne auth-metode er slået fra" (ikke den generiske 401-besked); `curl` med det korrekte Bearer-token → `200`. Nulstillet til `rest auth both` bagefter. `pio test -e native` → 115/115 bestået, inkl. en manuelt konstrueret v1-blob-migrationstest og en v1-korruptionstest.
+
 ## [0.7.0 build 0007] — 2026-09-11 — REST-management-API-fundament (Fase 5, start)
 
 **Filer tilføjet:**

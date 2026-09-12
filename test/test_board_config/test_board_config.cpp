@@ -107,6 +107,66 @@ void test_load_detects_corruption_via_checksum(void) {
   TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
 }
 
+void test_load_migrates_v1_blob_without_data_loss(void) {
+  // KRITISK: et rigtigt board kan allerede have en schema-1-blob gemt (det
+  // gjorde det, under selve udviklingen af denne funktion) — en firmware-
+  // opdatering til schema 2 maa IKKE nulstille den til fabriksdefaults.
+  // v1-blobben konstrueres manuelt her, da mb_config_save_to_blob() altid
+  // gemmer i det AKTUELLE (v2) format — der er ingen anden vej til at
+  // producere en aegte v1-blob at teste migration imod.
+  mb_board_config_v1_t v1{};
+  v1.schema_version = 1;
+  v1.provisioned = true;
+  strncpy(v1.wifi_ssid, "OldNetwork", sizeof(v1.wifi_ssid) - 1);
+  v1.wifi_has_ssid = true;
+  strncpy(v1.wifi_password, "OldPassword1", sizeof(v1.wifi_password) - 1);
+  v1.wifi_has_password = true;
+  strncpy(v1.plc_ip, "10.1.1.153", sizeof(v1.plc_ip) - 1);
+  v1.has_plc_ip = true;
+  strncpy(v1.mgmt_token, "f4353305b96b5f1e61e5e70b49b18e1c", sizeof(v1.mgmt_token) - 1);
+  v1.has_mgmt_token = true;
+  strncpy(v1.rest_user, "testadmin", sizeof(v1.rest_user) - 1);
+  v1.has_rest_user = true;
+  strncpy(v1.rest_pass, "RestApiTest123", sizeof(v1.rest_pass) - 1);
+  v1.has_rest_pass = true;
+  v1.checksum = mb_config_calc_checksum_v1(&v1);
+
+  mb_board_config_t migrated;
+  mb_config_load_from_blob(reinterpret_cast<const uint8_t *>(&v1), sizeof(v1), &migrated);
+
+  TEST_ASSERT_EQUAL_MESSAGE(MB_CONFIG_SCHEMA_VERSION, migrated.schema_version,
+                             "migreret config skal have den AKTUELLE schema-version, ikke 1");
+  TEST_ASSERT_TRUE_MESSAGE(migrated.provisioned, "provisioned-flag tabt under migration");
+  TEST_ASSERT_EQUAL_STRING("OldNetwork", migrated.wifi_ssid);
+  TEST_ASSERT_TRUE(migrated.wifi_has_ssid);
+  TEST_ASSERT_EQUAL_STRING("OldPassword1", migrated.wifi_password);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.153", migrated.plc_ip);
+  TEST_ASSERT_TRUE(migrated.has_plc_ip);
+  TEST_ASSERT_EQUAL_STRING("f4353305b96b5f1e61e5e70b49b18e1c", migrated.mgmt_token);
+  TEST_ASSERT_TRUE(migrated.has_mgmt_token);
+  TEST_ASSERT_EQUAL_STRING("testadmin", migrated.rest_user);
+  TEST_ASSERT_EQUAL_STRING("RestApiTest123", migrated.rest_pass);
+  TEST_ASSERT_EQUAL_MESSAGE(MB_REST_AUTH_MODE_BOTH, migrated.rest_auth_mode,
+                             "nyt felt skal faa default-vaerdien (BOTH), ikke vaere udefineret");
+}
+
+void test_load_rejects_corrupt_v1_blob(void) {
+  mb_board_config_v1_t v1{};
+  v1.schema_version = 1;
+  v1.provisioned = true;
+  strncpy(v1.wifi_ssid, "OldNetwork", sizeof(v1.wifi_ssid) - 1);
+  v1.checksum = mb_config_calc_checksum_v1(&v1);
+
+  uint8_t blob[sizeof(v1)];
+  memcpy(blob, &v1, sizeof(blob));
+  blob[10] ^= 0xFF;  // vaelt en byte midt i v1-blobben
+
+  mb_board_config_t loaded;
+  mb_config_load_from_blob(blob, sizeof(blob), &loaded);
+  TEST_ASSERT_FALSE_MESSAGE(loaded.provisioned, "korrupt v1-blob blev fejlagtigt migreret");
+  TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
+}
+
 void test_load_rejects_future_schema_version(void) {
   // Simulerer at koden (fejlagtigt, i strid med §3.5) er nedgraderet i
   // forhold til data en enhed allerede har gemt i en NYERE schema-version —
@@ -202,6 +262,8 @@ int main(int argc, char **argv) {
   RUN_TEST(test_load_with_no_stored_data_gives_defaults);
   RUN_TEST(test_load_with_wrong_size_gives_defaults_not_garbage);
   RUN_TEST(test_load_detects_corruption_via_checksum);
+  RUN_TEST(test_load_migrates_v1_blob_without_data_loss);
+  RUN_TEST(test_load_rejects_corrupt_v1_blob);
   RUN_TEST(test_load_rejects_future_schema_version);
 
   RUN_TEST(test_token_from_random_bytes);

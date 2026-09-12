@@ -2,6 +2,18 @@
 
 ---
 
+## v0.8.0 — 2026-09-12 — CLI-synlighed, REST-auth-mode-valg, første skema-migration
+
+Den serielle CLI viser nu ALT konfigureret data i klartekst (WiFi/REST-adgangskoder, management-tokenet) — en bevidst politik-ændring, da fysisk USB-adgang allerede er tillidsgrænsen; REST-API'et (netværksvendt) returnerer fortsat aldrig disse hemmeligheder. `show`/`status` viser nu også firmware-version+build.
+
+Ny CLI-kommando `rest auth token|basic|both` lader dig eksplicit slå Bearer-token eller Basic Auth fra for REST-API'et.
+
+Denne opdatering er også den FØRSTE rigtige test af NVS-skema-migrationssystemet (§3.5): boardets allerede-gemte config (fra tidligere test-sessioner) blev korrekt migreret til det nye skema UDEN datatab — samme WiFi, REST-credentials og management-token som før opgraderingen.
+
+**Næste skridt**: de resterende REST-endpoints (kanal-config, diagnostisk read/write, OTA) og Fase 1's fysiske hardware-bring-up (UART1/UART2 + RS232/RS485-transceivere, §2.0.1's GPIO-allokering).
+
+---
+
 ## v0.7.0 — 2026-09-11 — REST-management-API-fundament (Fase 5, start)
 
 Boardet har nu et rigtigt, autentificeret REST-API på port 8080 — `GET /api/status` accepterer enten det auto-genererede Bearer-token eller brugernavn/adgangskode (§4.4's dual auth-model). Testet LIVE med `curl` mod det fysiske board over det rigtige netværk (boardet var allerede forbundet, provisioneret af Jan selv via CLI'en): manglende/forkert auth giver `401`, korrekt Basic Auth giver `200` og en korrekt status-JSON med firmware-version, uptime, heap, WiFi-status og kanaltal.

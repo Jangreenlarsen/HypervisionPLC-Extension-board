@@ -87,12 +87,14 @@ mb_rest_auth_result_t mb_rest_auth_check(const char *auth_header, const mb_rest_
   }
 
   if (starts_with_ci(auth_header, "Bearer ")) {
+    if (credentials->auth_mode == MB_REST_AUTH_MODE_BASIC_ONLY) return MB_REST_AUTH_METHOD_DISABLED;
     const char *token = auth_header + 7;
     if (!credentials->has_mgmt_token) return MB_REST_AUTH_INVALID_CREDENTIALS;
     return constant_time_equals(token, credentials->mgmt_token) ? MB_REST_AUTH_OK : MB_REST_AUTH_INVALID_CREDENTIALS;
   }
 
   if (starts_with_ci(auth_header, "Basic ")) {
+    if (credentials->auth_mode == MB_REST_AUTH_MODE_TOKEN_ONLY) return MB_REST_AUTH_METHOD_DISABLED;
     const char *b64 = auth_header + 6;
     uint8_t decoded[96];  // rigeligt til MB_PROV_REST_USER_MAX_LEN(32) + ':' + MB_PROV_REST_PASS_MAX_LEN(63) + '\0'
     const size_t decoded_len = mb_base64_decode(b64, decoded, sizeof(decoded));

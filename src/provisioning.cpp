@@ -4,6 +4,7 @@
 #include <WiFi.h>
 
 #include <cstring>
+#include <strings.h>
 
 #include "config.h"
 #include "http_server.h"
@@ -157,7 +158,10 @@ bool attempt_connect() {
   Serial.println(WiFi.localIP());
 
   // Persistér til NVS (§3.5) og udsted et management-API-token FØRSTE gang
-  // boardet nogensinde forbinder — "vises kun én gang"-reglen fra §3.4.1.
+  // boardet nogensinde forbinder. Jan (bekræftet): CLI'en kræver fysisk
+  // USB-adgang, så tokenet er IKKE write-only her (modsat REST-API'et,
+  // §4.4, som fortsat aldrig returnerer det) — det kan altid hentes igen
+  // via 'status'.
   const bool had_token_already = config_get().has_mgmt_token;
   config_apply_and_save(&g_state);
   config_mark_provisioned();
@@ -166,10 +170,9 @@ bool attempt_connect() {
   config_ensure_mgmt_token(token, sizeof(token));
   if (!had_token_already) {
     Serial.println();
-    Serial.println("Management-API-token (VISES KUN ÉN GANG - kopiér det nu):");
+    Serial.println("Management-API-token (kan altid ses igen med 'status'):");
     Serial.println(token);
-    Serial.println(
-        "Indsæt det i PLC'ens System-side under 'Modbus Expansion Boards'. Det kan ikke hentes igen bagefter.");
+    Serial.println("Indsæt det i PLC'ens System-side under 'Modbus Expansion Boards'.");
   }
 
   http_server_begin();
@@ -205,12 +208,28 @@ void print_status() {
 
   Serial.print("provisioned: ");
   Serial.println(config_get().provisioned ? "ja" : "nej");
+  // Jan (bekræftet): al config skal være synlig i CLI'en — fysisk USB-adgang
+  // er allerede den reelle tillidsgrænse (§3.4), maskering her giver ingen
+  // ekstra beskyttelse. Gælder KUN CLI'en — REST-API'et (§4.2/§4.4) returnerer
+  // fortsat aldrig tokenet.
   Serial.print("mgmt.token: ");
-  Serial.println(config_get().has_mgmt_token ? "sat" : "ikke sat");
+  Serial.println(config_get().has_mgmt_token ? config_get().mgmt_token : "(ikke sat)");
   Serial.print("rest.user: ");
   Serial.println(config_get().has_rest_user ? config_get().rest_user : "(ikke sat)");
   Serial.print("rest.pass: ");
-  Serial.println(config_get().has_rest_pass ? "********" : "(ikke sat)");
+  Serial.println(config_get().has_rest_pass ? config_get().rest_pass : "(ikke sat)");
+  Serial.print("rest.auth_mode: ");
+  switch (config_get().rest_auth_mode) {
+    case MB_REST_AUTH_MODE_TOKEN_ONLY:
+      Serial.println("token");
+      break;
+    case MB_REST_AUTH_MODE_BASIC_ONLY:
+      Serial.println("basic");
+      break;
+    default:
+      Serial.println("both");
+      break;
+  }
 
   Serial.println(
       "BEMAERK: kanal-/modbus-status er ikke relevant endnu - UART-kanaler og REST-API "
@@ -311,14 +330,18 @@ void provisioning_poll() {
         config_apply_and_save(&g_state);
         Serial.println("Gemt til NVS (WiFi-forbindelse IKKE forsoegt).");
       } else if (result == PROV_ACTION_SHOW) {
-        // "show" (lib/provisioning_cli) kender kun CLI-udkastet, ikke
-        // live WiFi-forbindelsesstatus (hardware-data) — tilføjes her,
-        // saa Jan ser forbindelsesstatus i BAADE "show" og "status".
+        // "show" (lib/provisioning_cli) kender hverken live
+        // WiFi-forbindelsesstatus eller det persisterede management-token
+        // (som slet ikke er en del af mb_provisioning_state_t — kun
+        // config.cpp/NVS) — begge tilføjes her, saa 'show' reelt viser ALT
+        // config-data (Jan: "vi kan ikke se ... hvad token key er sat til").
+        Serial.print("mgmt.token: ");
+        Serial.println(config_get().has_mgmt_token ? config_get().mgmt_token : "(ikke sat)");
         print_wifi_connection_status();
-      } else if (result == PROV_OK && (g_state.has_rest_user || g_state.has_rest_pass)) {
-        // REST-credentials persisteres uafhængigt af WiFi-forbindelsesstatus
-        // (§4.4) — installatøren skal kunne rotere dem uden en fuld
-        // "connect"-cyklus.
+      } else if (result == PROV_OK && strncasecmp(g_line_buf, "rest", 4) == 0) {
+        // REST-credentials/auth-mode ("rest user/pass/auth") persisteres
+        // uafhængigt af WiFi-forbindelsesstatus (§4.4) — installatøren skal
+        // kunne rotere dem uden en fuld "connect"-cyklus.
         config_apply_and_save(&g_state);
       }
 
