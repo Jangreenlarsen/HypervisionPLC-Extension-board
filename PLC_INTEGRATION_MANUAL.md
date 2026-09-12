@@ -227,6 +227,17 @@ Exception-/fejl-svar: samme form som `/read` (afsnit 4.5).
 
 **Bemærk:** ikke alle slave-devices understøtter alle function codes — nogle svarer med en ægte Modbus-exception (`Illegal Function`, kode 1), andre svarer slet ikke (giver en `502 channel_error` med `MB_TIMEOUT`). Begge er set og verificeret i praksis (se CHANGELOG.md v0.11.0).
 
+### 4.7 OTA-firmwareopdatering
+
+- **`POST /api/ota`** — rå binær body (`.bin`-filen direkte, IKKE multipart — samme mønster som `curl --data-binary @firmware.bin`). Skrives chunket til den inaktive OTA-partition og verificeres automatisk (checksum). Svar ved succes:
+  ```json
+  {"ok": true, "message": "Firmware uploadet og verificeret - kald POST /api/reboot for at aktivere", "bytes": 810257}
+  ```
+  Fejler uploadet (forkert magic byte, for stor til partitionen, afbrudt forbindelse, checksum-fejl), svares der med `400`/`500` og en beskrivende `message` — boardet forbliver upåvirket på den KØRENDE firmware.
+- **`GET /api/ota/status`** — følg fremdriften: `{"state": "idle|in_progress|success|failed", "received": 0, "total": 0, "percent": 0, "error": ""}`.
+- **`POST /api/reboot`** — **påkrævet efter en vellykket `/api/ota`** for reelt at aktivere den nye firmware. Et vellykket OTA-upload sætter KUN den nye firmware som boot-partition — boardet fortsætter uforstyrret på den gamle, kørende firmware indtil denne genstart eksplicit kaldes. Svarer `{"ok": true, "message": "Genstarter..."}` og genstarter ca. 500 ms senere.
+- Kun ÉT OTA-upload ad gangen — et samtidigt forsøg giver `409 Conflict`.
+
 ---
 
 ## 5. Fejlkoder-reference
@@ -274,9 +285,8 @@ Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsn
 
 - **Kun 2 kanaler** (Variant A). Variant B (8 kanaler, SPI-expander) er designet (§2.2) men ikke bygget.
 - **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode:"rs232"` kan sættes via config, men er utestet i praksis.
-- **Ingen OTA endnu** (`POST /api/ota`, `GET /api/ota/status` — planlagt, ikke bygget).
 - **Ingen `POST /api/channels/{n}/reset-stats`/`POST /api/stats/reset`** — statistikken (afsnit 4.3) kan kun nulstilles ved reboot.
-- **Ingen `POST /api/reboot`** — en blød, ekstern reboot-mulighed er ikke bygget; kun fysisk strøm-cykling eller en ny firmware-upload genstarter boardet i dag.
+- **OTA-uploadets fremdrift kan IKKE afbrydes** — en gang startet, kører uploadet til den lykkes eller fejler; der er intet "annullér"-endpoint.
 - **Kanal B er ikke live-testet mod en rigtig slave** (kun kanal A har haft et fysisk device tilsluttet under udviklingen).
 - **`active_channels` er altid 2, ikke auto-detekteret** — designdokumentets §2.2.2 (auto-detektion af bestykning) gælder kun Variant B.
 - Se [FEATURES.md](FEATURES.md)'s "Planlagte features" for den fulde, opdaterede liste over hvad der mangler.
