@@ -2,6 +2,20 @@
 
 ---
 
+## v0.9.0 — 2026-09-12 — Fase 4: Modbus TCP-data-plan + rigtig kanal-eksekvering
+
+Boardet kan nu rent faktisk udføre Modbus RTU-transaktioner over de to fysiske UART-kanaler og videreformidle dem som Modbus TCP (port 502=kanal A, 503=kanal B) — Fase 4 er kodemæssigt på plads, nu hvor Jan har den fysiske hardware (RS485/RS232 wired til UART1/UART2) klar.
+
+Ny lag-2-eksekvering (`modbus_channel.cpp`): én FreeRTOS-task pr. kanal, RTU-framing genbruger den allerede-testede `lib/modbus_pdu`. Ny TCP-server (`modbus_tcp_server.cpp`): MBAP-parsing (`lib/modbus_tcp`, ny), §4.3's ene faste PLC-IP-permit håndhævet før noget Modbus-indhold parses, og standard gateway-exceptions (0x0A/0x0B) når feltbus-slaven ikke svarer korrekt.
+
+Baudrate og RS232-vs-RS485 er indtil videre hardkodet (9600 baud, RS485) — bliver konfigurerbart når Fase 5's kanal-config-REST-endpoint bygges.
+
+**Verifikationsstatus:** `pio test -e native` (125/125) og `pio run -e esp32dev` er bestået — men den egentlige ende-til-ende-test mod en fysisk RTU-slave og Jans rigtige PLC er IKKE gennemført endnu. Det er næste skridt.
+
+**Næste skridt**: live Modbus TCP-test mod Jans PLC og en rigtig RTU-slave (kræver kanal/slave-ID/baudrate-detaljer), derefter de resterende REST-endpoints (kanal-config, diagnostisk read/write, OTA).
+
+---
+
 ## v0.8.0 — 2026-09-12 — CLI-synlighed, REST-auth-mode-valg, første skema-migration
 
 Den serielle CLI viser nu ALT konfigureret data i klartekst (WiFi/REST-adgangskoder, management-tokenet) — en bevidst politik-ændring, da fysisk USB-adgang allerede er tillidsgrænsen; REST-API'et (netværksvendt) returnerer fortsat aldrig disse hemmeligheder. `show`/`status` viser nu også firmware-version+build.

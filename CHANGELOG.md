@@ -4,6 +4,22 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.9.0 build 0009] — 2026-09-12 — Fase 4: Modbus TCP-data-plan + rigtig kanal-eksekvering
+
+**Baggrund:** Jan har nu Fase 1-hardwaren fysisk på plads (RS485/RS232 wired til UART1/UART2) og bad om at fortsætte direkte med den rigtige (ikke-stub) Fase 4-implementering.
+
+**`lib/modbus_tcp/` (ny, hardware-uafhængig):** MBAP-header (§4.1) — parsing (`mb_mbap_parse_header`), PDU-udtrækning med streng længde-validering (`mb_mbap_extract_pdu`), svar-bygning (`mb_mbap_build_response`). 10 nye unit-tests (125 i alt), fixture baseret på Modbus-specens klassiske FC03-eksempel udvidet med MBAP-framing.
+
+**`src/modbus_channel.cpp` (ny):** Lag 2 (ARCHITECTURE.md) — én FreeRTOS-task pr. kanal, egen kø, synkron `modbus_channel_submit()` via en per-kald semafor. Selve RTU-transaktionen (DE/RE-toggling for RS485, to-fase timeout: fuld timeout til første byte, kort inter-character-timeout herefter) er portet fra `reference-plc-source/src/modbus_master.cpp`s mønster, men bygget på `lib/modbus_pdu`s allerede-testede framing/CRC/svar-komplethed i stedet for at gentage den logik. GPIO'er jf. §2.0.1: kanal A TX=17/RX=16/MODE_SEL=4/DIR=27, kanal B TX=18/RX=19/MODE_SEL=23/DIR=25. Baudrate/RS485-vs-RS232 er **hardkodet** (9600 baud, RS485) indtil Fase 5's kanal-config-REST-endpoint findes.
+
+**`src/modbus_tcp_server.cpp` (ny):** 2 lyttesockets (502=kanal A, 503=kanal B, §4.1), én FreeRTOS-task pr. port. Håndhæver §4.3's ene, faste `plc_ip`-permit FØR noget Modbus-indhold parses (peer-IP sammenlignes ved `accept()`) — intet `plc_ip` sat betyder data-planet er fejl-lukket for ALLE, ikke fejl-åbent. Ved en kanal-fejl (timeout/CRC/ukendt slave/optaget) sendes en standard Modbus-gateway-exception (0x0A "Gateway Path Unavailable" eller 0x0B "Gateway Target Device Failed to Respond") i stedet for enten at hænge eller lukke forbindelsen tavst. En almindelig Modbus-exception FRA slaven selv relayes uændret (det er gyldigt indhold, ikke en transportfejl).
+
+**Wiring:** `modbus_channel_init_all()` kaldes fra `main.cpp::setup()` (uafhængigt af WiFi-status). `modbus_tcp_server_begin()` kaldes fra `provisioning.cpp::attempt_connect()` lige efter `http_server_begin()`, kun ved vellykket WiFi-forbindelse.
+
+**Filer ændret:** `lib/modbus_tcp/modbus_tcp.h/.cpp` (nye), `test/test_modbus_tcp/test_modbus_tcp.cpp` (ny), `src/modbus_channel.h/.cpp` (nye), `src/modbus_tcp_server.h/.cpp` (nye), `src/main.cpp`, `src/provisioning.cpp`.
+
+**Status:** `pio test -e native` → 125/125 bestået. `pio run -e esp32dev` → bygger rent. **IKKE ENDNU verificeret mod en rigtig RTU-slave eller Jans PLC** — kræver en live-test-session (kanal, slave-ID, baudrate skal afklares med Jan) før denne feature kan meldes fuldt færdig, jf. CLAUDE.md regel 14.
+
 ## [0.8.0 build 0008] — 2026-09-12 — CLI-synlighed, REST-auth-mode, første skema-migration
 
 **Politik-reversering (Jan): al config synlig i CLI'en.** CLAUDE.md regel 6 og EXPANSION_BOARD_DESIGN.md §4.4/§3.4.1 opdateret: den serielle CLI (fysisk USB-adgang, samme tillidsniveau som boardet selv/en factory-reset) maskerer IKKE længere WiFi/REST-adgangskoder eller management-tokenet — `show`/`status` viser dem i klartekst. Gælder UDELUKKENDE denne CLI, aldrig REST-API'et. `show`/`status` viser nu også firmware-version+build (var kun i den separate `version`-kommando før).

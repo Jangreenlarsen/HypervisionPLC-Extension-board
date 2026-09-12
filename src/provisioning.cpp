@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "http_server.h"
+#include "modbus_tcp_server.h"
 #include "provisioning_cli.h"
 
 namespace {
@@ -176,6 +177,7 @@ bool attempt_connect() {
   }
 
   http_server_begin();
+  modbus_tcp_server_begin();
 
   return true;
 }
@@ -231,9 +233,8 @@ void print_status() {
       break;
   }
 
-  Serial.println(
-      "BEMAERK: kanal-/modbus-status er ikke relevant endnu - UART-kanaler og REST-API "
-      "(http_server.cpp) er ikke implementeret (Fase 1/5 fortsaetter).");
+  Serial.print("modbus_tcp: ");
+  Serial.println("port 502 (kanal A) / 503 (kanal B) - se 'help' for oevrige kommandoer");
 }
 
 void print_boot_banner() {
