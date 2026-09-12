@@ -123,16 +123,29 @@ static void append_line(char *buf, size_t capacity, size_t *pos, const char *lab
 
 static void mb_provisioning_format_status(const mb_provisioning_state_t *state, char *out_buffer,
                                            size_t out_buffer_capacity) {
+  // Jan (bekræftet): CLI'en kræver fysisk USB-adgang (§3.4 — samme
+  // tillidsniveau som selve boardet/en factory-reset), så maskering her
+  // giver ingen reel beskyttelse, kun friktion — al config, INKL.
+  // adgangskoder og management-tokenet, vises derfor i klartekst. Dette
+  // gælder KUN den serielle CLI — REST-API'et (§4.2/§4.4, netværksvendt)
+  // returnerer fortsat ALDRIG tokenet, uanset auth-metode.
   const char *password_display = "(ikke sat)";
   if (state->open_network) {
     password_display = "(aabent netvaerk)";
   } else if (state->has_password) {
-    password_display = "********";
+    password_display = state->password;
   }
-  const char *rest_pass_display = state->has_rest_pass ? "********" : "(ikke sat)";
+  const char *rest_pass_display = state->has_rest_pass ? state->rest_pass : "(ikke sat)";
 
   size_t pos = 0;
   out_buffer[0] = '\0';
+  // Jan: "show status paa serie cli skal vise version og build" — vis det
+  // ogsaa her, ikke kun i den separate "version"/"status"-kommando.
+#ifdef FW_VERSION
+  append_line(out_buffer, out_buffer_capacity, &pos, "firmware", FW_VERSION " build " FW_BUILD);
+#else
+  append_line(out_buffer, out_buffer_capacity, &pos, "firmware", "(version ukendt)");
+#endif
   append_line(out_buffer, out_buffer_capacity, &pos, "wifi.ssid", state->has_ssid ? state->ssid : "(ikke sat)");
   append_line(out_buffer, out_buffer_capacity, &pos, "wifi.pass", password_display);
   append_line(out_buffer, out_buffer_capacity, &pos, "wifi.mode", state->static_ip ? "static" : "dhcp");
@@ -144,6 +157,14 @@ static void mb_provisioning_format_status(const mb_provisioning_state_t *state, 
   append_line(out_buffer, out_buffer_capacity, &pos, "plc.ip", state->has_plc_ip ? state->plc_ip : "(ikke sat)");
   append_line(out_buffer, out_buffer_capacity, &pos, "rest.user", state->has_rest_user ? state->rest_user : "(ikke sat)");
   append_line(out_buffer, out_buffer_capacity, &pos, "rest.pass", rest_pass_display);
+
+  const char *auth_mode_display = "both";
+  if (state->rest_auth_mode == MB_REST_AUTH_MODE_TOKEN_ONLY) {
+    auth_mode_display = "token";
+  } else if (state->rest_auth_mode == MB_REST_AUTH_MODE_BASIC_ONLY) {
+    auth_mode_display = "basic";
+  }
+  append_line(out_buffer, out_buffer_capacity, &pos, "rest.auth_mode", auth_mode_display);
 }
 
 // Tjekker om `state` har alle påkrævede felter til et "connect"-forsøg.
@@ -208,6 +229,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "plc ip <a.b.c.d>", "PLC'ens IP - seedes i firewall-allowlist");
     append_line(out_message, out_message_capacity, &pos, "rest user <navn>", "brugernavn til REST-management-API'et");
     append_line(out_message, out_message_capacity, &pos, "rest pass <kode>", "adgangskode til REST-management-API'et (8-63 tegn)");
+    append_line(out_message, out_message_capacity, &pos, "rest auth token|basic|both", "hvilke(n) REST-auth-metode(r) der accepteres, default both");
     append_line(out_message, out_message_capacity, &pos, "show", "vis alt der er sat (password maskeret)");
     append_line(out_message, out_message_capacity, &pos, "status", "systemstatus (uptime/heap/WiFi/tilstand)");
     append_line(out_message, out_message_capacity, &pos, "save", "gem nuvaerende felter til NVS uden at forsoege forbindelse");
@@ -332,8 +354,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
       state->password[MB_PROV_PASSWORD_MAX_LEN] = '\0';
       state->has_password = true;
       state->open_network = false;
-      snprintf(out_message, out_message_capacity, "ok - password sat (%u tegn)",
-               static_cast<unsigned>(strlen(tokens[2])));
+      snprintf(out_message, out_message_capacity, "ok - password sat: %s", state->password);
       return PROV_OK;
     }
 
@@ -403,9 +424,29 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
       strncpy(state->rest_pass, tokens[2], MB_PROV_REST_PASS_MAX_LEN);
       state->rest_pass[MB_PROV_REST_PASS_MAX_LEN] = '\0';
       state->has_rest_pass = true;
-      snprintf(out_message, out_message_capacity, "ok - rest.pass sat (%u tegn)",
-               static_cast<unsigned>(strlen(tokens[2])));
+      snprintf(out_message, out_message_capacity, "ok - rest.pass sat: %s", state->rest_pass);
       return PROV_OK;
+    }
+
+    if (ieq(tokens[1], "auth")) {
+      if (ieq(tokens[2], "token")) {
+        state->rest_auth_mode = MB_REST_AUTH_MODE_TOKEN_ONLY;
+        snprintf(out_message, out_message_capacity, "ok - rest.auth_mode=token (kun Bearer-token accepteres)");
+        return PROV_OK;
+      }
+      if (ieq(tokens[2], "basic")) {
+        state->rest_auth_mode = MB_REST_AUTH_MODE_BASIC_ONLY;
+        snprintf(out_message, out_message_capacity, "ok - rest.auth_mode=basic (kun brugernavn/adgangskode accepteres)");
+        return PROV_OK;
+      }
+      if (ieq(tokens[2], "both")) {
+        state->rest_auth_mode = MB_REST_AUTH_MODE_BOTH;
+        snprintf(out_message, out_message_capacity, "ok - rest.auth_mode=both (begge metoder accepteres)");
+        return PROV_OK;
+      }
+      snprintf(out_message, out_message_capacity, "ugyldig rest auth-vaerdi '%s' - brug 'token', 'basic' eller 'both'",
+               tokens[2]);
+      return PROV_INVALID_VALUE;
     }
 
     snprintf(out_message, out_message_capacity, "ukendt rest-underkommando: %s", tokens[1]);

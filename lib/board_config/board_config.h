@@ -4,20 +4,59 @@
 #include <cstdint>
 
 #include "provisioning_cli.h"
+#include "rest_auth.h"
 
 // Schema-versionering (EXPANSION_BOARD_DESIGN.md §3.5) — en dyrekøbt lektion
 // fra PLC-repoets egen historik: rul ALDRIG dette tal ned igen, heller ikke
 // midlertidigt under udvikling. Skal et tilføjet felt fjernes efter at være
 // testet på rigtig hardware, behold tallet og marker feltet
 // "reserveret, ubrugt" i stedet for at sænke det.
-constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 1;
+//
+// Schema 2 (denne version): tilføjede `rest_auth_mode` (Jan: "auth-metoden
+// vi bruger skal kunne config'es i CLI'en"). `mb_board_config_v1_t` nedenfor
+// er en FROSSEN kopi af schema 1's layout, udelukkende til migration af
+// allerede-gemte v1-blobs — ÆNDR DEN ALDRIG, den skal blive ved med at
+// matche hvad der faktisk blev udgivet som schema 1.
+constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 2;
 
 // 16 rå tilfældige bytes hex-encoded = 32 tegn, 128 bits entropi til
 // management-API'ets Bearer-token (§4.4).
 constexpr size_t MB_MGMT_TOKEN_LEN = 32;
 
-// Persisteret board-konfiguration (NVS, via src/config.cpp). Rent data —
-// ingen hardware-afhængighed, se board_config.cpp for hvorfor det kan
+// FROSSEN — schema 1's nøjagtige layout, kun til migration af allerede-gemte
+// v1-blobs i mb_config_load_from_blob(). Ret ALDRIG denne struct.
+#pragma pack(push, 1)
+struct mb_board_config_v1_t {
+  uint16_t schema_version;
+  bool provisioned;
+  char wifi_ssid[MB_PROV_SSID_MAX_LEN + 1];
+  bool wifi_has_ssid;
+  char wifi_password[MB_PROV_PASSWORD_MAX_LEN + 1];
+  bool wifi_has_password;
+  bool wifi_open_network;
+  bool wifi_static_ip;
+  char wifi_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  char plc_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  bool has_plc_ip;
+  char mgmt_token[MB_MGMT_TOKEN_LEN + 1];
+  bool has_mgmt_token;
+  char rest_user[MB_PROV_REST_USER_MAX_LEN + 1];
+  bool has_rest_user;
+  char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
+  bool has_rest_pass;
+  uint16_t checksum;
+};
+#pragma pack(pop)
+
+// CRC16 over v1-structen (samme algoritme som mb_config_calc_checksum, blot
+// over det ÆLDRE layout) — bruges KUN til at verificere en v1-blob under
+// migration, se mb_config_load_from_blob().
+uint16_t mb_config_calc_checksum_v1(const mb_board_config_v1_t *config);
+
+// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 2. Rent
+// data — ingen hardware-afhængighed, se board_config.cpp for hvorfor det kan
 // native-testes. `schema_version` er bevidst FØRSTE felt (kan altid læses
 // uanset hvordan resten af structen ændrer sig i en senere schema-version),
 // `checksum` er bevidst SIDSTE felt (dækker alle felter før den selv).
@@ -52,6 +91,11 @@ struct mb_board_config_t {
   char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
   bool has_rest_pass;
 
+  // Schema 2 (nyt felt): hvilke(n) REST-auth-metode(r) der accepteres.
+  // Default MB_REST_AUTH_MODE_BOTH ved migration fra v1 (matcher den
+  // hidtidige, ubetingede adfærd før denne indstilling fandtes).
+  mb_rest_auth_mode_t rest_auth_mode;
+
   uint16_t checksum;
 };
 #pragma pack(pop)
@@ -66,9 +110,11 @@ uint16_t mb_config_calc_checksum(const mb_board_config_t *config);
 // Fortolker en rå byte-blob (som læst fra NVS) til `out_config`. Håndterer
 // robust: intet gemt endnu (stored_len==0) → defaults; forkert
 // størrelse/checksum-fejl (korruption, eller et ukendt/for-nyt schema) →
-// defaults (ALDRIG udefineret adfærd på skrabede/trunkerede data); en
-// gemt schema_version ÆLDRE end koden → migration (endnu ingen
-// migrationstrin defineret — kun schema 1 eksisterer, se §3.5).
+// defaults (ALDRIG udefineret adfærd på skrabede/trunkerede data); en gemt
+// v1-blob (ældre schema, §3.5) → migreres til v2 (rest_auth_mode sættes til
+// MB_REST_AUTH_MODE_BOTH), IKKE nulstillet til defaults — dette er den
+// egentlige pointe med schema-versionering: et board med allerede-gemt
+// config må ikke miste den ved en firmware-opdatering.
 void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_board_config_t *out_config);
 
 // Genberegner checksum og serialiserer `config` til `out_blob`. Returnerer

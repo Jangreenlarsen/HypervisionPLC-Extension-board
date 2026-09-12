@@ -9,10 +9,8 @@ void mb_config_set_defaults(mb_board_config_t *config) {
   config->provisioned = false;
 }
 
-uint16_t mb_config_calc_checksum(const mb_board_config_t *config) {
-  const uint8_t *bytes = reinterpret_cast<const uint8_t *>(config);
-  const size_t len = offsetof(mb_board_config_t, checksum);
-
+namespace {
+uint16_t crc16(const uint8_t *bytes, size_t len) {
   uint16_t crc = 0xFFFF;
   for (size_t i = 0; i < len; i++) {
     crc ^= bytes[i];
@@ -26,6 +24,43 @@ uint16_t mb_config_calc_checksum(const mb_board_config_t *config) {
   }
   return crc;
 }
+}  // namespace
+
+uint16_t mb_config_calc_checksum(const mb_board_config_t *config) {
+  return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_t, checksum));
+}
+
+uint16_t mb_config_calc_checksum_v1(const mb_board_config_v1_t *config) {
+  return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v1_t, checksum));
+}
+
+// Migrerer en verificeret v1-kandidat til nuværende (v2) layout. Nye felter
+// får deres default — her `rest_auth_mode = MB_REST_AUTH_MODE_BOTH`, som
+// matcher adfærden FØR denne indstilling fandtes (§3.5: migration tilføjer,
+// nulstiller aldrig eksisterende data).
+static void migrate_v1_to_current(const mb_board_config_v1_t &v1, mb_board_config_t *out_config) {
+  mb_config_set_defaults(out_config);
+
+  out_config->provisioned = v1.provisioned;
+  memcpy(out_config->wifi_ssid, v1.wifi_ssid, sizeof(out_config->wifi_ssid));
+  out_config->wifi_has_ssid = v1.wifi_has_ssid;
+  memcpy(out_config->wifi_password, v1.wifi_password, sizeof(out_config->wifi_password));
+  out_config->wifi_has_password = v1.wifi_has_password;
+  out_config->wifi_open_network = v1.wifi_open_network;
+  out_config->wifi_static_ip = v1.wifi_static_ip;
+  memcpy(out_config->wifi_ip, v1.wifi_ip, sizeof(out_config->wifi_ip));
+  memcpy(out_config->wifi_mask, v1.wifi_mask, sizeof(out_config->wifi_mask));
+  memcpy(out_config->wifi_gw, v1.wifi_gw, sizeof(out_config->wifi_gw));
+  memcpy(out_config->plc_ip, v1.plc_ip, sizeof(out_config->plc_ip));
+  out_config->has_plc_ip = v1.has_plc_ip;
+  memcpy(out_config->mgmt_token, v1.mgmt_token, sizeof(out_config->mgmt_token));
+  out_config->has_mgmt_token = v1.has_mgmt_token;
+  memcpy(out_config->rest_user, v1.rest_user, sizeof(out_config->rest_user));
+  out_config->has_rest_user = v1.has_rest_user;
+  memcpy(out_config->rest_pass, v1.rest_pass, sizeof(out_config->rest_pass));
+  out_config->has_rest_pass = v1.has_rest_pass;
+  out_config->rest_auth_mode = MB_REST_AUTH_MODE_BOTH;  // nyt felt — default, ikke i v1
+}
 
 void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_board_config_t *out_config) {
   if (stored_blob == nullptr || stored_len == 0) {
@@ -33,41 +68,37 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
     return;
   }
 
-  // En størrelse der ikke matcher NOGEN kendt schema-version er pr.
-  // definition korrupt eller fra en fremtidig, ukendt schema — bump ALDRIG
-  // MB_CONFIG_SCHEMA_VERSION ned (§3.5), så dette er ikke en gyldig,
-  // ældre version vi bare ikke har set før.
-  if (stored_len != sizeof(mb_board_config_t)) {
+  if (stored_len == sizeof(mb_board_config_t)) {
+    mb_board_config_t candidate;
+    memcpy(&candidate, stored_blob, sizeof(candidate));
+    if (candidate.checksum == mb_config_calc_checksum(&candidate) &&
+        candidate.schema_version == MB_CONFIG_SCHEMA_VERSION) {
+      *out_config = candidate;
+      return;
+    }
+    // Størrelsen matcher v2, men checksum eller schema_version gør ikke —
+    // korruption, eller en fremtidig schema-version koden (i strid med
+    // §3.5) er blevet nedgraderet i forhold til. Fald sikkert til defaults.
     mb_config_set_defaults(out_config);
     return;
   }
 
-  mb_board_config_t candidate;
-  memcpy(&candidate, stored_blob, sizeof(candidate));
-
-  if (candidate.checksum != mb_config_calc_checksum(&candidate)) {
-    // Korrupt blob (fx afbrudt skrivning ved strømtab) — fald tilbage til
-    // fabriksdefaults i stedet for at bruge skrabede felter.
+  if (stored_len == sizeof(mb_board_config_v1_t)) {
+    mb_board_config_v1_t v1_candidate;
+    memcpy(&v1_candidate, stored_blob, sizeof(v1_candidate));
+    if (v1_candidate.checksum == mb_config_calc_checksum_v1(&v1_candidate) && v1_candidate.schema_version == 1) {
+      migrate_v1_to_current(v1_candidate, out_config);
+      return;
+    }
+    // Størrelsen matcher v1, men checksum eller schema_version gør ikke —
+    // korrupt v1-blob, ikke en gyldig ældre version. Fald til defaults.
     mb_config_set_defaults(out_config);
     return;
   }
 
-  if (candidate.schema_version == MB_CONFIG_SCHEMA_VERSION) {
-    *out_config = candidate;
-    return;
-  }
-
-  if (candidate.schema_version < MB_CONFIG_SCHEMA_VERSION) {
-    // Migrationstrin indsættes HER når en schema 2 introduceres — endnu
-    // uden effekt, da kun schema 1 nogensinde er udgivet. Se §3.5: en
-    // migrationsfunktion må KUN køre denne vej (ældre -> nyere), aldrig
-    // omvendt.
-  }
-
-  // candidate.schema_version > MB_CONFIG_SCHEMA_VERSION (koden er nedgraderet
-  // i forhold til en enhed der allerede har gemt nyere data — skulle ikke
-  // kunne ske ved korrekt efterlevelse af §3.5, men håndteres defensivt) —
-  // fald tilbage til defaults i stedet for at fejlfortolke ukendte felter.
+  // Størrelsen matcher INGEN kendt schema-version — hverken korruption vi
+  // kan reparere via checksum, eller en ældre version vi ved hvordan vi
+  // migrerer. Fald sikkert til defaults.
   mb_config_set_defaults(out_config);
 }
 
@@ -124,6 +155,8 @@ void mb_config_apply_provisioning_state(mb_board_config_t *config, const mb_prov
   strncpy(config->rest_pass, state->rest_pass, sizeof(config->rest_pass) - 1);
   config->rest_pass[sizeof(config->rest_pass) - 1] = '\0';
   config->has_rest_pass = state->has_rest_pass;
+
+  config->rest_auth_mode = state->rest_auth_mode;
 }
 
 void mb_config_to_provisioning_state(const mb_board_config_t *config, mb_provisioning_state_t *out_state) {
@@ -155,4 +188,6 @@ void mb_config_to_provisioning_state(const mb_board_config_t *config, mb_provisi
   out_state->has_rest_user = config->has_rest_user;
   strncpy(out_state->rest_pass, config->rest_pass, sizeof(out_state->rest_pass) - 1);
   out_state->has_rest_pass = config->has_rest_pass;
+
+  out_state->rest_auth_mode = config->rest_auth_mode;
 }

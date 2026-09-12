@@ -157,18 +157,20 @@ void test_rest_pass_rejects_too_short(void) {
   TEST_ASSERT_FALSE(state.has_rest_pass);
 }
 
-void test_rest_pass_confirmation_never_echoes_password(void) {
+void test_rest_pass_confirmation_shows_password(void) {
+  // Jan (bekraeftet): CLI'en kraever fysisk USB-adgang, saa maskering giver
+  // ingen reel beskyttelse - al config, inkl. adgangskoder, vises i klartekst.
+  // Gaelder KUN CLI'en, ikke REST-API'et (§4.2/§4.4).
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest pass MyRestPass1", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_OK, r);
-  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "MyRestPass1"), "REST-password laakkede i klartekst i bekraeftelsesbeskeden");
+  TEST_ASSERT_NOT_NULL(strstr(msg, "MyRestPass1"));
 }
 
-void test_rest_pass_never_leaks_in_show(void) {
+void test_rest_pass_visible_in_show(void) {
   mb_provisioning_apply_line(&state, "rest pass MyRestPass1", msg, sizeof(msg));
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
-  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "MyRestPass1"), "REST-password laakkede i klartekst i show-output");
-  TEST_ASSERT_NOT_NULL(strstr(msg, "rest.pass: ********"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest.pass: MyRestPass1"));
 }
 
 void test_rest_missing_subcommand(void) {
@@ -179,6 +181,41 @@ void test_rest_missing_subcommand(void) {
 void test_rest_unknown_subcommand(void) {
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest bogus value", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_UNKNOWN_COMMAND, r);
+}
+
+void test_rest_auth_default_is_both(void) {
+  TEST_ASSERT_EQUAL(MB_REST_AUTH_MODE_BOTH, state.rest_auth_mode);
+}
+
+void test_rest_auth_token_sets_mode(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest auth token", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_EQUAL(MB_REST_AUTH_MODE_TOKEN_ONLY, state.rest_auth_mode);
+}
+
+void test_rest_auth_basic_sets_mode(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest auth basic", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_EQUAL(MB_REST_AUTH_MODE_BASIC_ONLY, state.rest_auth_mode);
+}
+
+void test_rest_auth_both_sets_mode(void) {
+  mb_provisioning_apply_line(&state, "rest auth token", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest auth both", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_EQUAL(MB_REST_AUTH_MODE_BOTH, state.rest_auth_mode);
+}
+
+void test_rest_auth_rejects_invalid_value(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "rest auth bogus", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_rest_auth_visible_in_show(void) {
+  mb_provisioning_apply_line(&state, "rest auth token", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest.auth_mode: token"));
 }
 
 void test_save_action(void) {
@@ -225,6 +262,16 @@ void test_show_action(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi.mode: dhcp"));
 }
 
+void test_show_includes_firmware_version(void) {
+  // Jan: "show status paa serie cli skal vise version og build" — native
+  // har bevidst ikke FW_VERSION sat (kun esp32dev faar den fra
+  // extract_version.py), saa denne test verificerer fallback-linjen findes,
+  // ikke et hardkodet versionsnummer.
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "firmware:"));
+}
+
 void test_show_is_multiline(void) {
   // Jan: "alle [beskeder] skal IKKE komme paa en linje" — verificerer at
   // show reelt bruger \r\n mellem felter, ikke bare formaterer alt paa ét.
@@ -233,20 +280,20 @@ void test_show_is_multiline(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "\r\n"));
 }
 
-void test_show_never_leaks_password(void) {
+void test_show_displays_password_in_cleartext(void) {
+  // Jan (bekraeftet): CLI'en kraever fysisk USB-adgang - al config, inkl.
+  // adgangskoder, vises i klartekst her. Gaelder KUN CLI'en, ikke REST-API'et.
   mb_provisioning_apply_line(&state, "wifi pass SuperSecret123", msg, sizeof(msg));
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
-  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "SuperSecret123"), "password laakkede i klartekst i show-output");
-  TEST_ASSERT_NOT_NULL(strstr(msg, "********"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi.pass: SuperSecret123"));
 }
 
-void test_wifi_pass_confirmation_never_echoes_password(void) {
+void test_wifi_pass_confirmation_shows_password(void) {
   const mb_provisioning_result_t r =
       mb_provisioning_apply_line(&state, "wifi pass SuperSecret123", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_OK, r);
-  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "SuperSecret123"),
-                            "password laakkede i klartekst i bekraeftelsesbeskeden");
+  TEST_ASSERT_NOT_NULL(strstr(msg, "SuperSecret123"));
 }
 
 void test_help_action(void) {
@@ -407,10 +454,16 @@ int main(int argc, char **argv) {
   RUN_TEST(test_rest_user_sets_state);
   RUN_TEST(test_rest_pass_sets_state);
   RUN_TEST(test_rest_pass_rejects_too_short);
-  RUN_TEST(test_rest_pass_confirmation_never_echoes_password);
-  RUN_TEST(test_rest_pass_never_leaks_in_show);
+  RUN_TEST(test_rest_pass_confirmation_shows_password);
+  RUN_TEST(test_rest_pass_visible_in_show);
   RUN_TEST(test_rest_missing_subcommand);
   RUN_TEST(test_rest_unknown_subcommand);
+  RUN_TEST(test_rest_auth_default_is_both);
+  RUN_TEST(test_rest_auth_token_sets_mode);
+  RUN_TEST(test_rest_auth_basic_sets_mode);
+  RUN_TEST(test_rest_auth_both_sets_mode);
+  RUN_TEST(test_rest_auth_rejects_invalid_value);
+  RUN_TEST(test_rest_auth_visible_in_show);
   RUN_TEST(test_save_action);
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
@@ -419,9 +472,10 @@ int main(int argc, char **argv) {
   RUN_TEST(test_command_words_are_case_insensitive);
 
   RUN_TEST(test_show_action);
+  RUN_TEST(test_show_includes_firmware_version);
   RUN_TEST(test_show_is_multiline);
-  RUN_TEST(test_show_never_leaks_password);
-  RUN_TEST(test_wifi_pass_confirmation_never_echoes_password);
+  RUN_TEST(test_show_displays_password_in_cleartext);
+  RUN_TEST(test_wifi_pass_confirmation_shows_password);
   RUN_TEST(test_help_action);
   RUN_TEST(test_help_is_multiline);
   RUN_TEST(test_version_action_without_build_flags);
