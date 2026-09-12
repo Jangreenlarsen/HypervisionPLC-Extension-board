@@ -26,7 +26,7 @@ Backlog seedet fra implementeringsfaserne i [EXPANSION_BOARD_DESIGN.md](EXPANSIO
 
 **Hardware er nu Variant A (2 kanaler via ESP32's egne UART1/UART2, §2.0) for første revision — ikke Variant B's 8-kanals SPI-expander-design.** Fase-numrene herunder følger stadig §9's overordnede rækkefølge, men indholdet er justeret til 2 kanaler.
 
-- [ ] planned — Fase 1: Hardware-bring-up (Variant A) — gateway-MCU (ESP32, IKKE WROVER/PSRAM, §2.0) + WiFi; GPIO-allokering klar (§2.0.1); forbind RS232/RS485-transceiver-par til UART1 og UART2; verificér én kanal kan tale Modbus RTU til en kendt slave.
+- [x] done — Fase 1: Hardware-bring-up (Variant A) — gateway-MCU + WiFi; GPIO-allokering (§2.0.1); RS485-transceiver på UART1 (kanal A) forbundet og verificeret mod en rigtig slave (v0.9.0.3). **Kanal B (UART2) er endnu ikke fysisk afprøvet** — ingen slave tilsluttet endnu.
 - [ ] planned — Fase 5 (resten): Management-API (`http_server.cpp`), Jans 6 punkter fra §4.2 — auth-fundament + `GET /api/status` + systemstatus er FÆRDIGE (v0.7.0, se ovenfor):
   - [x] done — Auth: Bearer-token ELLER Basic Auth (`rest user`/`rest pass`) — `lib/rest_auth/`, v0.7.0
   - [x] done — `GET /api/status` (= systemstatus, samme data som seriel `status`) — `lib/rest_status/` + `src/http_server.cpp`, v0.7.0
