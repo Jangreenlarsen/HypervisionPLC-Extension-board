@@ -176,9 +176,24 @@ Pr. kanal kræves 4 signaler — ikke kun 2 (TX/RX), fordi mode-valget (RS232/RS
 - **GPIO1/GPIO3 (UART0 TX/RX):** i brug af den serielle provisioning-CLI (§3.4) — kan ikke genbruges.
 - **GPIO6-11:** forbundet internt til SPI-flashen — brug ALDRIG disse, uanset formål.
 - **GPIO0, GPIO2, GPIO5, GPIO12, GPIO15:** boot-strapping-pins (påvirker boot-mode/flash-spænding/log-output ved reset) — undgået for at eliminere enhver risiko for utilsigtet boot-adfærd, selvom nogle (fx GPIO2) ofte bruges problemfrit i praksis.
-- **GPIO34-39:** kun input (ingen output-kapabilitet) — kan ikke bruges til MODE_SEL/DIR (skal kunne styres som output), men er reserveret til fremtidigt brug (fx den fysiske fabriksnulstillings-knap, §3.4 punkt 6, som kun kræver input).
+- **GPIO34-39:** kun input (ingen output-kapabilitet) — kan ikke bruges til MODE_SEL/DIR (skal kunne styres som output). GPIO34/36 reserveret til fremtidigt brug (fx den fysiske fabriksnulstillings-knap, §3.4 punkt 6, som kun kræver input); GPIO35/39 reserveret til W5500-Ethernet (se nedenfor).
 
 **Forudsætning:** denne allokering gælder et STANDARD ESP32-WROOM-32 DevKitC-lignende board (30/38-pin), ikke en WROVER/PSRAM-variant (§2.0's egen forudsætning) og ikke et board med afvigende pin-breakout — tjek mod det faktiske boards silketryk/pinout-diagram før tilslutning.
+
+**GPIO-reservation til valgfri W5500-Ethernet (§1.3/§2.2, planlagt, IKKE bygget endnu):** aftalt med Jan (2026-09-13) FØR nogen kode/hardware findes — reserveret nu for at undgå at et senere valg (fx en I2C-sensor) utilsigtet optager en pin Ethernet-tilføjelsen får brug for.
+
+| Signal | GPIO | Bemærkning |
+|---|---|---|
+| SPI SCK | GPIO14 | |
+| SPI MOSI | GPIO13 | |
+| SPI CS | GPIO32 | |
+| SPI MISO | GPIO35 | input-only — naturligt egnet, retningen er ind mod ESP32'en |
+| INT (valgfri) | GPIO39 | input-only, kun nødvendig ved interrupt-drevet (ikke polling) drift af Ethernet-biblioteket |
+| RST | *(ingen dedikeret GPIO)* | Jan bekræftet (2026-09-13): modulets eget power-on-reset-kredsløb er tilstrækkeligt — en software-styret RST var det eneste der ville have krævet at ofre en af de reserverede LED-pins (GPIO26/33) eller en strapping-pin |
+
+Bevidst IKKE brugt: GPIO21/GPIO22 (Arduino-frameworkets sædvanlige default I2C-pins, SDA/SCL) — holdt fri til fremtidig I2C (display, RTC, e.l.), selvom de var elektrisk lige så velegnede til SPI. GPIO26/33 (aktivitets-LED'erne ovenfor) er heller ikke rørt.
+
+**Software-arkitektur-note (når W5500 rent faktisk implementeres):** kør Ethernet-driveren i sin egen FreeRTOS-task (samme mønster som kanal-tasksene, §3.2) for at undgå at en SPI-transaktion nogensinde kan sulte kanal A/B's UART-læsning for CPU-tid — overvej at pin'e den til core 0, mens kanal-tasks/Modbus TCP-serveren kører på core 1.
 
 ---
 
