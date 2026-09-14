@@ -1,6 +1,6 @@
 # GPIO-mapping — HypervisionPLC Extension Board (Variant A)
 
-Samlet, hurtigt-opslags-reference for alle GPIO'er brugt på et ESP32-WROOM-32 DevKit (IKKE WROVER/PSRAM). Fuld begrundelse for hvert valg står i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) §2.0.1 — denne fil er et rent opslagsværk, ikke den autoritative kilde ved uoverensstemmelse.
+Samlet, hurtigt-opslags-reference for alle GPIO'er brugt på det fysiske board: et **30-pin ESP32-WROOM-32 DevKit** (IKKE WROVER/PSRAM). Fuld begrundelse for hvert valg står i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) §2.0.1 — denne fil er et rent opslagsværk, ikke den autoritative kilde ved uoverensstemmelse.
 
 **Seneste ændring:** 2026-09-14 — MODE_SEL samlet til én delt GPIO for hele boardet (var én pr. kanal); den frigjorte GPIO23 bruges nu til W5500's RST-pin.
 
@@ -33,6 +33,50 @@ Samlet, hurtigt-opslags-reference for alle GPIO'er brugt på et ESP32-WROOM-32 D
 | 35 | W5500 — MISO | SPI (input-only) |
 | 36 | *(fri, input-only)* | Reserveret |
 | 39 | W5500 — INT | Interrupt (input-only, interrupt-drevet drift) |
+
+## Fysisk pin-layout (30-pin ESP32 DevKit, USB-stik opad)
+
+Boardet er et **30-pin ESP32-WROOM-32 DevKit**. GPIO-nummeret er det autoritative — det står trykt direkte på kredsløbskortet ved hver pin, uanset fabrikant. Rækkefølgen top/bund herunder følger den mest almindelige 30-pin-layout, men kan variere ganske lidt mellem klonfabrikanter — tjek altid dit boards eget silketryk før tilslutning.
+
+**Venstre side (top → bund):**
+
+| GPIO | Bruges til |
+|---|---|
+| 36 (VP) | *(fri)* |
+| 39 (VN) | W5500 — INT |
+| 34 | *(fri, fx fabriksnulstil-knap)* |
+| 35 | W5500 — MISO |
+| 32 | W5500 — CS |
+| 33 | Kanal B — aktivitets-LED *(valgfri)* |
+| 25 | Kanal B — DIR |
+| 26 | Kanal A — aktivitets-LED *(valgfri)* |
+| 27 | Kanal A — DIR |
+| 14 | W5500 — SCK |
+| 12 | *(undgås — boot-strapping)* |
+| 13 | W5500 — MOSI |
+| GND | — |
+| VIN | — |
+
+**Højre side (top → bund):**
+
+| GPIO | Bruges til |
+|---|---|
+| 23 | W5500 — RST |
+| 22 | *(fri, reserveret I2C SCL)* |
+| 1 (TX0) | Seriel CLI (USB) |
+| 3 (RX0) | Seriel CLI (USB) |
+| 21 | *(fri, reserveret I2C SDA)* |
+| GND | — |
+| 19 | Kanal B — UART RX |
+| 18 | Kanal B — UART TX |
+| 5 | *(undgås — boot-strapping)* |
+| 17 | Kanal A — UART TX |
+| 16 | Kanal A — UART RX |
+| 4 | MODE_SEL — hele boardet |
+| 0 | *(undgås — boot-strapping)* |
+| 2 | *(undgås — boot-strapping)* |
+| 15 | *(undgås — boot-strapping)* |
+| 3V3 | — |
 
 ## Vigtigt at vide
 
