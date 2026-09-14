@@ -4,6 +4,16 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.16.0 build 0019] — 2026-09-14 — Ethernet-status og board_mode i den serielle CLI
+
+**Baggrund:** Jan spurgte hvordan han kunne se Ethernet-status og MODE_SEL/board_mode i CLI'en — begge var kun tilgængelige via REST (`GET /api/status`, v0.13.0/v0.15.0), ikke i den serielle `status`/`show`.
+
+**`src/provisioning.cpp`:** ny `print_ethernet_status()` (samme mønster som den eksisterende `print_wifi_connection_status()`) — viser `eth.connection: link op/link nede` og, hvis op, `eth.ip`. Ny `print_board_mode()` — viser `board_mode: rs485/rs232` (læst fra kanal A's config, altid synkroniseret med kanal B siden v0.14.0). Begge kaldt fra `print_status()` (kommandoen `status`) OG `PROV_ACTION_SHOW`-handleren (kommandoen `show`), samme sted som WiFi-status allerede kaldes — så alle tre CLI-udskrifter forbliver konsistente indbyrdes.
+
+**Filer ændret:** `src/provisioning.cpp`.
+
+**Status:** 169/169 native-tests upåvirket, bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.15.0 build 0018] — 2026-09-14 — `GET /api/status` får et direkte `board_mode`-felt
 
 **Baggrund:** Jan påpegede at siden MODE_SEL (v0.14.0) nu er én delt GPIO for hele boardet, burde REST-API'et også rapportere RS232/RS485-tilstanden direkte som en board-egenskab, i stedet for at en klient skal udlede den indirekte via en tilfældig kanals `mode`-felt.
