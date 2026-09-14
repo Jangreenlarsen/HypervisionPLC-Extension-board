@@ -36,6 +36,11 @@ constexpr int kEthSpiClockHz = 8 * 1000 * 1000;  // 8 MHz — forsigtigt for et 
 esp_eth_handle_t g_eth_handle = nullptr;
 volatile bool g_link_up = false;
 char g_ip_string[16] = "";  // "255.255.255.255\0"
+// v0.18.0: default NOT_DETECTED — ethvert tidligt "return" i
+// eth_driver_begin() (SPI-/GPIO-/netif-opsætning ELLER selve
+// esp_eth_start()-chip-detektionen, se dens fejlgren nedenfor) efterlader
+// den bevidst her.
+volatile eth_driver_status_t g_eth_status = ETH_STATUS_NOT_DETECTED;
 
 void eth_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
   (void)arg;
@@ -44,19 +49,33 @@ void eth_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
   switch (event_id) {
     case ETHERNET_EVENT_CONNECTED:
       g_link_up = true;
+      g_eth_status = ETH_STATUS_WAITING_DHCP;
       Serial.println("Ethernet: link op.");
       break;
     case ETHERNET_EVENT_DISCONNECTED:
       g_link_up = false;
       g_ip_string[0] = '\0';
+      g_eth_status = ETH_STATUS_LINK_DOWN;
       Serial.println("Ethernet: link nede.");
       break;
     case ETHERNET_EVENT_START:
-      Serial.println("Ethernet: driver startet, venter paa link...");
+      // BUG fundet ved live-boot-test (v0.18.0, board UDEN fysisk W5500-modul
+      // tilsluttet): dette event fyrer saa snart esp_eth_start() KALDES, IKKE
+      // naar hardwaren reelt er bekraeftet til stede — den faktiske SPI-
+      // kommunikation til W5500-chippen sker FOERST inde i esp_eth_start()
+      // selv (phy->get_link()), og fejler DER (synligt kun som ESP_LOGE,
+      // "w5500_send_command timeout"/"issue OPEN command failed") hvis intet
+      // modul svarer. At saette g_eth_status her ville derfor fejlagtigt
+      // rapportere "modul fundet" ogsaa naar intet modul er tilsluttet.
+      // g_eth_status saettes derfor IKKE her - kun eksplicit i
+      // eth_driver_begin() EFTER esp_eth_start() rent faktisk lykkes (se
+      // nedenfor), som er det foerste tidspunkt hardwaren reelt er verificeret.
+      Serial.println("Ethernet: driver-state-machine startet (esp_eth_start() endnu ikke bekraeftet)...");
       break;
     case ETHERNET_EVENT_STOP:
       g_link_up = false;
       g_ip_string[0] = '\0';
+      g_eth_status = ETH_STATUS_NOT_DETECTED;
       Serial.println("Ethernet: driver stoppet.");
       break;
     default:
@@ -70,6 +89,7 @@ void got_ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_
   (void)event_id;
   const ip_event_got_ip_t *event = static_cast<const ip_event_got_ip_t *>(event_data);
   snprintf(g_ip_string, sizeof(g_ip_string), IPSTR, IP2STR(&event->ip_info.ip));
+  g_eth_status = ETH_STATUS_CONNECTED;
   Serial.print("Ethernet: fik IP ");
   Serial.println(g_ip_string);
 }
@@ -153,8 +173,11 @@ void eth_driver_begin() {
   }
 
   esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
+  // Allokerer/konfigurerer kun driver-strukturerne - taler ENDNU ikke SPI
+  // til selve W5500-chippen (det sker foerst i esp_eth_start() nedenfor).
+  // Lykkes normalt uanset om et fysisk modul er tilsluttet.
   if (esp_eth_driver_install(&eth_config, &g_eth_handle) != ESP_OK) {
-    Serial.println("Ethernet: esp_eth_driver_install() fejlede — intet W5500-modul tilsluttet, eller forkert forbundet?");
+    Serial.println("Ethernet: esp_eth_driver_install() fejlede.");
     return;
   }
 
@@ -167,13 +190,40 @@ void eth_driver_begin() {
   esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler, nullptr);
 
   if (esp_eth_start(g_eth_handle) != ESP_OK) {
-    Serial.println("Ethernet: esp_eth_start() fejlede.");
+    // Den REELLE SPI-kommunikation til W5500-chippen (phy->get_link(), som
+    // igen kalder w5500_update_link_duplex_speed()) sker FOERST her, inde i
+    // esp_eth_start() - IKKE i esp_eth_driver_install() ovenfor (den blot
+    // allokerer/konfigurerer driver-strukturerne, uden at ruere hardwaren).
+    // Fejler dette, er intet modul fundet/svarende - g_eth_status forbliver
+    // derfor korrekt paa sin NOT_DETECTED-default (se ETHERNET_EVENT_START's
+    // kommentar ovenfor for hvorfor det IKKE allerede blev aendret der).
+    Serial.println("Ethernet: esp_eth_start() fejlede — intet W5500-modul fundet/svarende, eller forkert forbundet?");
     return;
   }
 
+  // Foerste tidspunkt hardwaren er REELT bekraeftet til stede (se
+  // esp_eth_start()-fejlgrenen ovenfor) - link-tilstanden praeciseres
+  // straks efter af ETHERNET_EVENT_CONNECTED/DISCONNECTED.
+  g_eth_status = ETH_STATUS_LINK_DOWN;
   Serial.println("Ethernet: W5500-driver startet (DHCP naar kabel + link er til stede).");
 }
 
 bool eth_driver_link_up() { return g_link_up; }
 
 const char *eth_driver_ip_string() { return g_ip_string; }
+
+eth_driver_status_t eth_driver_status() { return g_eth_status; }
+
+const char *eth_driver_status_string() {
+  switch (g_eth_status) {
+    case ETH_STATUS_LINK_DOWN:
+      return "link_down";
+    case ETH_STATUS_WAITING_DHCP:
+      return "waiting_dhcp";
+    case ETH_STATUS_CONNECTED:
+      return "connected";
+    case ETH_STATUS_NOT_DETECTED:
+    default:
+      return "not_detected";
+  }
+}

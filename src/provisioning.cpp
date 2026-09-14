@@ -121,17 +121,38 @@ void print_wifi_connection_status() {
   }
 }
 
+// Menneskelæselig gengivelse af eth_driver_status() — samme princip som
+// wifi_status_text() ovenfor. v0.18.0 (Jan: "vi skal have noget diag på det
+// w5500 så vi kan se det fungere eller om det er link fejl") — skelner
+// eksplicit mellem "modulet blev aldrig fundet på SPI-bussen" (tjek den
+// fysiske Ethernet-tilslutning/loedning) og "modulet virker fint, det er
+// bare kablet/linket der mangler" (en ren netværks-sag), i stedet for det
+// tidligere udifferentierede "link nede (intet kabel/modul...)".
+const char *eth_status_text(eth_driver_status_t status) {
+  switch (status) {
+    case ETH_STATUS_NOT_DETECTED:
+      return "intet W5500-modul fundet (tjek fysisk tilslutning/loedning - eller boardet har ikke et monteret)";
+    case ETH_STATUS_LINK_DOWN:
+      return "modul fundet, men link nede (tjek netvaerkskabel/switch-port)";
+    case ETH_STATUS_WAITING_DHCP:
+      return "link op, venter paa DHCP";
+    case ETH_STATUS_CONNECTED:
+      return "forbundet";
+    default:
+      return "ukendt";
+  }
+}
+
 // Samme princip som print_wifi_connection_status() — Jan bad om at kunne se
 // Ethernet-status (§1.3/§2.2, W5500, v0.13.0) og board_mode (§2.0.1's delte
 // MODE_SEL, v0.14.0/v0.15.0) direkte i den serielle CLI, ikke kun via REST.
 void print_ethernet_status() {
-  const bool link_up = eth_driver_link_up();
+  const eth_driver_status_t status = eth_driver_status();
   Serial.print("eth.connection: ");
-  Serial.println(link_up ? "link op" : "link nede (intet kabel/modul, eller endnu ingen link-detektion)");
-  if (link_up) {
-    const char *ip = eth_driver_ip_string();
+  Serial.println(eth_status_text(status));
+  if (status == ETH_STATUS_CONNECTED) {
     Serial.print("eth.ip: ");
-    Serial.println(ip[0] != '\0' ? ip : "(link op, venter paa DHCP)");
+    Serial.println(eth_driver_ip_string());
   }
 }
 

@@ -2,6 +2,16 @@
 
 ---
 
+## v0.18.0 — 2026-09-14 — Detaljeret W5500-Ethernet-diagnostik
+
+Ethernet-status er nu meget mere præcis end det gamle binære "link op/nede". Boardet kan nu rapportere fire tydelige tilstande — både i den serielle CLI (`status`/`show`) og via `GET /api/status`s `ethernet.status`: intet modul fundet (tjek den fysiske tilslutning), modul fundet men link nede (tjek kabel/switch), link oppe og venter på DHCP, eller fuldt forbundet. Det gør det muligt at se med det samme om et Ethernet-problem er en hardware-/wiring-sag eller "bare" et løst/manglende netværkskabel.
+
+Fandt og rettede undervejs en reel bug i selve diagnostikken: statussen blev sat for tidligt (før hardwaren reelt var talt med over SPI), så et board UDEN noget W5500-modul fejlagtigt viste "modul fundet, link nede" i stedet for "intet modul fundet". Rettet og live-verificeret — boardet viser nu korrekt "intet W5500-modul fundet".
+
+**Næste skridt**: fysisk montering og test af W5500-modulet (afventer stadig fra v0.13.0) — de tre øvrige tilstande (link nede/venter på DHCP/forbundet) er endnu ikke verificerbare mod rigtig hardware.
+
+---
+
 ## v0.17.0 — 2026-09-14 — MODE_SEL (GPIO4) er nu en fabriks-input, ikke et PUT-bart felt
 
 RS232/RS485-valget (MODE_SEL, GPIO4) er ændret fra et firmware-styret output til en rigtig hardware-INPUT — installatøren/fabrikanten forbinder GPIO4 til 3.3V (RS485) eller GND (RS232) fysisk, ÉN gang, og firmwaren læser den værdi ved hver opstart. `mode` kan derfor ikke længere sættes via `PUT /api/channels/{n}/config` — det er nu en ren læseværdi (`GET /api/channels/{n}`, `GET /api/status`s `board_mode`, seriel `status`/`show`). Baudrate/parity/stop_bits/timeout osv. er upåvirket og stadig fuldt konfigurerbare.

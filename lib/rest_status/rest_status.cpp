@@ -22,9 +22,10 @@ int append_wifi_object(char *out, size_t out_capacity, const mb_status_data_t *d
 
 int append_ethernet_object(char *out, size_t out_capacity, const mb_status_data_t *data) {
   if (data->eth_connected) {
-    return snprintf(out, out_capacity, "\"ethernet\":{\"connected\":true,\"ip\":\"%s\"}", data->eth_ip);
+    return snprintf(out, out_capacity, "\"ethernet\":{\"connected\":true,\"ip\":\"%s\",\"status\":\"%s\"}", data->eth_ip,
+                     data->eth_status);
   }
-  return snprintf(out, out_capacity, "\"ethernet\":{\"connected\":false}");
+  return snprintf(out, out_capacity, "\"ethernet\":{\"connected\":false,\"status\":\"%s\"}", data->eth_status);
 }
 
 }  // namespace
