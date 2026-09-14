@@ -2,6 +2,14 @@
 
 ---
 
+## v0.22.1 — 2026-09-14 — REST Basic Auth-credentials skjules i CLI'en når de ikke bruges
+
+`show` og `status` i den serielle CLI viser nu kun `rest.user`/`rest.pass` når REST-API'ets auth-mode er `both` — ikke i `token`- eller `basic`-mode, hvor de enten slet ikke bruges eller ville have givet et misvisende billede af hvad der reelt kræves. Selve værdierne bliver stadig gemt i baggrunden, så intet går tabt hvis man senere skifter tilbage til `both`.
+
+**Næste skridt**: live-verifikation på fysisk hardware.
+
+---
+
 ## v0.22.0 — 2026-09-14 — Konfigurerbart DHCP-hostname
 
 Boardet får nu et rigtigt, meningsfuldt hostname på DHCP-serveren i stedet for et generisk Espressif-navn — som standard `hypervision-ext-XXXXXX` (udledt af boardets unikke MAC-adresse), men kan overstyres via `hostname <navn>` i den serielle CLI (og ryddes tilbage til default med `hostname auto`). Gælder for både WiFi og Ethernet. WiFi'ens hostname opdateres med det samme ved næste `connect`; Ethernet's kræver et `reboot`.

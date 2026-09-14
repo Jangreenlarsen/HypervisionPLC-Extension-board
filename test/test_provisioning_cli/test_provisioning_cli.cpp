@@ -343,6 +343,46 @@ void test_rest_auth_visible_in_show(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest.auth_mode: token"));
 }
 
+// Jan: "hvis vi køre rest auth token så skal rest user og rest pass [kun]
+// være i config kun hvis rest auth both" — rest.user/rest.pass vises KUN
+// i "show" naar auth_mode er BOTH, praecis som formuleret (ogsaa skjult
+// for BASIC_ONLY, selvom Basic Auth teknisk set bruges der).
+void test_rest_user_pass_hidden_in_show_when_mode_token(void) {
+  mb_provisioning_apply_line(&state, "rest user admin", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "rest pass MyRestPass1", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "rest auth token", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "rest.user"), "rest.user skal vaere skjult naar auth_mode=token");
+  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "rest.pass"), "rest.pass skal vaere skjult naar auth_mode=token");
+  // Vaerdierne skal stadig vaere i state (IKKE slettet) - kun visningen er skjult.
+  TEST_ASSERT_TRUE(state.has_rest_user);
+  TEST_ASSERT_EQUAL_STRING("admin", state.rest_user);
+}
+
+void test_rest_user_pass_hidden_in_show_when_mode_basic(void) {
+  // Jan bekræftede eksplicit at dette OGSÅ gælder BASIC_ONLY, ikke kun
+  // TOKEN_ONLY, selvom Basic Auth reelt er den eneste accepterede metode
+  // i det tilfælde.
+  mb_provisioning_apply_line(&state, "rest user admin", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "rest pass MyRestPass1", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "rest auth basic", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NULL(strstr(msg, "rest.user"));
+  TEST_ASSERT_NULL(strstr(msg, "rest.pass"));
+}
+
+void test_rest_user_pass_visible_in_show_when_mode_both(void) {
+  mb_provisioning_apply_line(&state, "rest user admin", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "rest pass MyRestPass1", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "rest auth both", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest.user: admin"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest.pass: MyRestPass1"));
+}
+
 void test_save_action(void) {
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "save", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_ACTION_SAVE, r);
@@ -688,6 +728,9 @@ int main(int argc, char **argv) {
   RUN_TEST(test_rest_auth_both_sets_mode);
   RUN_TEST(test_rest_auth_rejects_invalid_value);
   RUN_TEST(test_rest_auth_visible_in_show);
+  RUN_TEST(test_rest_user_pass_hidden_in_show_when_mode_token);
+  RUN_TEST(test_rest_user_pass_hidden_in_show_when_mode_basic);
+  RUN_TEST(test_rest_user_pass_visible_in_show_when_mode_both);
   RUN_TEST(test_save_action);
   RUN_TEST(test_reboot_action);
   RUN_TEST(test_status_action);
