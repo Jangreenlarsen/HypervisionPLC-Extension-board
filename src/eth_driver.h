@@ -46,8 +46,14 @@
 // med `esp_read_mac(ESP_MAC_ETH)` i stedet for en NVS-persisteret tilfældig
 // værdi (se board_config.h's kommentar for hvorfor denne board bevidst
 // vælger den anden tilgang).
+// `hostname` (ALDRIG nullptr, se mb_config_build_hostname(),
+// lib/board_config/) sættes via `esp_netif_set_hostname()` FØR
+// `esp_eth_start()`, så det indgår i DHCP-forespørgslen (Option 12) fra
+// selve den første pakke (Jan: "vi skal lige have en hostname på kan jeg
+// se da dhcp server bare har et espressif name nu" — Ethernet-interfacet
+// fik hidtil INTET hostname overhovedet).
 void eth_driver_begin(bool enabled, bool static_ip, const char *ip, const char *mask, const char *gw,
-                       const uint8_t *mac);
+                       const uint8_t *mac, const char *hostname);
 
 // Boardets aktuelle W5500-MAC (6 bytes, ALTID gyldig — samme værdi som blev
 // givet til `eth_driver_begin()`, uanset om selve driveren rent faktisk fik

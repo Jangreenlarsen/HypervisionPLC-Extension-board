@@ -373,6 +373,8 @@ Dette er den ENESTE brugerflade boardet nogensinde selv viser (§0) — over USB
 | `wifi mode dhcp\|static` | Netværkstype, default `dhcp` |
 | `wifi ip/mask/gw <a.b.c.d>` | Kun påkrævet ved `wifi mode static` |
 | `plc ip <a.b.c.d>` | PLC'ens IP-adresse — data-plan-portene er ubrugelige indtil denne er sat korrekt (§4.3) |
+| `hostname <navn>` (v0.22.0) | DHCP-hostname for BÅDE WiFi og Ethernet (Jan: "vi skal lige have en hostname på ... dhcp server bare har et espressif name nu"). RFC 1123-label (1-32 tegn, kun bogstaver/tal/'-'). WiFi anvendes live ved næste `connect`; Ethernet kræver `reboot` |
+| `hostname auto` (v0.22.0) | Rydder en eksplicit override — falder tilbage til det auto-genererede default (`hypervision-ext-XXXXXX`, udledt af boardets MAC, v0.20.0) |
 | `rest user <navn>` / `rest pass <kode>` | REST-API Basic Auth-credentials (§4.4, dual auth-model) — ved siden af det auto-genererede Bearer-token. Persisteres uafhængigt af WiFi-forbindelsesstatus |
 | `rest auth token\|basic\|both` | Hvilke(n) REST-auth-metode(r) der accepteres (Jan: "auth-metoden vi bruger skal kunne config'es") — default `both`. Slår man den anden fra, afviser REST-API'et den med `401` og en tydelig "denne metode er slået fra"-besked, uanset om credentials ville have matchet |
 | `show` | Viser ALT konfigureret data — INKL. adgangskoder, management-tokenet og firmware-version+build i klartekst (revideret, Jan: "al config skal være synlig i CLI'en" — fysisk USB-adgang er allerede tillidsgrænsen, maskering her giver ingen reel beskyttelse, kun friktion). Gælder KUN denne CLI — REST-API'et (§4.4) returnerer fortsat aldrig tokenet, uanset auth-metode |

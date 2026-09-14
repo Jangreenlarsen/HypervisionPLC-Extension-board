@@ -166,8 +166,33 @@ void print_board_mode() {
   Serial.println(cfg_a.mode == MB_CHANNEL_MODE_RS485 ? "rs485" : "rs232");
 }
 
+// v0.22.0 (Jan: "vi skal lige have en hostname på") — viser den FAKTISK
+// anvendte hostname (custom eller auto-genereret), til forskel fra "show"
+// (lib/provisioning_cli), som kun kender den KONFIGUREREDE override-
+// tilstand, ikke MAC'en der indgår i auto-defaultet.
+void print_hostname() {
+  char hostname[40];
+  uint8_t mac[6];
+  eth_driver_get_mac(mac);
+  mb_config_build_hostname(g_state.has_hostname, g_state.hostname, mac, hostname, sizeof(hostname));
+  Serial.print("hostname: ");
+  Serial.println(hostname);
+}
+
 bool attempt_connect() {
   Serial.println("Forbinder til WiFi...");
+
+  // v0.22.0 (Jan: "vi skal lige have en hostname på") — SKAL sættes FØR
+  // WiFi.mode(WIFI_STA) (Arduino-WiFi-kernens WiFiGenericClass::mode()
+  // anvender selv hostnamet på STA-netif'et NÅR mode kaldes, ikke senere —
+  // et kald efter mode()/begin() virker IKKE). Læses fra g_state (ikke
+  // config_get()) så et lige-sat, endnu ikke "save"'et "hostname ..." også
+  // gælder med det samme, ligesom SSID/password gør ovenfor.
+  char hostname[40];
+  uint8_t mac[6];
+  eth_driver_get_mac(mac);
+  mb_config_build_hostname(g_state.has_hostname, g_state.hostname, mac, hostname, sizeof(hostname));
+  WiFi.setHostname(hostname);
 
   WiFi.mode(WIFI_STA);
 
@@ -250,6 +275,7 @@ void print_status() {
   Serial.print("heap_free_bytes: ");
   Serial.println(ESP.getFreeHeap());
 
+  print_hostname();
   print_board_mode();
 
   print_wifi_connection_status();
@@ -413,6 +439,7 @@ void provisioning_poll() {
         // se ... hvad token key er sat til").
         Serial.print("mgmt.token: ");
         Serial.println(config_get().has_mgmt_token ? config_get().mgmt_token : "(ikke sat)");
+        print_hostname();
         print_board_mode();
         print_wifi_connection_status();
         print_ethernet_status();

@@ -136,7 +136,7 @@ void got_ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_
 }  // namespace
 
 void eth_driver_begin(bool enabled, bool static_ip, const char *ip, const char *mask, const char *gw,
-                       const uint8_t *mac) {
+                       const uint8_t *mac, const char *hostname) {
   // Gemmes UBETINGET, uafhængigt af "enabled" nedenfor — eth_driver_get_mac()
   // (CLI's "show"/"status", Jan: "MAC skal så ved en show status") skal
   // kunne vise boardets MAC selvom Ethernet er slået fra.
@@ -204,6 +204,13 @@ void eth_driver_begin(bool enabled, bool static_ip, const char *ip, const char *
     return;
   }
   g_eth_netif = eth_netif;  // apply_ip_config() (kaldt fra event-handleren) skal kunne tilgaa netif'et
+
+  // v0.22.0: saettes FOER esp_eth_start() (nedenfor), saa hostnamet indgaar
+  // i DHCP Option 12 fra selve den foerste forespoergsel - ellers ville en
+  // DHCP-lease naaet FOER dette kald mangle hostnamet.
+  if (esp_netif_set_hostname(eth_netif, hostname) != ESP_OK) {
+    Serial.println("Ethernet: esp_netif_set_hostname() fejlede.");
+  }
 
   spi_bus_config_t bus_cfg = {};
   bus_cfg.mosi_io_num = kEthMosiPin;

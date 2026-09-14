@@ -31,6 +31,8 @@ void test_defaults_have_wifi_and_eth_enabled(void) {
   mb_config_set_defaults(&config);
   TEST_ASSERT_TRUE(config.wifi_enabled);
   TEST_ASSERT_TRUE(config.eth_enabled);
+  // v0.22.0: default = intet eksplicit hostname (auto-genereret bruges).
+  TEST_ASSERT_FALSE(config.has_hostname);
 }
 
 void test_defaults_include_sane_channel_config(void) {
@@ -341,6 +343,52 @@ void test_load_rejects_corrupt_v4_blob(void) {
   TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
 }
 
+void test_load_migrates_v5_blob_without_data_loss(void) {
+  // v0.22.0: schema 6 tilfoejede hostname/has_hostname - et board der
+  // naaede at opgradere til schema 5 (v0.21.0, wifi_enabled) foer dette maa
+  // ikke tabe sin eksisterende config under migrationen.
+  mb_board_config_v5_t v5{};
+  v5.schema_version = 5;
+  v5.provisioned = true;
+  v5.wifi_enabled = false;
+  strncpy(v5.wifi_ssid, "V5Network", sizeof(v5.wifi_ssid) - 1);
+  v5.wifi_has_ssid = true;
+  v5.eth_enabled = true;
+  const uint8_t existing_mac[6] = {0x02, 0x11, 0x22, 0x33, 0x44, 0x55};
+  memcpy(v5.eth_mac, existing_mac, sizeof(v5.eth_mac));
+  v5.has_eth_mac = true;
+  v5.checksum = mb_config_calc_checksum_v5(&v5);
+
+  mb_board_config_t migrated;
+  mb_config_load_from_blob(reinterpret_cast<const uint8_t *>(&v5), sizeof(v5), &migrated);
+
+  TEST_ASSERT_EQUAL_MESSAGE(MB_CONFIG_SCHEMA_VERSION, migrated.schema_version,
+                             "migreret config skal have den AKTUELLE schema-version, ikke 5");
+  TEST_ASSERT_TRUE(migrated.provisioned);
+  TEST_ASSERT_FALSE_MESSAGE(migrated.wifi_enabled, "eksisterende v5-felt maa ikke tabes/overskrives under migration");
+  TEST_ASSERT_EQUAL_STRING("V5Network", migrated.wifi_ssid);
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(existing_mac, migrated.eth_mac, 6);
+  TEST_ASSERT_FALSE_MESSAGE(migrated.has_hostname,
+                             "nyt schema-6-felt skal faa default 'false' (auto-genereret hostname)");
+}
+
+void test_load_rejects_corrupt_v5_blob(void) {
+  mb_board_config_v5_t v5{};
+  v5.schema_version = 5;
+  v5.provisioned = true;
+  strncpy(v5.wifi_ssid, "V5Network", sizeof(v5.wifi_ssid) - 1);
+  v5.checksum = mb_config_calc_checksum_v5(&v5);
+
+  uint8_t blob[sizeof(v5)];
+  memcpy(blob, &v5, sizeof(blob));
+  blob[10] ^= 0xFF;
+
+  mb_board_config_t loaded;
+  mb_config_load_from_blob(blob, sizeof(blob), &loaded);
+  TEST_ASSERT_FALSE_MESSAGE(loaded.provisioned, "korrupt v5-blob blev fejlagtigt migreret");
+  TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
+}
+
 void test_load_rejects_corrupt_v3_blob(void) {
   mb_board_config_v3_t v3{};
   v3.schema_version = 3;
@@ -458,6 +506,24 @@ void test_mac_from_random_bytes_rejects_undersized_input(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Hostname-generering (v0.22.0)
+// ---------------------------------------------------------------------------
+
+void test_build_hostname_auto_uses_last_3_mac_bytes(void) {
+  const uint8_t mac[6] = {0x02, 0xAA, 0xBB, 0x6A, 0x8C, 0xAE};
+  char out[40];
+  mb_config_build_hostname(false, "", mac, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("hypervision-ext-6A8CAE", out);
+}
+
+void test_build_hostname_uses_explicit_override(void) {
+  const uint8_t mac[6] = {0x02, 0xAA, 0xBB, 0x6A, 0x8C, 0xAE};
+  char out[40];
+  mb_config_build_hostname(true, "my-custom-name", mac, out, sizeof(out));
+  TEST_ASSERT_EQUAL_STRING("my-custom-name", out);
+}
+
+// ---------------------------------------------------------------------------
 // Overførsel fra mb_provisioning_state_t
 // ---------------------------------------------------------------------------
 
@@ -476,6 +542,8 @@ void test_apply_provisioning_state_transfers_fields(void) {
   strncpy(state.eth_mask, "255.255.255.0", sizeof(state.eth_mask) - 1);
   strncpy(state.eth_gw, "10.0.0.1", sizeof(state.eth_gw) - 1);
   state.wifi_enabled = false;
+  state.has_hostname = true;
+  strncpy(state.hostname, "custom-name", sizeof(state.hostname) - 1);
 
   mb_board_config_t config;
   mb_config_set_defaults(&config);
@@ -493,6 +561,8 @@ void test_apply_provisioning_state_transfers_fields(void) {
   TEST_ASSERT_EQUAL_STRING("255.255.255.0", config.eth_mask);
   TEST_ASSERT_EQUAL_STRING("10.0.0.1", config.eth_gw);
   TEST_ASSERT_FALSE(config.wifi_enabled);
+  TEST_ASSERT_TRUE(config.has_hostname);
+  TEST_ASSERT_EQUAL_STRING("custom-name", config.hostname);
 }
 
 void test_to_provisioning_state_roundtrips_eth_fields(void) {
@@ -507,6 +577,8 @@ void test_to_provisioning_state_roundtrips_eth_fields(void) {
   strncpy(config.eth_mask, "255.255.0.0", sizeof(config.eth_mask) - 1);
   strncpy(config.eth_gw, "192.168.5.1", sizeof(config.eth_gw) - 1);
   config.wifi_enabled = false;
+  config.has_hostname = true;
+  strncpy(config.hostname, "custom-name", sizeof(config.hostname) - 1);
 
   mb_provisioning_state_t state;
   mb_config_to_provisioning_state(&config, &state);
@@ -517,6 +589,8 @@ void test_to_provisioning_state_roundtrips_eth_fields(void) {
   TEST_ASSERT_EQUAL_STRING("255.255.0.0", state.eth_mask);
   TEST_ASSERT_EQUAL_STRING("192.168.5.1", state.eth_gw);
   TEST_ASSERT_FALSE(state.wifi_enabled);
+  TEST_ASSERT_TRUE(state.has_hostname);
+  TEST_ASSERT_EQUAL_STRING("custom-name", state.hostname);
 }
 
 void test_apply_provisioning_state_never_touches_mgmt_token(void) {
@@ -561,12 +635,16 @@ int main(int argc, char **argv) {
   RUN_TEST(test_load_rejects_corrupt_v3_blob);
   RUN_TEST(test_load_migrates_v4_blob_without_data_loss);
   RUN_TEST(test_load_rejects_corrupt_v4_blob);
+  RUN_TEST(test_load_migrates_v5_blob_without_data_loss);
+  RUN_TEST(test_load_rejects_corrupt_v5_blob);
   RUN_TEST(test_load_rejects_future_schema_version);
 
   RUN_TEST(test_token_from_random_bytes);
   RUN_TEST(test_token_from_random_bytes_rejects_undersized_output);
   RUN_TEST(test_mac_from_random_bytes_sets_unicast_and_locally_administered_bits);
   RUN_TEST(test_mac_from_random_bytes_rejects_undersized_input);
+  RUN_TEST(test_build_hostname_auto_uses_last_3_mac_bytes);
+  RUN_TEST(test_build_hostname_uses_explicit_override);
 
   RUN_TEST(test_apply_provisioning_state_transfers_fields);
   RUN_TEST(test_apply_provisioning_state_never_touches_mgmt_token);

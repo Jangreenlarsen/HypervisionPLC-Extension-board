@@ -20,6 +20,11 @@ constexpr size_t MB_PROV_REST_USER_MAX_LEN = 32;
 constexpr size_t MB_PROV_REST_PASS_MIN_LEN = 8;
 constexpr size_t MB_PROV_REST_PASS_MAX_LEN = 63;
 
+// DNS-hostname-label (RFC 1123): op til 63 tegn er teknisk lovligt, men 32
+// er rigeligt til et meningsfuldt navn og holder samme stil som SSID
+// ovenfor. v0.22.0 (Jan: "vi skal lige have en hostname på").
+constexpr size_t MB_PROV_HOSTNAME_MAX_LEN = 32;
+
 // Multi-linje CLI-output (Jan: "alle [beskeder] skal IKKE komme på en
 // linje") — hvert felt/hver kommando på sin egen linje (\r\n-separeret, for
 // kompatibilitet med simple seriel-terminaler der ikke auto-CR'er på bar
@@ -86,6 +91,15 @@ struct mb_provisioning_state_t {
   char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
   char eth_mask[MB_PROV_IPV4_MAX_LEN + 1];
   char eth_gw[MB_PROV_IPV4_MAX_LEN + 1];
+
+  // v0.22.0 (Jan: "vi skal lige have en hostname på kan jeg se da dhcp
+  // server bare har et espressif name nu") — eksplicit hostname-override,
+  // sat via "hostname <navn>" / ryddet via "hostname auto". `has_hostname
+  // == false` betyder "brug det auto-genererede default"
+  // (mb_config_build_hostname(), lib/board_config/ — udledt af boardets
+  // persisterede MAC, IKKE en zero-value her).
+  char hostname[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool has_hostname;
 };
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state);
@@ -122,3 +136,8 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
 bool mb_provisioning_validate_ssid(const char *ssid);
 bool mb_provisioning_validate_password(const char *password);
 bool mb_provisioning_validate_ipv4(const char *ip);
+
+// RFC 1123-hostname-label: 1-MB_PROV_HOSTNAME_MAX_LEN tegn, kun
+// [A-Za-z0-9-], må ikke starte eller slutte med '-' (DHCP-/DNS-servere
+// afviser eller mistolker ellers navnet).
+bool mb_provisioning_validate_hostname(const char *hostname);
