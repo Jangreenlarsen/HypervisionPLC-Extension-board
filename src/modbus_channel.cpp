@@ -27,7 +27,30 @@ constexpr int kChannelBDir = 25;
 // ALDRIG have forskellig RS232/RS485-mode, kun ét fast valg for hele
 // boardet. Frigav GPIO23 (kanal B's tidligere MODE_SEL) til W5500's RST
 // (se src/eth_driver.cpp).
+//
+// Hardware-revision 2026-09-14 (2. ændring samme dag, Jan bekræftet): dette
+// er en INPUT, ikke en output — et fysisk jumper/strap SAT VED FREMSTILLING
+// (installatøren/fabrikanten vælger RS232 eller RS485 for boardet, én gang,
+// ved at forbinde GPIO4 til enten 3.3V eller GND), IKKE noget firmwaren selv
+// driver ud fra en gemt config. Firmwaren LÆSER pinden ÉN gang ved boot
+// (`modbus_channel_init_all()`) og bruger den udlæste værdi resten af
+// levetiden — `mode` er derfor IKKE længere et felt PLC-siden kan sætte via
+// `PUT /api/channels/{n}/config` (kun læseværdi, se `GET .../{n}` og
+// `GET /api/status`s `board_mode`). `INPUT_PULLUP` sikrer en veldefineret
+// default (RS485) hvis pinden mod forventning skulle stå uforbundet under
+// bring-up, i stedet for at flyde og læse støj.
 constexpr int kBoardModeSelPin = 4;
+
+// Læses ÉN gang ved boot (modbus_channel_init_all()) — se kBoardModeSelPin's
+// kommentar. `execute_transaction()` og REST-laget (via
+// modbus_channel_get_config()) bruger denne, ALDRIG et gemt/PUT'et felt.
+mb_channel_mode_t g_hardware_mode = MB_CHANNEL_MODE_RS485;
+
+mb_channel_mode_t read_board_mode_sel() {
+  pinMode(kBoardModeSelPin, INPUT_PULLUP);
+  delayMicroseconds(10);  // lad evt. parasitkapacitans paa linjen naa at settle efter pinMode-skiftet
+  return digitalRead(kBoardModeSelPin) == HIGH ? MB_CHANNEL_MODE_RS485 : MB_CHANNEL_MODE_RS232;
+}
 
 enum class ChannelRequestType : uint8_t { kTransaction, kReconfigure };
 
@@ -107,26 +130,17 @@ uint32_t serial_config_for(mb_channel_parity_t parity, uint8_t stop_bits) {
   }
 }
 
-// Skriver den ÉN delte MODE_SEL-GPIO (kBoardModeSelPin) — påvirker BEGGE
-// kanalers fysiske transceiver-valg samtidig (hardware-revision 2026-09-14).
-// Idempotent og harmløs at kalde fra begge kanalers apply_config_now(), så
-// længe begge til enhver tid rent faktisk anmoder om samme mode (håndhævet
-// af modbus_channel_apply_config()/modbus_channel_init_all() nedenfor).
-void apply_board_mode_sel(mb_channel_mode_t mode) {
-  pinMode(kBoardModeSelPin, OUTPUT);
-  // §2.0.1: modevalg-GPIO, HIGH=RS485 (vilkårlig men dokumenteret polaritet).
-  digitalWrite(kBoardModeSelPin, (mode == MB_CHANNEL_MODE_RS485) ? HIGH : LOW);
-}
-
 // Anvender en (ny eller initial) config på kanalens rigtige UART/GPIO'er.
 // Kaldes UDELUKKENDE fra kanalens egen task (channel_task) — aldrig direkte
 // fra REST-/TCP-lagets tasks, jf. modbus_channel_apply_config()'s
-// kø-baserede design.
+// kø-baserede design. `mode` i `new_config` IGNORERES bevidst — MODE_SEL er
+// en input (fabriksvalgt, se kBoardModeSelPin), ikke noget en reconfigure
+// kan ændre; `g_hardware_mode` (læst ved boot) bruges altid i stedet.
 void apply_config_now(ChannelContext &ctx, const mb_channel_config_t &new_config) {
   ctx.config = new_config;
+  ctx.config.mode = g_hardware_mode;
 
   digitalWrite(ctx.dir_pin, LOW);
-  apply_board_mode_sel(ctx.config.mode);
 
   ctx.serial->end();
   ctx.serial->begin(ctx.config.baudrate, serial_config_for(ctx.config.parity, ctx.config.stop_bits), ctx.rx_pin,
@@ -331,21 +345,19 @@ void init_channel(ChannelContext &ctx, HardwareSerial &serial, size_t config_ind
 }  // namespace
 
 void modbus_channel_init_all() {
+  // Hardware-revision 2026-09-14: MODE_SEL (GPIO4) er en INPUT, sat ved
+  // fremstilling — læses HER, én gang, og gælder resten af boardets
+  // levetid (indtil næste genstart). `mode` i den persisterede config
+  // (fra en evt. ældre firmware-version, hvor det var software-sat)
+  // IGNORERES bevidst og overskrives altid med den fabriksvalgte værdi.
+  g_hardware_mode = read_board_mode_sel();
+  Serial.print("MODE_SEL (GPIO4) laest ved boot: ");
+  Serial.println(g_hardware_mode == MB_CHANNEL_MODE_RS485 ? "RS485" : "RS232");
+
   mb_channel_config_t config_a = config_get().channel[0];  // §4.2: persisteret config, ikke hardkodet
   mb_channel_config_t config_b = config_get().channel[1];
-
-  // Hardware-revision 2026-09-14: MODE_SEL er nu ÉN delt GPIO — kanal A og B
-  // kan derfor ALDRIG have forskellig mode i praksis. Et eksisterende board
-  // (opgraderet fra en firmware-version med per-kanal MODE_SEL) kan i
-  // teorien have to forskellige persisterede mode-værdier fra dengang det
-  // var muligt — opdages og rettes her (kanal A vinder), i stedet for at
-  // GPIO4's faktiske tilstand bare bliver "hvad end kanal B tilfældigvis
-  // initialiserede sidst".
-  if (config_a.mode != config_b.mode) {
-    Serial.println("ADVARSEL: kanal A/B havde forskellig RS232/RS485-mode gemt (foraeldet, fra foer MODE_SEL blev delt) - kanal A's mode bruges nu for begge.");
-    config_b.mode = config_a.mode;
-    config_set_channel(1, config_b);
-  }
+  config_a.mode = g_hardware_mode;
+  config_b.mode = g_hardware_mode;
 
   init_channel(g_channelA, g_serialA, 0, kChannelATx, kChannelARx, kChannelADir, "mb_ch_a", config_a);
   init_channel(g_channelB, g_serialB, 1, kChannelBTx, kChannelBRx, kChannelBDir, "mb_ch_b", config_b);
@@ -420,22 +432,13 @@ bool modbus_channel_apply_config(ModbusChannelId channel, const mb_channel_confi
   if (!apply_config_to_channel(ctx, new_config)) {
     return false;
   }
-  config_set_channel(ctx.config_index, new_config);
-
-  // Hardware-revision 2026-09-14: MODE_SEL er nu ÉN delt GPIO for hele
-  // boardet — sæt man mode på ÉN kanal, SKAL den anden kanal matche (den
-  // fysiske transceiver-mux kan ikke stå i to tilstande samtidig). Den
-  // anden kanals øvrige felter (baudrate/parity/osv.) er upåvirkede —
-  // KUN mode spejles.
-  ChannelContext &other = context_for(channel == ModbusChannelId::kA ? ModbusChannelId::kB : ModbusChannelId::kA);
-  if (other.config.mode != new_config.mode) {
-    mb_channel_config_t other_config = other.config;
-    other_config.mode = new_config.mode;
-    if (apply_config_to_channel(other, other_config)) {
-      config_set_channel(other.config_index, other_config);
-    }
-  }
-
+  // Persistér ctx.config (EFTER apply_config_now() har tvunget mode til
+  // g_hardware_mode), ikke den rå new_config-parameter — ellers ville en
+  // forældet/vilkårlig mode-værdi fra kaldsleddet (fx en tom/default-
+  // initialiseret struct, nu hvor mode ikke længere parses fra PUT-JSON,
+  // se lib/channel_config) kunne blive skrevet til NVS i stedet for den
+  // faktiske MODE_SEL-hardwareværdi.
+  config_set_channel(ctx.config_index, ctx.config);
   return true;
 }
 

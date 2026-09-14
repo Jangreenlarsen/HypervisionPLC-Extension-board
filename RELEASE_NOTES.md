@@ -2,6 +2,16 @@
 
 ---
 
+## v0.17.0 — 2026-09-14 — MODE_SEL (GPIO4) er nu en fabriks-input, ikke et PUT-bart felt
+
+RS232/RS485-valget (MODE_SEL, GPIO4) er ændret fra et firmware-styret output til en rigtig hardware-INPUT — installatøren/fabrikanten forbinder GPIO4 til 3.3V (RS485) eller GND (RS232) fysisk, ÉN gang, og firmwaren læser den værdi ved hver opstart. `mode` kan derfor ikke længere sættes via `PUT /api/channels/{n}/config` — det er nu en ren læseværdi (`GET /api/channels/{n}`, `GET /api/status`s `board_mode`, seriel `status`/`show`). Baudrate/parity/stop_bits/timeout osv. er upåvirket og stadig fuldt konfigurerbare.
+
+**Baggrund:** Jan opdagede at boardet altid rapporterede `rs485`, uanset hvad han påtrykte GPIO4 udefra — fordi pinden siden v0.14.0 var en OUTPUT, ikke en INPUT firmwaren læste. Se BUGS.md for detaljer.
+
+**Næste skridt**: fysisk montering og test af W5500-modulet (afventer stadig fra v0.13.0); live-verifikation af denne ændring på fysisk hardware.
+
+---
+
 ## v0.16.0 — 2026-09-14 — Ethernet-status og board_mode i den serielle CLI
 
 Den serielle CLI's `status`- og `show`-kommandoer viser nu Ethernet-linkstatus (`eth.connection`/`eth.ip`) og boardets RS232/RS485-mode (`board_mode`) — begge var hidtil kun synlige via REST-API'et.

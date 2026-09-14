@@ -4,6 +4,22 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.17.0 build 0020] — 2026-09-14 — MODE_SEL (GPIO4) er nu en fabriks-input, ikke et PUT-bart felt
+
+**Baggrund:** Jan rapporterede at `show status` altid viste `board_mode: rs485` uanset hvad han påtrykte GPIO4 udefra. Årsag: GPIO4 var siden v0.14.0 en OUTPUT drevet af firmwarens egen software-config, ikke en INPUT. Efter afklaring (Jan: "Paatrykte selv en spaending udefra", "ok det skal være et input til at sætte board ved framstilling") blev arkitekturen ændret til: `mode` bliver en ren, hardware-udlæst, READ-ONLY egenskab; MODE_SEL læses kun ved boot (ikke løbende).
+
+**`src/modbus_channel.cpp`:** `apply_board_mode_sel()` (output-skrivning) fjernet. Ny `mb_channel_mode_t g_hardware_mode` + `read_board_mode_sel()` (`pinMode(4, INPUT_PULLUP)`, læst med `digitalRead()`). `modbus_channel_init_all()` læser nu `g_hardware_mode` ved boot og tvinger begge kanalers config til den — erstatter v0.14.0's "ADVARSEL: forskellig persisteret mode"-konsistenstjek (overflødigt nu). `apply_config_now()` tvinger `ctx.config.mode = g_hardware_mode` uanset hvad en reconfigure-request indeholdt. `modbus_channel_apply_config()`: v0.14.0's cross-channel mode-spejlings-blok fjernet (overflødig, samme grund); persisterer nu `ctx.config` (den FAKTISK anvendte, forcerede config) i stedet for den rå `new_config`-parameter.
+
+**`lib/channel_config/channel_config.cpp/.h`:** `mb_channel_parse_config_json()` parser/validerer ikke længere `"mode"` — et tilstedeværende `mode`-felt i PUT-bodyen ignoreres stiltiende. `string_to_mode()`-hjælperen fjernet (ubrugt).
+
+**`src/http_server.cpp`:** PUT-handleren bygger nu sit JSON-svar fra `modbus_channel_get_config()` (den faktisk anvendte config, EFTER hardware-force) i stedet for den rå, mode-løse parse-struct.
+
+**`test/test_channel_config/test_channel_config.cpp`:** `test_parse_rejects_invalid_mode` fjernet (mode valideres ikke længere); ny `test_parse_ignores_absent_mode_field` (bekræfter at et request UDEN `mode`-felt overhovedet accepteres).
+
+**Filer ændret:** `src/modbus_channel.cpp/.h`, `lib/channel_config/channel_config.cpp/.h`, `src/http_server.cpp`, `test/test_channel_config/test_channel_config.cpp`.
+
+**Status:** 169/169 native-tests bestået, bygger rent for esp32dev. Ingen NVS-skema-ændring. Live-verifikation følger.
+
 ## [0.16.0 build 0019] — 2026-09-14 — Ethernet-status og board_mode i den serielle CLI
 
 **Baggrund:** Jan spurgte hvordan han kunne se Ethernet-status og MODE_SEL/board_mode i CLI'en — begge var kun tilgængelige via REST (`GET /api/status`, v0.13.0/v0.15.0), ikke i den serielle `status`/`show`.

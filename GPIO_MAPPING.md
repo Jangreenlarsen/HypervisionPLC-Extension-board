@@ -2,7 +2,7 @@
 
 Samlet, hurtigt-opslags-reference for alle GPIO'er brugt på det fysiske board: et **30-pin ESP32-WROOM-32 DevKit** (IKKE WROVER/PSRAM). Fuld begrundelse for hvert valg står i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) §2.0.1 — denne fil er et rent opslagsværk, ikke den autoritative kilde ved uoverensstemmelse.
 
-**Seneste ændring:** 2026-09-14 — MODE_SEL samlet til én delt GPIO for hele boardet (var én pr. kanal); den frigjorte GPIO23 bruges nu til W5500's RST-pin.
+**Seneste ændring:** 2026-09-14 — MODE_SEL er nu en fabriks-INPUT (fysisk jumper/strap, sat ved fremstilling), ikke længere et firmware-/REST-styret output. Samlet tidligere samme dag til én delt GPIO for hele boardet (var én pr. kanal); den frigjorte GPIO23 bruges til W5500's RST-pin.
 
 | GPIO | Funktion | Formål |
 |---|---|---|
@@ -10,7 +10,7 @@ Samlet, hurtigt-opslags-reference for alle GPIO'er brugt på det fysiske board: 
 | 1 | UART0 TX | Seriel CLI (USB) |
 | 2 | *(undgås)* | Boot-strapping-pin |
 | 3 | UART0 RX | Seriel CLI (USB) |
-| 4 | **MODE_SEL — hele boardet** | RS232/RS485-valg, delt af begge kanaler (statisk, sat via `PUT /api/channels/{n}/config`) |
+| 4 | **MODE_SEL — hele boardet** | RS232/RS485-valg, delt af begge kanaler — INPUT (`INPUT_PULLUP`), fysisk jumper/strap sat ved fremstilling, læst af firmwaren ÉN gang ved boot (ikke settable via REST) |
 | 5 | *(undgås)* | Boot-strapping-pin |
 | 6–11 | *(undgås)* | Internt forbundet til SPI-flash — brug ALDRIG |
 | 12 | *(undgås)* | Boot-strapping-pin |
@@ -80,7 +80,7 @@ Boardet er et **30-pin ESP32-WROOM-32 DevKit**. GPIO-nummeret er det autoritativ
 
 ## Vigtigt at vide
 
-- **MODE_SEL (GPIO4) gælder BEGGE kanaler samtidig** — RS232 og RS485 kan ikke blandes mellem kanal A og B. Sætter du `mode` på den ene kanal via REST-API'et (`PUT /api/channels/{n}/config`), spejles ændringen automatisk til den anden.
+- **MODE_SEL (GPIO4) gælder BEGGE kanaler samtidig** — RS232 og RS485 kan ikke blandes mellem kanal A og B. Det er en fysisk INPUT (jumper/strap til 3.3V=RS485 eller GND=RS232), sat ÉN gang ved fremstilling — IKKE et felt der kan sættes via REST-API'et; `PUT /api/channels/{n}/config` ignorerer et evt. `mode`-felt, og `mode` optræder kun som en læseværdi i `GET`-svar.
 - **DIR (GPIO25/27)** er dynamisk — toggles af firmwaren omkring hver RS485-sending, rørt slet ikke i RS232-mode.
 - **W5500 har ingen strapping-pin-konflikt** — alle dens GPIO'er (13, 14, 23, 32, 35, 39) er valgt bevidst udenom ESP32'ens boot-strapping-pins.
 - GPIO21/22 og GPIO26/33 er bevidst friholdt/reserveret, ikke i brug endnu.

@@ -111,6 +111,10 @@ void test_build_json_rejects_undersized_buffer(void) {
 // mb_channel_parse_config_json
 // ---------------------------------------------------------------------------
 
+// Hardware-revision 2026-09-14: `mode` er ikke længere et PUT-bart felt
+// (MODE_SEL er en fabriksvalgt hardware-input, se channel_config.h) - JSON
+// herunder inkluderer den stadig for at bekræfte at et tilstedeværende
+// `"mode"`-felt IGNORERES stiltiende frem for at blive parset/valideret.
 const char *kFullValidJson =
     "{\"enabled\":true,\"mode\":\"rs485\",\"baudrate\":9600,\"parity\":\"none\","
     "\"stop_bits\":1,\"timeout_ms\":500,\"inter_frame_delay_ms\":0}";
@@ -120,7 +124,6 @@ void test_parse_valid_full_json(void) {
   const bool ok = mb_channel_parse_config_json(kFullValidJson, strlen(kFullValidJson), &config);
   TEST_ASSERT_TRUE(ok);
   TEST_ASSERT_TRUE(config.enabled);
-  TEST_ASSERT_EQUAL(MB_CHANNEL_MODE_RS485, config.mode);
   TEST_ASSERT_EQUAL_UINT32(9600, config.baudrate);
   TEST_ASSERT_EQUAL(MB_CHANNEL_PARITY_NONE, config.parity);
   TEST_ASSERT_EQUAL_UINT8(1, config.stop_bits);
@@ -131,17 +134,26 @@ void test_parse_valid_full_json(void) {
 void test_parse_handles_field_order_and_whitespace(void) {
   const char *json =
       "{ \"timeout_ms\": 750, \"inter_frame_delay_ms\": 10, \"baudrate\": 19200,\n"
-      "  \"mode\": \"rs232\", \"parity\": \"odd\", \"stop_bits\": 2, \"enabled\": false }";
+      "  \"parity\": \"odd\", \"stop_bits\": 2, \"enabled\": false }";
   mb_channel_config_t config{};
   const bool ok = mb_channel_parse_config_json(json, strlen(json), &config);
   TEST_ASSERT_TRUE(ok);
   TEST_ASSERT_FALSE(config.enabled);
-  TEST_ASSERT_EQUAL(MB_CHANNEL_MODE_RS232, config.mode);
   TEST_ASSERT_EQUAL_UINT32(19200, config.baudrate);
   TEST_ASSERT_EQUAL(MB_CHANNEL_PARITY_ODD, config.parity);
   TEST_ASSERT_EQUAL_UINT8(2, config.stop_bits);
   TEST_ASSERT_EQUAL_UINT32(750, config.timeout_ms);
   TEST_ASSERT_EQUAL_UINT32(10, config.inter_frame_delay_ms);
+}
+
+void test_parse_ignores_absent_mode_field(void) {
+  // §4.2 (revideret): `mode` kræves IKKE længere til stede i PUT-JSON'en -
+  // MODE_SEL er en hardware-input, ikke noget klienten sætter.
+  const char *json =
+      "{\"enabled\":true,\"baudrate\":9600,\"parity\":\"none\","
+      "\"stop_bits\":1,\"timeout_ms\":500,\"inter_frame_delay_ms\":0}";
+  mb_channel_config_t config{};
+  TEST_ASSERT_TRUE(mb_channel_parse_config_json(json, strlen(json), &config));
 }
 
 void test_parse_rejects_missing_field(void) {
@@ -151,14 +163,6 @@ void test_parse_rejects_missing_field(void) {
       "\"parity\":\"none\",\"stop_bits\":1,\"timeout_ms\":500,\"inter_frame_delay_ms\":0}";
   mb_channel_config_t config{};
   TEST_ASSERT_FALSE(mb_channel_parse_config_json(json_missing_baudrate, strlen(json_missing_baudrate), &config));
-}
-
-void test_parse_rejects_invalid_mode(void) {
-  const char *json =
-      "{\"enabled\":true,\"mode\":\"rs422\",\"baudrate\":9600,\"parity\":\"none\","
-      "\"stop_bits\":1,\"timeout_ms\":500,\"inter_frame_delay_ms\":0}";
-  mb_channel_config_t config{};
-  TEST_ASSERT_FALSE(mb_channel_parse_config_json(json, strlen(json), &config));
 }
 
 void test_parse_rejects_invalid_baudrate(void) {
@@ -202,7 +206,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_parse_valid_full_json);
   RUN_TEST(test_parse_handles_field_order_and_whitespace);
   RUN_TEST(test_parse_rejects_missing_field);
-  RUN_TEST(test_parse_rejects_invalid_mode);
+  RUN_TEST(test_parse_ignores_absent_mode_field);
   RUN_TEST(test_parse_rejects_invalid_baudrate);
   RUN_TEST(test_parse_rejects_invalid_stop_bits);
   RUN_TEST(test_parse_rejects_zero_timeout);

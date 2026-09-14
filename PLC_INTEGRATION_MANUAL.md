@@ -120,7 +120,7 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
   "ethernet": {"connected": false}
 }
 ```
-`board_mode` (`"rs485"` eller `"rs232"`, v0.15.0) er boardets AKTUELLE RS232/RS485-mode — siden begge kanaler siden v0.14.0 deler én fysisk MODE_SEL-GPIO (§2.0.1), er dette den samme værdi som ENHVER kanals `mode`-felt i `GET /api/channels`. Foretrukket direkte kilde til board-mode fremfor at udlede den fra en tilfældig kanal.
+`board_mode` (`"rs485"` eller `"rs232"`, v0.15.0) er boardets AKTUELLE RS232/RS485-mode — siden begge kanaler siden v0.14.0 deler én fysisk MODE_SEL-GPIO (§2.0.1), er dette den samme værdi som ENHVER kanals `mode`-felt i `GET /api/channels`. Foretrukket direkte kilde til board-mode fremfor at udlede den fra en tilfældig kanal. **Ren læseværdi (hardware-revision 2026-09-14, 2. ændring):** afspejler MODE_SEL-jumperens fysiske position, læst af firmwaren ved boot — kan IKKE påvirkes via REST, se afsnit 4.4.
 `wifi`-objektet er kun `{"connected":false}` hvis ikke forbundet (`ip`/`rssi_dbm` udelades da). `ethernet`-objektet (§1.3/§2.2, valgfrit W5500-modul, v0.13.0) er tilsvarende kun `{"connected":true,"ip":"..."}` når linket er oppe — INGEN `rssi_dbm` (kablet, ikke relevant). WiFi og Ethernet kan begge være `connected:true` samtidig (dual-stack) — boardet har ingen provisionering for Ethernet, den henter blot en IP via DHCP så snart et kabel er tilsluttet. `api_version` er en separat protokol-kontrakt-version (bumpes KUN ved brydende ændringer i selve API'et) — PLC-siden bør logge en advarsel, ikke fejle stille, hvis denne ikke matcher hvad klienten er skrevet imod.
 
 ### 4.3 `GET /api/channels` og `GET /api/channels/{n}`
@@ -151,7 +151,7 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
   "last_error_at_uptime_s": 86112
 }
 ```
-- `mode`: `"rs485"` eller `"rs232"`. `parity`: `"none"`/`"even"`/`"odd"`.
+- `mode`: `"rs485"` eller `"rs232"` — **LÆSEVÆRDI** (hardware-revision 2026-09-14, se afsnit 4.4's boks): afspejler MODE_SEL-jumperens fysiske position, sat ved fremstilling, IKKE noget der sættes via `PUT`. `parity`: `"none"`/`"even"`/`"odd"`.
 - `status`: `"disabled"` (enabled=false, uanset statistik) → `"error"` (seneste transaktion fejlede) → `"ok"`.
 - Statistikken er **runtime-only** — nulstilles ved reboot, IKKE persisteret. Der findes intet reset-endpoint endnu (planlagt, ikke bygget — se afsnit 7).
 - `last_error_type` er en `mb_error_code_t`-værdi — se afsnit 5.
@@ -160,11 +160,10 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
 
 **Atomisk — ALLE felter er påkrævet i ét kald.** Mangler blot ét, eller er ét ugyldigt, afvises HELE requestet (`400`) uden nogen sideeffekt (uændret config).
 
-Request-body (samme felter som i GET's svar, minus statistikken):
+Request-body (**IKKE** `mode` — se boksen nedenfor):
 ```json
 {
   "enabled": true,
-  "mode": "rs485",
   "baudrate": 19200,
   "parity": "none",
   "stop_bits": 1,
@@ -178,7 +177,7 @@ Request-body (samme felter som i GET's svar, minus statistikken):
 - Anvendes LIVE med det samme (ingen reboot nødvendig) og persisteres til flash — overlever en genstart. En igangværende transaktion på kanalen fuldføres altid på den GAMLE config før omkobling.
 - Sæt `enabled:false` for at deaktivere en kanal helt — Modbus TCP-forespørgsler til den kanal afvises derefter øjeblikkeligt med gateway-exception `0x0A` (afsnit 3.3), uden at røre UART'en.
 
-**VIGTIGT — `mode` er reelt en BOARD-indstilling, ikke en ren pr.-kanal-indstilling (hardware-revision 2026-09-14):** RS232/RS485-valget deler nu ÉN fysisk GPIO for hele boardet (§2.0.1) — kanal A og B kan ALDRIG have forskellig `mode` i praksis. JSON-formen er uændret (stadig `mode` som et felt i hver kanals `PUT`-body), men sætter du `mode` forskelligt fra den ANDEN kanals nuværende værdi, **spejles ændringen automatisk til den anden kanal** (kun `mode` — dens `baudrate`/`parity`/osv. er upåvirkede). Et `PUT` på kanal 1 kan altså ændre hvad `GET /api/channels/2` efterfølgende rapporterer. Dette er en bevidst, dokumenteret konsekvens af hardwaren — ikke en fejl i API'et.
+**VIGTIGT — `mode` kan IKKE sættes via `PUT` (hardware-revision 2026-09-14, 2. ændring):** RS232/RS485-valget (MODE_SEL) er en fysisk jumper/strap på boardet, sat ÉN gang ved fremstilling — IKKE et firmware-/API-styret valg. `mode` indgår derfor ikke i `PUT`-bodyens felter; et evt. tilstedeværende `"mode"`-felt i requestet ignoreres stiltiende (kræves hverken til stede eller fraværende — atomik-kravet ovenfor gælder kun de felter der reelt er listet her). Den faktiske, hardware-udlæste `mode` ses i `GET`-svaret og i `GET /api/status`s `board_mode` — begge kanaler viser altid samme værdi, da de deler samme fysiske MODE_SEL-node (§2.0.1). Ønsker installatøren en anden RS232/RS485-mode, kræver det at flytte den fysiske jumper og genstarte boardet — det kan IKKE gøres fjernstyret via REST.
 
 ### 4.5 `POST /api/channels/{n}/read` — diagnostisk læsning
 
@@ -290,9 +289,9 @@ Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsn
 
 - **Kun 2 kanaler** (Variant A). Variant B (8 kanaler, SPI-expander) er designet (§2.2) men ikke bygget.
 - **W5500-Ethernet (v0.13.0) er implementeret men IKKE hardware-verificeret** — kun boot-testet uden fysisk modul tilsluttet (fejler sikkert, resten af boardet upåvirket). Link/DHCP/faktisk dataoverførsel over Ethernet er endnu ikke testet.
-- **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode:"rs232"` kan sættes via config, men er utestet i praksis.
+- **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode` kan IKKE sættes via REST (se nedenfor) — kræver at MODE_SEL-jumperen fysisk flyttes til GND, hvilket ikke er afprøvet endnu.
 - **Ingen `POST /api/channels/{n}/reset-stats`/`POST /api/stats/reset`** — statistikken (afsnit 4.3) kan kun nulstilles ved reboot.
 - **OTA-uploadets fremdrift kan IKKE afbrydes** — en gang startet, kører uploadet til den lykkes eller fejler; der er intet "annullér"-endpoint.
 - **`active_channels` er altid 2, ikke auto-detekteret** — designdokumentets §2.2.2 (auto-detektion af bestykning) gælder kun Variant B.
-- **RS232/RS485-mode er nu ÉN indstilling for HELE boardet** (hardware-revision 2026-09-14, §2.0.1) — kanal A og B kan ikke længere have forskellig mode. Se afsnit 4.4's boks om dette.
+- **RS232/RS485-mode er nu ÉN fabriksvalgt hardware-input for HELE boardet, ikke et PUT-bart felt** (hardware-revision 2026-09-14, §2.0.1) — kanal A og B kan ikke have forskellig mode, og mode kan ikke ændres via REST uden en fysisk jumper-omkobling. Se afsnit 4.4's boks om dette.
 - Se [FEATURES.md](FEATURES.md)'s "Planlagte features" for den fulde, opdaterede liste over hvad der mangler.
