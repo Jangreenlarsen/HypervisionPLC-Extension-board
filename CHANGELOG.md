@@ -4,6 +4,26 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.22.0 build 0026] — 2026-09-14 — Konfigurerbart DHCP-hostname (`hostname <navn>`/`hostname auto`)
+
+**Baggrund:** Jan: "vi skal lige have en hostname på kan jeg se da dhcp server bare har et espressif name nu" — firmwaren satte hidtil aldrig et eksplicit hostname; Arduino-WiFi-kernens default (`esp32-XXXXXX`) blev brugt uændret, og Ethernet fik slet intet hostname.
+
+**`lib/provisioning_cli/`:** ny `hostname`/`has_hostname`-felt i `mb_provisioning_state_t`. Ny `hostname <navn>` (validering: RFC 1123-label, 1-32 tegn) / `hostname auto` (rydder override) kommando. Vist i `show` som `hostname: <custom>` eller `hostname: (auto-genereret, se 'status')` — den KONFIGUREREDE tilstand, ikke den faktiske streng (som afhænger af MAC'en, som denne hardware-uafhængige lib ikke kender).
+
+**`lib/board_config/`:** ny `mb_config_build_hostname(has_hostname, hostname, mac, out, out_capacity)` — hardware-uafhængig/testbar, bygger enten den eksplicit satte streng eller et auto-genereret `hypervision-ext-XXXXXX` (XXXXXX = boardets sidste 3 MAC-bytes, samme unikke MAC som v0.20.0). Tager primitive parametre bevidst (ikke en `mb_board_config_t*`), så den kan bruges BÅDE med den persisterede config (boot) OG med den evt. usaved, in-progress CLI-state (`connect`).
+
+**`src/eth_driver.h/.cpp`:** ny `hostname`-parameter til `eth_driver_begin()` — sat via `esp_netif_set_hostname()` FØR `esp_eth_start()`, så det indgår i DHCP Option 12 fra første forespørgsel.
+
+**`src/provisioning.cpp`:** `attempt_connect()` kalder `WiFi.setHostname()` FØR `WiFi.mode(WIFI_STA)` (den eneste rækkefølge der reelt virker i Arduino-WiFi-kernen — et kald efter `mode()`/`begin()` har ingen effekt). Læses fra `g_state` (ikke `config_get()`), så et lige-sat, endnu ikke gemt `hostname ...` også gælder med det samme ved `connect`, ligesom SSID/password. Ny `print_hostname()` viser den FAKTISK anvendte streng i `status`/`show`.
+
+**`src/main.cpp`:** beregner hostnamet én gang ved boot (persisteret config) og sender det til `eth_driver_begin()`.
+
+**NVS-skema 5→6** (`lib/board_config/`): `hostname`, `has_hostname`. `mb_board_config_v5_t` frosset til migration. `migrate_v5_to_current()`: `has_hostname=false` (matcher hidtidig adfærd — auto-genereret).
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.h/.cpp`, `lib/board_config/board_config.h/.cpp`, `src/eth_driver.h/.cpp`, `src/main.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`, `test/test_board_config/test_board_config.cpp`.
+
+**Status:** 211/211 native-tests bestået (16 nye), bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.21.0 build 0025] — 2026-09-14 — `wifi enable`/`wifi disable` i CLI'en + kritisk fix: REST/Modbus TCP startede kun via WiFi
 
 **Baggrund:** Jan: "kan vi disable wifi også fra cli" — mirroring v0.20.0's `eth enable`/`eth disable`.

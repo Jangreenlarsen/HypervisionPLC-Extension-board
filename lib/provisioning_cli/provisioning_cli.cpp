@@ -66,6 +66,19 @@ bool mb_provisioning_validate_ipv4(const char *ip) {
   return octets == 4;
 }
 
+bool mb_provisioning_validate_hostname(const char *hostname) {
+  if (hostname == nullptr) return false;
+  const size_t len = strlen(hostname);
+  if (len == 0 || len > MB_PROV_HOSTNAME_MAX_LEN) return false;
+  if (hostname[0] == '-' || hostname[len - 1] == '-') return false;  // RFC 1123: ikke start/slut med '-'
+  for (size_t i = 0; i < len; i++) {
+    const char c = hostname[i];
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-';
+    if (!ok) return false;
+  }
+  return true;
+}
+
 // Splitter `buf` (muteres in-place) i op til `max_tokens` tokens. Et token er
 // enten et "citeret" segment (mellemrum tilladt indeni — nødvendigt for SSID'er
 // som "My Home Network", jf. §3.4.1) eller et almindeligt whitespace-afgrænset ord.
@@ -154,6 +167,12 @@ static void mb_provisioning_format_status(const mb_provisioning_state_t *state, 
 #else
   append_line(out_buffer, out_buffer_capacity, &pos, "firmware", "(version ukendt)");
 #endif
+  // v0.22.0: konfigureret (staged/persisteret) override - IKKE den faktiske
+  // hostname der bruges hvis "auto" (den afhænger af MAC'en, som denne
+  // hardware-uafhængige funktion ikke kender) - se src/provisioning.cpp's
+  // "status" for den reelt anvendte streng.
+  append_line(out_buffer, out_buffer_capacity, &pos, "hostname",
+              state->has_hostname ? state->hostname : "(auto-genereret, se 'status')");
   // v0.21.0: konfigureret (staged/persisteret) - IKKE live-status (det
   // kommer fra src/provisioning.cpp's print_wifi_connection_status()),
   // samme adskillelse som eth.enabled vs eth.connection nedenfor.
@@ -253,6 +272,8 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "wifi mode dhcp|static", "netvaerkstype, default dhcp");
     append_line(out_message, out_message_capacity, &pos, "wifi ip/mask/gw <a.b.c.d>", "kun ved mode static");
     append_line(out_message, out_message_capacity, &pos, "plc ip <a.b.c.d>", "PLC'ens IP - seedes i firewall-allowlist");
+    append_line(out_message, out_message_capacity, &pos, "hostname <navn>", "DHCP-hostname, default auto-genereret fra MAC");
+    append_line(out_message, out_message_capacity, &pos, "hostname auto", "ryd override - brug det auto-genererede default");
     append_line(out_message, out_message_capacity, &pos, "rest user <navn>", "brugernavn til REST-management-API'et");
     append_line(out_message, out_message_capacity, &pos, "rest pass <kode>", "adgangskode til REST-management-API'et (8-63 tegn)");
     append_line(out_message, out_message_capacity, &pos, "rest auth token|basic|both", "hvilke(n) REST-auth-metode(r) der accepteres, default both");
@@ -459,6 +480,35 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     set_ipv4_field(state->plc_ip, tokens[2]);
     state->has_plc_ip = true;
     snprintf(out_message, out_message_capacity, "ok - plc.ip sat");
+    return PROV_OK;
+  }
+
+  // v0.22.0 (Jan: "vi skal lige have en hostname på kan jeg se da dhcp
+  // server bare har et espressif name nu") — "hostname auto" rydder en
+  // eksplicit override og falder tilbage til det MAC-udledte default
+  // (mb_config_build_hostname(), lib/board_config/). WiFi anvender det
+  // live ved næste "connect"; Ethernet kræver "reboot" (se eth_driver.h).
+  if (ieq(tokens[0], "hostname")) {
+    if (token_count < 2) {
+      snprintf(out_message, out_message_capacity, "brug 'hostname <navn>' eller 'hostname auto'");
+      return PROV_MISSING_ARGUMENT;
+    }
+    if (ieq(tokens[1], "auto")) {
+      state->has_hostname = false;
+      state->hostname[0] = '\0';
+      snprintf(out_message, out_message_capacity, "ok - hostname=auto (MAC-udledt default)");
+      return PROV_OK;
+    }
+    if (!mb_provisioning_validate_hostname(tokens[1])) {
+      snprintf(out_message, out_message_capacity,
+               "ugyldigt hostname (1-%u tegn, kun bogstaver/tal/'-', maa ikke starte/slutte med '-')",
+               static_cast<unsigned>(MB_PROV_HOSTNAME_MAX_LEN));
+      return PROV_INVALID_VALUE;
+    }
+    strncpy(state->hostname, tokens[1], MB_PROV_HOSTNAME_MAX_LEN);
+    state->hostname[MB_PROV_HOSTNAME_MAX_LEN] = '\0';
+    state->has_hostname = true;
+    snprintf(out_message, out_message_capacity, "ok - hostname sat (wifi: live ved naeste 'connect', eth: kraever 'reboot')");
     return PROV_OK;
   }
 

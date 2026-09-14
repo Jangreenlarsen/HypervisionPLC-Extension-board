@@ -25,8 +25,14 @@ void setup() {
   uint8_t eth_mac[6];
   config_ensure_eth_mac(eth_mac);
   const mb_board_config_t &boot_cfg = config_get();
+  // v0.22.0 (Jan: "vi skal lige have en hostname på") — beregnes EN gang
+  // her (enten den eksplicit satte, eller MAC-udledt default) og bruges
+  // for Ethernet nedenfor; WiFi'en genberegner selv sin ved hvert
+  // "connect"-forsøg (src/provisioning.cpp), da den kan ændres live.
+  char hostname[40];
+  mb_config_build_hostname(boot_cfg.has_hostname, boot_cfg.hostname, boot_cfg.eth_mac, hostname, sizeof(hostname));
   eth_driver_begin(boot_cfg.eth_enabled, boot_cfg.eth_static_ip, boot_cfg.eth_ip, boot_cfg.eth_mask, boot_cfg.eth_gw,
-                    eth_mac);
+                    eth_mac, hostname);
   // v0.21.0-fund (Jan: "kan vi disable wifi også fra cli"): disse blev
   // hidtil KUN startet fra attempt_connect() (src/provisioning.cpp), dvs.
   // udelukkende udløst af en vellykket WIFI-forbindelse - et rent

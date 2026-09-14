@@ -1,6 +1,7 @@
 #include "board_config.h"
 
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 
 void mb_channel_config_set_defaults(mb_channel_config_t *config) {
@@ -25,6 +26,9 @@ void mb_config_set_defaults(mb_board_config_t *config) {
   config->eth_enabled = true;
   config->eth_static_ip = false;
   config->wifi_enabled = true;
+  // v0.22.0: has_hostname=false (allerede memset-default) betyder "brug
+  // det auto-genererede default" (mb_config_build_hostname()) — IKKE
+  // "intet hostname sat" (firmwaren har altid ET hostname).
 }
 
 namespace {
@@ -62,6 +66,10 @@ uint16_t mb_config_calc_checksum_v3(const mb_board_config_v3_t *config) {
 
 uint16_t mb_config_calc_checksum_v4(const mb_board_config_v4_t *config) {
   return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v4_t, checksum));
+}
+
+uint16_t mb_config_calc_checksum_v5(const mb_board_config_v5_t *config) {
+  return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v5_t, checksum));
 }
 
 // Migrerer en verificeret v1-kandidat til v2-layout. Nye felter får deres
@@ -157,14 +165,14 @@ static void migrate_v3_to_v4(const mb_board_config_v3_t &v3, mb_board_config_v4_
   // eth_ip/mask/gw/eth_mac/has_eth_mac forbliver nul-initialiserede (memset ovenfor).
 }
 
-// Migrerer en verificeret v4-kandidat til nuværende (v5) layout. Nyt felt:
+// Migrerer en verificeret v4-kandidat til v5-layout. Nyt felt:
 // `wifi_enabled` (v0.21.0) — `true` matcher den hidtidige, ubetingede
-// adfærd FØR denne indstilling fandtes, så et allerede-kørende board ikke
-// ændrer adfærd ved firmware-opdateringen til schema 5.
-static void migrate_v4_to_current(const mb_board_config_v4_t &v4, mb_board_config_t *out_config) {
-  mb_config_set_defaults(out_config);  // saetter ogsaa channel[]-, eth- og wifi_enabled-defaults
-
+// adfærd FØR denne indstilling fandtes.
+static void migrate_v4_to_v5(const mb_board_config_v4_t &v4, mb_board_config_v5_t *out_config) {
+  memset(out_config, 0, sizeof(*out_config));
+  out_config->schema_version = 5;
   out_config->provisioned = v4.provisioned;
+  out_config->wifi_enabled = true;
   memcpy(out_config->wifi_ssid, v4.wifi_ssid, sizeof(out_config->wifi_ssid));
   out_config->wifi_has_ssid = v4.wifi_has_ssid;
   memcpy(out_config->wifi_password, v4.wifi_password, sizeof(out_config->wifi_password));
@@ -191,7 +199,44 @@ static void migrate_v4_to_current(const mb_board_config_v4_t &v4, mb_board_confi
   memcpy(out_config->eth_gw, v4.eth_gw, sizeof(out_config->eth_gw));
   memcpy(out_config->eth_mac, v4.eth_mac, sizeof(out_config->eth_mac));
   out_config->has_eth_mac = v4.has_eth_mac;
-  // out_config->wifi_enabled beholder den default mb_config_set_defaults() satte ovenfor.
+}
+
+// Migrerer en verificeret v5-kandidat til nuværende (v6) layout. Nye
+// felter: `hostname`/`has_hostname` (v0.22.0) — `has_hostname=false`
+// matcher den hidtidige, ubetingede adfærd FØR denne indstilling fandtes
+// (intet eksplicit hostname sat — det auto-genererede default bruges).
+static void migrate_v5_to_current(const mb_board_config_v5_t &v5, mb_board_config_t *out_config) {
+  mb_config_set_defaults(out_config);  // saetter ogsaa channel[]-, eth-, wifi_enabled- og hostname-defaults
+
+  out_config->provisioned = v5.provisioned;
+  out_config->wifi_enabled = v5.wifi_enabled;
+  memcpy(out_config->wifi_ssid, v5.wifi_ssid, sizeof(out_config->wifi_ssid));
+  out_config->wifi_has_ssid = v5.wifi_has_ssid;
+  memcpy(out_config->wifi_password, v5.wifi_password, sizeof(out_config->wifi_password));
+  out_config->wifi_has_password = v5.wifi_has_password;
+  out_config->wifi_open_network = v5.wifi_open_network;
+  out_config->wifi_static_ip = v5.wifi_static_ip;
+  memcpy(out_config->wifi_ip, v5.wifi_ip, sizeof(out_config->wifi_ip));
+  memcpy(out_config->wifi_mask, v5.wifi_mask, sizeof(out_config->wifi_mask));
+  memcpy(out_config->wifi_gw, v5.wifi_gw, sizeof(out_config->wifi_gw));
+  memcpy(out_config->plc_ip, v5.plc_ip, sizeof(out_config->plc_ip));
+  out_config->has_plc_ip = v5.has_plc_ip;
+  memcpy(out_config->mgmt_token, v5.mgmt_token, sizeof(out_config->mgmt_token));
+  out_config->has_mgmt_token = v5.has_mgmt_token;
+  memcpy(out_config->rest_user, v5.rest_user, sizeof(out_config->rest_user));
+  out_config->has_rest_user = v5.has_rest_user;
+  memcpy(out_config->rest_pass, v5.rest_pass, sizeof(out_config->rest_pass));
+  out_config->has_rest_pass = v5.has_rest_pass;
+  out_config->rest_auth_mode = v5.rest_auth_mode;
+  memcpy(out_config->channel, v5.channel, sizeof(out_config->channel));
+  out_config->eth_enabled = v5.eth_enabled;
+  out_config->eth_static_ip = v5.eth_static_ip;
+  memcpy(out_config->eth_ip, v5.eth_ip, sizeof(out_config->eth_ip));
+  memcpy(out_config->eth_mask, v5.eth_mask, sizeof(out_config->eth_mask));
+  memcpy(out_config->eth_gw, v5.eth_gw, sizeof(out_config->eth_gw));
+  memcpy(out_config->eth_mac, v5.eth_mac, sizeof(out_config->eth_mac));
+  out_config->has_eth_mac = v5.has_eth_mac;
+  // out_config->hostname/has_hostname beholder de defaults mb_config_set_defaults() satte ovenfor.
 }
 
 void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_board_config_t *out_config) {
@@ -216,11 +261,27 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
     return;
   }
 
+  if (stored_len == sizeof(mb_board_config_v5_t)) {
+    mb_board_config_v5_t v5_candidate;
+    memcpy(&v5_candidate, stored_blob, sizeof(v5_candidate));
+    if (v5_candidate.checksum == mb_config_calc_checksum_v5(&v5_candidate) && v5_candidate.schema_version == 5) {
+      migrate_v5_to_current(v5_candidate, out_config);
+      return;
+    }
+    // Størrelsen matcher v5, men checksum eller schema_version gør ikke —
+    // korrupt v5-blob, ikke en gyldig ældre version. Fald til defaults.
+    mb_config_set_defaults(out_config);
+    return;
+  }
+
   if (stored_len == sizeof(mb_board_config_v4_t)) {
     mb_board_config_v4_t v4_candidate;
     memcpy(&v4_candidate, stored_blob, sizeof(v4_candidate));
     if (v4_candidate.checksum == mb_config_calc_checksum_v4(&v4_candidate) && v4_candidate.schema_version == 4) {
-      migrate_v4_to_current(v4_candidate, out_config);
+      mb_board_config_v5_t v5_intermediate;
+      migrate_v4_to_v5(v4_candidate, &v5_intermediate);
+      v5_intermediate.checksum = mb_config_calc_checksum_v5(&v5_intermediate);
+      migrate_v5_to_current(v5_intermediate, out_config);
       return;
     }
     // Størrelsen matcher v4, men checksum eller schema_version gør ikke —
@@ -236,7 +297,10 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
       mb_board_config_v4_t v4_intermediate;
       migrate_v3_to_v4(v3_candidate, &v4_intermediate);
       v4_intermediate.checksum = mb_config_calc_checksum_v4(&v4_intermediate);
-      migrate_v4_to_current(v4_intermediate, out_config);
+      mb_board_config_v5_t v5_intermediate;
+      migrate_v4_to_v5(v4_intermediate, &v5_intermediate);
+      v5_intermediate.checksum = mb_config_calc_checksum_v5(&v5_intermediate);
+      migrate_v5_to_current(v5_intermediate, out_config);
       return;
     }
     // Størrelsen matcher v3, men checksum eller schema_version gør ikke —
@@ -255,7 +319,10 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
       mb_board_config_v4_t v4_intermediate;
       migrate_v3_to_v4(v3_intermediate, &v4_intermediate);
       v4_intermediate.checksum = mb_config_calc_checksum_v4(&v4_intermediate);
-      migrate_v4_to_current(v4_intermediate, out_config);
+      mb_board_config_v5_t v5_intermediate;
+      migrate_v4_to_v5(v4_intermediate, &v5_intermediate);
+      v5_intermediate.checksum = mb_config_calc_checksum_v5(&v5_intermediate);
+      migrate_v5_to_current(v5_intermediate, out_config);
       return;
     }
     // Størrelsen matcher v2, men checksum eller schema_version gør ikke —
@@ -277,7 +344,10 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
       mb_board_config_v4_t v4_intermediate;
       migrate_v3_to_v4(v3_intermediate, &v4_intermediate);
       v4_intermediate.checksum = mb_config_calc_checksum_v4(&v4_intermediate);
-      migrate_v4_to_current(v4_intermediate, out_config);
+      mb_board_config_v5_t v5_intermediate;
+      migrate_v4_to_v5(v4_intermediate, &v5_intermediate);
+      v5_intermediate.checksum = mb_config_calc_checksum_v5(&v5_intermediate);
+      migrate_v5_to_current(v5_intermediate, out_config);
       return;
     }
     // Størrelsen matcher v1, men checksum eller schema_version gør ikke —
@@ -325,6 +395,24 @@ bool mb_config_mac_from_random_bytes(const uint8_t *random_bytes, size_t random_
   return true;
 }
 
+void mb_config_build_hostname(bool has_hostname, const char *hostname, const uint8_t mac[6], char *out_hostname,
+                               size_t out_capacity) {
+  if (has_hostname) {
+    strncpy(out_hostname, hostname, out_capacity - 1);
+    out_hostname[out_capacity - 1] = '\0';
+    return;
+  }
+  // Auto-genereret default: "hypervision-ext-" + sidste 3 MAC-bytes som
+  // store hex-bogstaver — samme MAC som allerede er unik pr. board
+  // (v0.20.0), genbrugt her i stedet for at kræve endnu en separat unik
+  // identifikator. Store bogstaver for læsbarhed (DNS/hostnames er
+  // case-insensitive i praksis).
+  static const char kHexDigits[] = "0123456789ABCDEF";
+  snprintf(out_hostname, out_capacity, "hypervision-ext-%c%c%c%c%c%c", kHexDigits[(mac[3] >> 4) & 0x0F],
+           kHexDigits[mac[3] & 0x0F], kHexDigits[(mac[4] >> 4) & 0x0F], kHexDigits[mac[4] & 0x0F],
+           kHexDigits[(mac[5] >> 4) & 0x0F], kHexDigits[mac[5] & 0x0F]);
+}
+
 void mb_config_apply_provisioning_state(mb_board_config_t *config, const mb_provisioning_state_t *state) {
   config->wifi_enabled = state->wifi_enabled;
 
@@ -367,6 +455,10 @@ void mb_config_apply_provisioning_state(mb_board_config_t *config, const mb_prov
   config->eth_mask[sizeof(config->eth_mask) - 1] = '\0';
   strncpy(config->eth_gw, state->eth_gw, sizeof(config->eth_gw) - 1);
   config->eth_gw[sizeof(config->eth_gw) - 1] = '\0';
+
+  config->has_hostname = state->has_hostname;
+  strncpy(config->hostname, state->hostname, sizeof(config->hostname) - 1);
+  config->hostname[sizeof(config->hostname) - 1] = '\0';
 }
 
 void mb_config_to_provisioning_state(const mb_board_config_t *config, mb_provisioning_state_t *out_state) {
@@ -408,4 +500,7 @@ void mb_config_to_provisioning_state(const mb_board_config_t *config, mb_provisi
   strncpy(out_state->eth_ip, config->eth_ip, sizeof(out_state->eth_ip) - 1);
   strncpy(out_state->eth_mask, config->eth_mask, sizeof(out_state->eth_mask) - 1);
   strncpy(out_state->eth_gw, config->eth_gw, sizeof(out_state->eth_gw) - 1);
+
+  out_state->has_hostname = config->has_hostname;
+  strncpy(out_state->hostname, config->hostname, sizeof(out_state->hostname) - 1);
 }

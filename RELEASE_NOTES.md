@@ -2,6 +2,14 @@
 
 ---
 
+## v0.22.0 — 2026-09-14 — Konfigurerbart DHCP-hostname
+
+Boardet får nu et rigtigt, meningsfuldt hostname på DHCP-serveren i stedet for et generisk Espressif-navn — som standard `hypervision-ext-XXXXXX` (udledt af boardets unikke MAC-adresse), men kan overstyres via `hostname <navn>` i den serielle CLI (og ryddes tilbage til default med `hostname auto`). Gælder for både WiFi og Ethernet. WiFi'ens hostname opdateres med det samme ved næste `connect`; Ethernet's kræver et `reboot`.
+
+**Næste skridt**: live-verifikation af hostname på fysisk hardware — bekræfte at DHCP-serveren rent faktisk viser det nye navn for begge interfaces.
+
+---
+
 ## v0.21.0 — 2026-09-14 — WiFi kan nu også slås til/fra via CLI
 
 Den serielle CLI kan nu slå WiFi helt fra (`wifi disable`) eller til (`wifi enable`), mirroring den tilsvarende Ethernet-kommando fra v0.20.0 — nyttigt for et board der udelukkende skal køre på Ethernet. Advarer (uden at blokere) hvis Ethernet også er deaktiveret, så boardet ikke ved et uheld ender uden nogen netværksadgang overhovedet.

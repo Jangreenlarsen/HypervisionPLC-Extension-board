@@ -12,13 +12,13 @@
 // testet på rigtig hardware, behold tallet og marker feltet
 // "reserveret, ubrugt" i stedet for at sænke det.
 //
-// Schema 5 (denne version): tilføjede persisteret `wifi_enabled`
-// (`wifi enable`/`disable`, v0.21.0) — se feltet nedenfor.
-// `mb_board_config_v4_t`/`v3_t`/`v2_t`/`v1_t` nedenfor er FROSSNE kopier af
-// ældre schema-layouts, udelukkende til migration af allerede-gemte blobs —
-// ÆNDR DEM ALDRIG, de skal blive ved med at matche hvad der faktisk blev
-// udgivet.
-constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 5;
+// Schema 6 (denne version): tilføjede persisteret `hostname`/`has_hostname`
+// (`hostname <navn>`/`hostname auto`, v0.22.0) — se felterne nedenfor.
+// `mb_board_config_v5_t`/`v4_t`/`v3_t`/`v2_t`/`v1_t` nedenfor er FROSSNE
+// kopier af ældre schema-layouts, udelukkende til migration af allerede-
+// gemte blobs — ÆNDR DEM ALDRIG, de skal blive ved med at matche hvad der
+// faktisk blev udgivet.
+constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 6;
 
 // §4.2: RS485/RS232-modevalg pr. kanal (§2.2.1) — styrer både
 // MODE_SEL-GPIO'en og om kanal-tasken toggler DE/RE (kun RS485).
@@ -192,7 +192,49 @@ struct mb_board_config_v4_t {
 // migration, se mb_config_load_from_blob().
 uint16_t mb_config_calc_checksum_v4(const mb_board_config_v4_t *config);
 
-// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 5. Rent
+// FROSSEN — schema 5's nøjagtige layout (identisk med `mb_board_config_t`
+// FØR schema 6 tilføjede `hostname`/`has_hostname`), kun til migration af
+// allerede-gemte v5-blobs. Ret ALDRIG denne struct.
+#pragma pack(push, 1)
+struct mb_board_config_v5_t {
+  uint16_t schema_version;
+  bool provisioned;
+  bool wifi_enabled;
+  char wifi_ssid[MB_PROV_SSID_MAX_LEN + 1];
+  bool wifi_has_ssid;
+  char wifi_password[MB_PROV_PASSWORD_MAX_LEN + 1];
+  bool wifi_has_password;
+  bool wifi_open_network;
+  bool wifi_static_ip;
+  char wifi_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  char plc_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  bool has_plc_ip;
+  char mgmt_token[MB_MGMT_TOKEN_LEN + 1];
+  bool has_mgmt_token;
+  char rest_user[MB_PROV_REST_USER_MAX_LEN + 1];
+  bool has_rest_user;
+  char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
+  bool has_rest_pass;
+  mb_rest_auth_mode_t rest_auth_mode;
+  mb_channel_config_t channel[MB_CHANNEL_COUNT];
+  bool eth_enabled;
+  bool eth_static_ip;
+  char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  uint8_t eth_mac[6];
+  bool has_eth_mac;
+  uint16_t checksum;
+};
+#pragma pack(pop)
+
+// CRC16 over v5-structen — bruges KUN til at verificere en v5-blob under
+// migration, se mb_config_load_from_blob().
+uint16_t mb_config_calc_checksum_v5(const mb_board_config_v5_t *config);
+
+// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 6. Rent
 // data — ingen hardware-afhængighed, se board_config.cpp for hvorfor det kan
 // native-testes. `schema_version` er bevidst FØRSTE felt (kan altid læses
 // uanset hvordan resten af structen ændrer sig i en senere schema-version),
@@ -270,11 +312,36 @@ struct mb_board_config_t {
   uint8_t eth_mac[6];
   bool has_eth_mac;
 
+  // Schema 6 (nye felter, v0.22.0, Jan: "vi skal lige have en hostname på
+  // kan jeg se da dhcp server bare har et espressif name nu") — eksplicit
+  // DHCP-hostname-override, sat via "hostname <navn>"/ryddet via "hostname
+  // auto". `has_hostname=false` betyder "brug det auto-genererede default"
+  // (se mb_config_build_hostname() nedenfor, udledt af eth_mac ovenfor) —
+  // IKKE "intet hostname sat overhovedet" (firmwaren har altid ET
+  // hostname, det er blot enten brugervalgt eller auto-genereret).
+  char hostname[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool has_hostname;
+
   uint16_t checksum;
 };
 #pragma pack(pop)
 
 void mb_config_set_defaults(mb_board_config_t *config);
+
+// Bygger det FAKTISKE hostname firmwaren skal bruge (WiFi + Ethernet,
+// src/provisioning.cpp/src/eth_driver.cpp): `hostname` hvis `has_hostname`,
+// ellers "hypervision-ext-XXXXXX" hvor XXXXXX er de sidste 3 bytes af
+// `mac` som store hex-bogstaver (samme MAC som allerede er unik pr. board,
+// v0.20.0 — genbruges her i stedet for at kræve endnu en separat unik
+// identifikator). Tager primitive parametre (ikke en `mb_board_config_t*`)
+// bevidst — kaldes BÅDE med den persisterede config (src/main.cpp, boot)
+// OG med den evt. usaved, in-progress CLI-state (src/provisioning.cpp's
+// "connect", som skal reflektere ETHVERT usaved "hostname ..."-kald med
+// det samme, ligesom SSID/password gør). `out_capacity` skal være mindst
+// 24 bytes for at være garanteret at rumme det længste auto-genererede
+// navn ("hypervision-ext-" = 17 tegn + 6 hex + '\0').
+void mb_config_build_hostname(bool has_hostname, const char *hostname, const uint8_t mac[6], char *out_hostname,
+                               size_t out_capacity);
 
 // CRC16 over alle felter FØR `checksum` — egen, lille implementering (ikke
 // lib/modbus_pdu's mb_pdu_calc_crc16) for at holde de to moduler

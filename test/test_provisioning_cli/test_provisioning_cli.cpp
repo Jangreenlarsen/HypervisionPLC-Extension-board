@@ -44,6 +44,20 @@ void test_validate_ipv4(void) {
   TEST_ASSERT_FALSE(mb_provisioning_validate_ipv4("1.2.3.1234"));     // oktet med 4 cifre
 }
 
+void test_validate_hostname(void) {
+  TEST_ASSERT_TRUE(mb_provisioning_validate_hostname("a"));
+  TEST_ASSERT_TRUE(mb_provisioning_validate_hostname("my-board-1"));
+  TEST_ASSERT_TRUE(mb_provisioning_validate_hostname("HypervisionExt1"));
+  TEST_ASSERT_FALSE(mb_provisioning_validate_hostname(""));           // tomt
+  TEST_ASSERT_FALSE(mb_provisioning_validate_hostname("-bad"));       // starter med '-'
+  TEST_ASSERT_FALSE(mb_provisioning_validate_hostname("bad-"));       // slutter med '-'
+  TEST_ASSERT_FALSE(mb_provisioning_validate_hostname("bad_name"));   // underscore ikke tilladt
+  TEST_ASSERT_FALSE(mb_provisioning_validate_hostname("bad.name"));   // punktum ikke tilladt (kun ét label)
+  TEST_ASSERT_FALSE(mb_provisioning_validate_hostname("bad name"));   // mellemrum ikke tilladt
+  TEST_ASSERT_TRUE(mb_provisioning_validate_hostname("12345678901234567890123456789012"));   // 32 tegn - OK
+  TEST_ASSERT_FALSE(mb_provisioning_validate_hostname("123456789012345678901234567890123"));  // 33 tegn - for langt
+}
+
 // ---------------------------------------------------------------------------
 // wifi/plc kommandoer - opdaterer state
 // ---------------------------------------------------------------------------
@@ -177,6 +191,75 @@ void test_plc_ip_sets_state(void) {
 void test_plc_ip_missing_argument(void) {
   const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "plc ip", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+// ---------------------------------------------------------------------------
+// "hostname ..." (v0.22.0)
+// ---------------------------------------------------------------------------
+
+void test_hostname_defaults_to_auto(void) {
+  TEST_ASSERT_FALSE(state.has_hostname);
+}
+
+void test_hostname_sets_state(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "hostname my-board-1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_TRUE(state.has_hostname);
+  TEST_ASSERT_EQUAL_STRING("my-board-1", state.hostname);
+}
+
+void test_hostname_auto_clears_override(void) {
+  mb_provisioning_apply_line(&state, "hostname my-board-1", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "hostname auto", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_FALSE(state.has_hostname);
+  TEST_ASSERT_EQUAL_STRING("", state.hostname);
+}
+
+void test_hostname_missing_argument(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "hostname", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_hostname_rejects_leading_hyphen(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "hostname -bad", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+  TEST_ASSERT_FALSE(state.has_hostname);
+}
+
+void test_hostname_rejects_trailing_hyphen(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "hostname bad-", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_hostname_rejects_invalid_characters(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "hostname bad_name", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_hostname_rejects_too_long(void) {
+  const mb_provisioning_result_t r =
+      mb_provisioning_apply_line(&state, "hostname 123456789012345678901234567890123", msg, sizeof(msg));  // 33 tegn
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_hostname_accepts_max_length(void) {
+  const mb_provisioning_result_t r =
+      mb_provisioning_apply_line(&state, "hostname 12345678901234567890123456789012", msg, sizeof(msg));  // 32 tegn
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+}
+
+void test_show_includes_hostname_override(void) {
+  mb_provisioning_apply_line(&state, "hostname my-board-1", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "hostname: my-board-1"));
+}
+
+void test_show_indicates_auto_hostname(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "hostname: (auto-genereret"));
 }
 
 void test_rest_user_sets_state(void) {
@@ -425,6 +508,7 @@ void test_help_action(void) {
   // hardware, ikke af en tidligere, svagere version af denne test).
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi enable"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi ssid"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "hostname"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi pass"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi open"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi mode"));
@@ -560,6 +644,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_validate_ssid_bounds);
   RUN_TEST(test_validate_password_bounds);
   RUN_TEST(test_validate_ipv4);
+  RUN_TEST(test_validate_hostname);
 
   RUN_TEST(test_wifi_ssid_sets_state);
   RUN_TEST(test_wifi_ssid_with_spaces_via_quotes);
@@ -579,6 +664,17 @@ int main(int argc, char **argv) {
   RUN_TEST(test_wifi_ip_rejects_invalid);
   RUN_TEST(test_plc_ip_sets_state);
   RUN_TEST(test_plc_ip_missing_argument);
+  RUN_TEST(test_hostname_defaults_to_auto);
+  RUN_TEST(test_hostname_sets_state);
+  RUN_TEST(test_hostname_auto_clears_override);
+  RUN_TEST(test_hostname_missing_argument);
+  RUN_TEST(test_hostname_rejects_leading_hyphen);
+  RUN_TEST(test_hostname_rejects_trailing_hyphen);
+  RUN_TEST(test_hostname_rejects_invalid_characters);
+  RUN_TEST(test_hostname_rejects_too_long);
+  RUN_TEST(test_hostname_accepts_max_length);
+  RUN_TEST(test_show_includes_hostname_override);
+  RUN_TEST(test_show_indicates_auto_hostname);
   RUN_TEST(test_rest_user_sets_state);
   RUN_TEST(test_rest_pass_sets_state);
   RUN_TEST(test_rest_pass_rejects_too_short);
