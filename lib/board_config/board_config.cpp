@@ -20,10 +20,11 @@ void mb_config_set_defaults(mb_board_config_t *config) {
   for (size_t i = 0; i < MB_CHANNEL_COUNT; i++) {
     mb_channel_config_set_defaults(&config->channel[i]);
   }
-  // v0.20.0: matcher den hidtidige, ubetingede adfærd FØR enable/disable
-  // fandtes — Ethernet var altid forsøgt startet (ren DHCP).
+  // v0.20.0/v0.21.0: matcher den hidtidige, ubetingede adfærd FØR
+  // enable/disable fandtes — Ethernet/WiFi var altid forsøgt startet.
   config->eth_enabled = true;
   config->eth_static_ip = false;
+  config->wifi_enabled = true;
 }
 
 namespace {
@@ -57,6 +58,10 @@ uint16_t mb_config_calc_checksum_v2(const mb_board_config_v2_t *config) {
 
 uint16_t mb_config_calc_checksum_v3(const mb_board_config_v3_t *config) {
   return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v3_t, checksum));
+}
+
+uint16_t mb_config_calc_checksum_v4(const mb_board_config_v4_t *config) {
+  return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v4_t, checksum));
 }
 
 // Migrerer en verificeret v1-kandidat til v2-layout. Nye felter får deres
@@ -118,14 +123,15 @@ static void migrate_v2_to_v3(const mb_board_config_v2_t &v2, mb_board_config_v3_
   }
 }
 
-// Migrerer en verificeret v3-kandidat til nuværende (v4) layout. Nye felter:
-// Ethernet enable/disable + static-IP-config (v0.20.0) — `eth_enabled=true`/
-// DHCP matcher den hidtidige, ubetingede adfærd FØR disse indstillinger
-// fandtes, så et allerede-kørende board ikke ændrer adfærd ved
-// firmware-opdateringen til schema 4.
-static void migrate_v3_to_current(const mb_board_config_v3_t &v3, mb_board_config_t *out_config) {
-  mb_config_set_defaults(out_config);  // saetter ogsaa channel[]- og eth-defaults
-
+// Migrerer en verificeret v3-kandidat til v4-layout. Nye felter: Ethernet
+// enable/disable + static-IP-config + MAC (v0.20.0) — `eth_enabled=true`/
+// DHCP/`has_eth_mac=false` matcher den hidtidige, ubetingede adfærd FØR
+// disse indstillinger fandtes, så et allerede-kørende board ikke ændrer
+// adfærd ved firmware-opdateringen til schema 4 (MAC'en genereres ved
+// næste boot, se config_ensure_eth_mac(), src/config.cpp).
+static void migrate_v3_to_v4(const mb_board_config_v3_t &v3, mb_board_config_v4_t *out_config) {
+  memset(out_config, 0, sizeof(*out_config));
+  out_config->schema_version = 4;
   out_config->provisioned = v3.provisioned;
   memcpy(out_config->wifi_ssid, v3.wifi_ssid, sizeof(out_config->wifi_ssid));
   out_config->wifi_has_ssid = v3.wifi_has_ssid;
@@ -146,7 +152,46 @@ static void migrate_v3_to_current(const mb_board_config_v3_t &v3, mb_board_confi
   out_config->has_rest_pass = v3.has_rest_pass;
   out_config->rest_auth_mode = v3.rest_auth_mode;
   memcpy(out_config->channel, v3.channel, sizeof(out_config->channel));
-  // out_config->eth_* beholder de defaults mb_config_set_defaults() satte ovenfor.
+  out_config->eth_enabled = true;
+  out_config->eth_static_ip = false;
+  // eth_ip/mask/gw/eth_mac/has_eth_mac forbliver nul-initialiserede (memset ovenfor).
+}
+
+// Migrerer en verificeret v4-kandidat til nuværende (v5) layout. Nyt felt:
+// `wifi_enabled` (v0.21.0) — `true` matcher den hidtidige, ubetingede
+// adfærd FØR denne indstilling fandtes, så et allerede-kørende board ikke
+// ændrer adfærd ved firmware-opdateringen til schema 5.
+static void migrate_v4_to_current(const mb_board_config_v4_t &v4, mb_board_config_t *out_config) {
+  mb_config_set_defaults(out_config);  // saetter ogsaa channel[]-, eth- og wifi_enabled-defaults
+
+  out_config->provisioned = v4.provisioned;
+  memcpy(out_config->wifi_ssid, v4.wifi_ssid, sizeof(out_config->wifi_ssid));
+  out_config->wifi_has_ssid = v4.wifi_has_ssid;
+  memcpy(out_config->wifi_password, v4.wifi_password, sizeof(out_config->wifi_password));
+  out_config->wifi_has_password = v4.wifi_has_password;
+  out_config->wifi_open_network = v4.wifi_open_network;
+  out_config->wifi_static_ip = v4.wifi_static_ip;
+  memcpy(out_config->wifi_ip, v4.wifi_ip, sizeof(out_config->wifi_ip));
+  memcpy(out_config->wifi_mask, v4.wifi_mask, sizeof(out_config->wifi_mask));
+  memcpy(out_config->wifi_gw, v4.wifi_gw, sizeof(out_config->wifi_gw));
+  memcpy(out_config->plc_ip, v4.plc_ip, sizeof(out_config->plc_ip));
+  out_config->has_plc_ip = v4.has_plc_ip;
+  memcpy(out_config->mgmt_token, v4.mgmt_token, sizeof(out_config->mgmt_token));
+  out_config->has_mgmt_token = v4.has_mgmt_token;
+  memcpy(out_config->rest_user, v4.rest_user, sizeof(out_config->rest_user));
+  out_config->has_rest_user = v4.has_rest_user;
+  memcpy(out_config->rest_pass, v4.rest_pass, sizeof(out_config->rest_pass));
+  out_config->has_rest_pass = v4.has_rest_pass;
+  out_config->rest_auth_mode = v4.rest_auth_mode;
+  memcpy(out_config->channel, v4.channel, sizeof(out_config->channel));
+  out_config->eth_enabled = v4.eth_enabled;
+  out_config->eth_static_ip = v4.eth_static_ip;
+  memcpy(out_config->eth_ip, v4.eth_ip, sizeof(out_config->eth_ip));
+  memcpy(out_config->eth_mask, v4.eth_mask, sizeof(out_config->eth_mask));
+  memcpy(out_config->eth_gw, v4.eth_gw, sizeof(out_config->eth_gw));
+  memcpy(out_config->eth_mac, v4.eth_mac, sizeof(out_config->eth_mac));
+  out_config->has_eth_mac = v4.has_eth_mac;
+  // out_config->wifi_enabled beholder den default mb_config_set_defaults() satte ovenfor.
 }
 
 void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_board_config_t *out_config) {
@@ -163,9 +208,23 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
       *out_config = candidate;
       return;
     }
-    // Størrelsen matcher v3, men checksum eller schema_version gør ikke —
-    // korruption, eller en fremtidig schema-version koden (i strid med
-    // §3.5) er blevet nedgraderet i forhold til. Fald sikkert til defaults.
+    // Størrelsen matcher AKTUEL schema, men checksum eller schema_version
+    // gør ikke — korruption, eller en fremtidig schema-version koden (i
+    // strid med §3.5) er blevet nedgraderet i forhold til. Fald sikkert
+    // til defaults.
+    mb_config_set_defaults(out_config);
+    return;
+  }
+
+  if (stored_len == sizeof(mb_board_config_v4_t)) {
+    mb_board_config_v4_t v4_candidate;
+    memcpy(&v4_candidate, stored_blob, sizeof(v4_candidate));
+    if (v4_candidate.checksum == mb_config_calc_checksum_v4(&v4_candidate) && v4_candidate.schema_version == 4) {
+      migrate_v4_to_current(v4_candidate, out_config);
+      return;
+    }
+    // Størrelsen matcher v4, men checksum eller schema_version gør ikke —
+    // korrupt v4-blob, ikke en gyldig ældre version. Fald til defaults.
     mb_config_set_defaults(out_config);
     return;
   }
@@ -174,7 +233,10 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
     mb_board_config_v3_t v3_candidate;
     memcpy(&v3_candidate, stored_blob, sizeof(v3_candidate));
     if (v3_candidate.checksum == mb_config_calc_checksum_v3(&v3_candidate) && v3_candidate.schema_version == 3) {
-      migrate_v3_to_current(v3_candidate, out_config);
+      mb_board_config_v4_t v4_intermediate;
+      migrate_v3_to_v4(v3_candidate, &v4_intermediate);
+      v4_intermediate.checksum = mb_config_calc_checksum_v4(&v4_intermediate);
+      migrate_v4_to_current(v4_intermediate, out_config);
       return;
     }
     // Størrelsen matcher v3, men checksum eller schema_version gør ikke —
@@ -190,7 +252,10 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
       mb_board_config_v3_t v3_intermediate;
       migrate_v2_to_v3(v2_candidate, &v3_intermediate);
       v3_intermediate.checksum = mb_config_calc_checksum_v3(&v3_intermediate);
-      migrate_v3_to_current(v3_intermediate, out_config);
+      mb_board_config_v4_t v4_intermediate;
+      migrate_v3_to_v4(v3_intermediate, &v4_intermediate);
+      v4_intermediate.checksum = mb_config_calc_checksum_v4(&v4_intermediate);
+      migrate_v4_to_current(v4_intermediate, out_config);
       return;
     }
     // Størrelsen matcher v2, men checksum eller schema_version gør ikke —
@@ -209,7 +274,10 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
       mb_board_config_v3_t v3_intermediate;
       migrate_v2_to_v3(v2_intermediate, &v3_intermediate);
       v3_intermediate.checksum = mb_config_calc_checksum_v3(&v3_intermediate);
-      migrate_v3_to_current(v3_intermediate, out_config);
+      mb_board_config_v4_t v4_intermediate;
+      migrate_v3_to_v4(v3_intermediate, &v4_intermediate);
+      v4_intermediate.checksum = mb_config_calc_checksum_v4(&v4_intermediate);
+      migrate_v4_to_current(v4_intermediate, out_config);
       return;
     }
     // Størrelsen matcher v1, men checksum eller schema_version gør ikke —
@@ -258,6 +326,8 @@ bool mb_config_mac_from_random_bytes(const uint8_t *random_bytes, size_t random_
 }
 
 void mb_config_apply_provisioning_state(mb_board_config_t *config, const mb_provisioning_state_t *state) {
+  config->wifi_enabled = state->wifi_enabled;
+
   strncpy(config->wifi_ssid, state->ssid, sizeof(config->wifi_ssid) - 1);
   config->wifi_ssid[sizeof(config->wifi_ssid) - 1] = '\0';
   config->wifi_has_ssid = state->has_ssid;
@@ -301,6 +371,8 @@ void mb_config_apply_provisioning_state(mb_board_config_t *config, const mb_prov
 
 void mb_config_to_provisioning_state(const mb_board_config_t *config, mb_provisioning_state_t *out_state) {
   mb_provisioning_state_init(out_state);
+
+  out_state->wifi_enabled = config->wifi_enabled;
 
   strncpy(out_state->ssid, config->wifi_ssid, sizeof(out_state->ssid) - 1);
   out_state->has_ssid = config->wifi_has_ssid;

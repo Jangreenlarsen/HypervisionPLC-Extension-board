@@ -34,6 +34,16 @@ constexpr size_t MB_PROV_MSG_MAX_LEN = 2048;
 // "factory-reset confirm" udløser en handling i src/provisioning.cpp
 // (EXPANSION_BOARD_DESIGN.md §3.4.1). Rent data — ingen hardware-afhængighed.
 struct mb_provisioning_state_t {
+  // v0.21.0 (Jan: "kan vi disable wifi også fra cli") — mirroring
+  // eth_enabled nedenfor. Default true (mb_provisioning_state_init()) —
+  // matcher hidtidig ubetinget adfærd (WiFi altid forsøgt genforbundet ved
+  // boot). Sat via "wifi enable"/"wifi disable"; gælder KUN den automatiske
+  // genforbindelse ved boot (src/provisioning.cpp) — en eksplicit "connect"
+  // virker stadig uanset dette flag (samme "eksplicit kommando er altid en
+  // override"-filosofi som eth_enabled). Kræver "save" + "reboot", ikke
+  // live — bevidst samme mentale model som eth_enabled, Jan bekræftet.
+  bool wifi_enabled;
+
   char ssid[MB_PROV_SSID_MAX_LEN + 1];
   bool has_ssid;
 

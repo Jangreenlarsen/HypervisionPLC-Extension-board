@@ -6,13 +6,14 @@
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state) {
   memset(state, 0, sizeof(*state));
-  // v0.20.0: matcher den hidtidige, ubetingede adfærd FØR enable/disable
-  // fandtes (Ethernet altid forsøgt startet, ren DHCP) - modsat
+  // v0.20.0/v0.21.0: matcher den hidtidige, ubetingede adfærd FØR
+  // enable/disable fandtes (Ethernet/WiFi altid forsøgt startet) - modsat
   // rest_auth_mode (MB_REST_AUTH_MODE_BOTH == 0) er "enabled" IKKE
   // zero-value'en, så skal sættes eksplicit her for at et fabriksnyt board
-  // (der endnu ikke har kørt "eth enable"/en persisteret config) ikke
-  // utilsigtet starter med Ethernet slået fra.
+  // (der endnu ikke har kørt "eth/wifi enable"/en persisteret config) ikke
+  // utilsigtet starter uden netværksadgang.
   state->eth_enabled = true;
+  state->wifi_enabled = true;
 }
 
 bool mb_provisioning_validate_ssid(const char *ssid) {
@@ -153,6 +154,10 @@ static void mb_provisioning_format_status(const mb_provisioning_state_t *state, 
 #else
   append_line(out_buffer, out_buffer_capacity, &pos, "firmware", "(version ukendt)");
 #endif
+  // v0.21.0: konfigureret (staged/persisteret) - IKKE live-status (det
+  // kommer fra src/provisioning.cpp's print_wifi_connection_status()),
+  // samme adskillelse som eth.enabled vs eth.connection nedenfor.
+  append_line(out_buffer, out_buffer_capacity, &pos, "wifi.enabled", state->wifi_enabled ? "true" : "false");
   append_line(out_buffer, out_buffer_capacity, &pos, "wifi.ssid", state->has_ssid ? state->ssid : "(ikke sat)");
   append_line(out_buffer, out_buffer_capacity, &pos, "wifi.pass", password_display);
   append_line(out_buffer, out_buffer_capacity, &pos, "wifi.mode", state->static_ip ? "static" : "dhcp");
@@ -241,6 +246,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
   if (ieq(tokens[0], "help")) {
     size_t pos = 0;
     out_message[0] = '\0';
+    append_line(out_message, out_message_capacity, &pos, "wifi enable|disable", "slaa WiFi til/fra, default enabled");
     append_line(out_message, out_message_capacity, &pos, "wifi ssid <navn>", "SSID for produktionsnetvaerket");
     append_line(out_message, out_message_capacity, &pos, "wifi pass <kode>", "WPA2-adgangskode (8-63 tegn)");
     append_line(out_message, out_message_capacity, &pos, "wifi open", "marker netvaerket som aabent (intet password)");
@@ -326,7 +332,8 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
 
   if (ieq(tokens[0], "wifi")) {
     if (token_count < 2) {
-      snprintf(out_message, out_message_capacity, "wifi kraever en underkommando (ssid/pass/open/mode/ip/mask/gw)");
+      snprintf(out_message, out_message_capacity,
+               "wifi kraever en underkommando (enable/disable/ssid/pass/open/mode/ip/mask/gw)");
       return PROV_MISSING_ARGUMENT;
     }
 
@@ -335,6 +342,34 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
       state->has_password = false;
       state->password[0] = '\0';
       snprintf(out_message, out_message_capacity, "ok - aabent netvaerk (intet password)");
+      return PROV_OK;
+    }
+
+    // v0.21.0 (Jan: "kan vi disable wifi også fra cli") — mirroring "eth
+    // enable"/"eth disable". Gælder KUN boot-tids-auto-genforbindelsen
+    // (src/provisioning.cpp) - en eksplicit "connect" virker stadig uanset
+    // dette flag. Kræver "save" + "reboot", ikke live (Jan, bekræftet).
+    if (ieq(tokens[1], "enable")) {
+      state->wifi_enabled = true;
+      snprintf(out_message, out_message_capacity, "ok - wifi.enabled=true (kraever 'save' + 'reboot')");
+      return PROV_OK;
+    }
+
+    if (ieq(tokens[1], "disable")) {
+      state->wifi_enabled = false;
+      // Lockout-advarsel (Jan, bekræftet): blokerer IKKE kommandoen, men
+      // gør det tydeligt at boardet mister AL netværksadgang hvis eth
+      // OGSÅ er deaktiveret på dette tidspunkt - fysisk USB-adgang er
+      // stadig en udvej (samme tillidsmodel som resten af §3.4), men det
+      // er trods alt et driftsmæssigt uheld værd at undgå ubevidst.
+      if (!state->eth_enabled) {
+        snprintf(out_message, out_message_capacity,
+                 "ok - wifi.enabled=false (kraever 'save' + 'reboot')\r\n"
+                 "ADVARSEL: eth er OGSAA deaktiveret - boardet vil INGEN netvaerksadgang "
+                 "have efter reboot (kun seriel CLI over USB)");
+      } else {
+        snprintf(out_message, out_message_capacity, "ok - wifi.enabled=false (kraever 'save' + 'reboot')");
+      }
       return PROV_OK;
     }
 
@@ -503,7 +538,15 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
 
     if (ieq(tokens[1], "disable")) {
       state->eth_enabled = false;
-      snprintf(out_message, out_message_capacity, "ok - eth.enabled=false (kraever 'save' + 'reboot')");
+      // Samme lockout-advarsel som "wifi disable" ovenfor, symmetrisk.
+      if (!state->wifi_enabled) {
+        snprintf(out_message, out_message_capacity,
+                 "ok - eth.enabled=false (kraever 'save' + 'reboot')\r\n"
+                 "ADVARSEL: wifi er OGSAA deaktiveret - boardet vil INGEN netvaerksadgang "
+                 "have efter reboot (kun seriel CLI over USB)");
+      } else {
+        snprintf(out_message, out_message_capacity, "ok - eth.enabled=false (kraever 'save' + 'reboot')");
+      }
       return PROV_OK;
     }
 

@@ -8,9 +8,7 @@
 
 #include "config.h"
 #include "eth_driver.h"
-#include "http_server.h"
 #include "modbus_channel.h"
-#include "modbus_tcp_server.h"
 #include "provisioning_cli.h"
 
 namespace {
@@ -225,8 +223,10 @@ bool attempt_connect() {
     Serial.println("Indsæt det i PLC'ens System-side under 'Modbus Expansion Boards'.");
   }
 
-  http_server_begin();
-  modbus_tcp_server_begin();
+  // v0.21.0: http_server_begin()/modbus_tcp_server_begin() flyttet til
+  // src/main.cpp::setup() (kaldes nu ubetinget, uafhængigt af WiFi-status -
+  // se dens kommentar for hvorfor) - IKKE længere herfra, da et rent
+  // Ethernet-board (WiFi deaktiveret) ellers aldrig ville faa dem startet.
 
   return true;
 }
@@ -254,9 +254,19 @@ void print_status() {
 
   print_wifi_connection_status();
   print_ethernet_status();
+  // v0.21.0-fund: viste hidtil KUN rest.api naar WiFi var forbundet - et
+  // rent Ethernet-board (WiFi deaktiveret/aldrig konfigureret, se BUGS.md's
+  // relaterede server-start-fund) fik derfor aldrig vist URL'en, selvom
+  // REST-API'et rent faktisk er naaeligt via Ethernet-IP'en. Viser nu
+  // BEGGE, hvis begge er oppe (dual-stack, samme server svarer paa begge).
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("rest.api: http://");
     Serial.print(WiFi.localIP());
+    Serial.println(":8080/api/status");
+  }
+  if (eth_driver_status() == ETH_STATUS_CONNECTED) {
+    Serial.print("rest.api (eth): http://");
+    Serial.print(eth_driver_ip_string());
     Serial.println(":8080/api/status");
   }
 
@@ -323,10 +333,17 @@ void provisioning_begin() {
   // genstart skal ikke kræve at et menneske genindtaster credentials).
   if (config_get().provisioned && config_get().wifi_has_ssid) {
     mb_config_to_provisioning_state(&config_get(), &g_state);
-    Serial.print("Gemt WiFi-config fundet (");
-    Serial.print(g_state.ssid);
-    Serial.println(") - forsoeger automatisk genforbindelse...");
-    attempt_connect();
+    // v0.21.0 (Jan: "kan vi disable wifi også fra cli") — "wifi disable"
+    // springer KUN denne automatiske boot-tids-genforbindelse over; en
+    // eksplicit "connect" fra CLI'en virker stadig uanset flaget.
+    if (!g_state.wifi_enabled) {
+      Serial.println("WiFi deaktiveret via config (wifi disable) - springer automatisk genforbindelse over.");
+    } else {
+      Serial.print("Gemt WiFi-config fundet (");
+      Serial.print(g_state.ssid);
+      Serial.println(") - forsoeger automatisk genforbindelse...");
+      attempt_connect();
+    }
     Serial.print("> ");
   }
 }

@@ -2,6 +2,16 @@
 
 ---
 
+## v0.21.0 — 2026-09-14 — WiFi kan nu også slås til/fra via CLI
+
+Den serielle CLI kan nu slå WiFi helt fra (`wifi disable`) eller til (`wifi enable`), mirroring den tilsvarende Ethernet-kommando fra v0.20.0 — nyttigt for et board der udelukkende skal køre på Ethernet. Advarer (uden at blokere) hvis Ethernet også er deaktiveret, så boardet ikke ved et uheld ender uden nogen netværksadgang overhovedet.
+
+Fandt og rettede samtidig en vigtig bagvedliggende fejl: REST-API'et og Modbus TCP-serverne blev hidtil kun startet når WiFi forbandt — et rent Ethernet-board ville derfor aldrig have fået dem startet, uanset hvor godt Ethernet-forbindelsen ellers virkede. De starter nu uafhængigt af hvilken netværksvej der rent faktisk er oppe.
+
+**Næste skridt**: live-verifikation af `wifi disable`/`wifi enable` på fysisk hardware, samt at REST/Modbus TCP fortsat starter korrekt på et Ethernet-only-board.
+
+---
+
 ## v0.20.0 — 2026-09-14 — Ethernet enable/disable/static-IP via CLI + tilfældig persisteret MAC
 
 Den serielle CLI kan nu styre Ethernet direkte: `eth enable`/`eth disable` slår W5500-driveren helt til/fra, og `eth mode dhcp|static` + `eth ip/mask/gw <a.b.c.d>` giver en statisk IP i stedet for DHCP — begge dele kun via CLI (`save` + `reboot`), ikke via REST. Boardet får desuden nu altid en unik, tilfældig MAC-adresse (persisteret i NVS ved første opstart) i stedet for W5500-chippens usikre default på `00:00:00:00:00:00`, som ellers ville give MAC-kollisioner hvis flere boards sad på samme netværk. MAC'en vises i `show`/`status` som `eth.mac`.

@@ -12,13 +12,13 @@
 // testet på rigtig hardware, behold tallet og marker feltet
 // "reserveret, ubrugt" i stedet for at sænke det.
 //
-// Schema 4 (denne version): tilføjede persisteret Ethernet-config
-// (`eth enable`/`disable`/`mode dhcp|static`/`ip`/`mask`/`gw`, v0.20.0) —
-// se `eth_enabled`/`eth_static_ip`/`eth_ip`/`eth_mask`/`eth_gw` nedenfor.
-// `mb_board_config_v3_t`/`v2_t`/`v1_t` nedenfor er FROSSNE kopier af ældre
-// schema-layouts, udelukkende til migration af allerede-gemte blobs — ÆNDR
-// DEM ALDRIG, de skal blive ved med at matche hvad der faktisk blev udgivet.
-constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 4;
+// Schema 5 (denne version): tilføjede persisteret `wifi_enabled`
+// (`wifi enable`/`disable`, v0.21.0) — se feltet nedenfor.
+// `mb_board_config_v4_t`/`v3_t`/`v2_t`/`v1_t` nedenfor er FROSSNE kopier af
+// ældre schema-layouts, udelukkende til migration af allerede-gemte blobs —
+// ÆNDR DEM ALDRIG, de skal blive ved med at matche hvad der faktisk blev
+// udgivet.
+constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 5;
 
 // §4.2: RS485/RS232-modevalg pr. kanal (§2.2.1) — styrer både
 // MODE_SEL-GPIO'en og om kanal-tasken toggler DE/RE (kun RS485).
@@ -151,7 +151,48 @@ struct mb_board_config_v3_t {
 // migration, se mb_config_load_from_blob().
 uint16_t mb_config_calc_checksum_v3(const mb_board_config_v3_t *config);
 
-// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 4. Rent
+// FROSSEN — schema 4's nøjagtige layout (identisk med `mb_board_config_t`
+// FØR schema 5 tilføjede `wifi_enabled`), kun til migration af allerede-
+// gemte v4-blobs. Ret ALDRIG denne struct.
+#pragma pack(push, 1)
+struct mb_board_config_v4_t {
+  uint16_t schema_version;
+  bool provisioned;
+  char wifi_ssid[MB_PROV_SSID_MAX_LEN + 1];
+  bool wifi_has_ssid;
+  char wifi_password[MB_PROV_PASSWORD_MAX_LEN + 1];
+  bool wifi_has_password;
+  bool wifi_open_network;
+  bool wifi_static_ip;
+  char wifi_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  char plc_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  bool has_plc_ip;
+  char mgmt_token[MB_MGMT_TOKEN_LEN + 1];
+  bool has_mgmt_token;
+  char rest_user[MB_PROV_REST_USER_MAX_LEN + 1];
+  bool has_rest_user;
+  char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
+  bool has_rest_pass;
+  mb_rest_auth_mode_t rest_auth_mode;
+  mb_channel_config_t channel[MB_CHANNEL_COUNT];
+  bool eth_enabled;
+  bool eth_static_ip;
+  char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  uint8_t eth_mac[6];
+  bool has_eth_mac;
+  uint16_t checksum;
+};
+#pragma pack(pop)
+
+// CRC16 over v4-structen — bruges KUN til at verificere en v4-blob under
+// migration, se mb_config_load_from_blob().
+uint16_t mb_config_calc_checksum_v4(const mb_board_config_v4_t *config);
+
+// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 5. Rent
 // data — ingen hardware-afhængighed, se board_config.cpp for hvorfor det kan
 // native-testes. `schema_version` er bevidst FØRSTE felt (kan altid læses
 // uanset hvordan resten af structen ændrer sig i en senere schema-version),
@@ -161,6 +202,12 @@ struct mb_board_config_t {
   uint16_t schema_version;
 
   bool provisioned;  // true first efter et vellykket "connect" (§3.4.1)
+
+  // Schema 5 (nyt felt, v0.21.0, Jan: "kan vi disable wifi også fra cli") —
+  // mirroring eth_enabled nedenfor. Default true (matcher hidtidig
+  // ubetinget adfærd). Gælder KUN boot-tids-auto-genforbindelsen
+  // (src/provisioning.cpp) — en eksplicit "connect" virker stadig uanset.
+  bool wifi_enabled;
 
   char wifi_ssid[MB_PROV_SSID_MAX_LEN + 1];
   bool wifi_has_ssid;
