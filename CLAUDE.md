@@ -130,6 +130,7 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 ├── version.json
 ├── EXPANSION_BOARD_DESIGN.md       # fuldt design-dokument — kilde til alle arkitekturbeslutninger
 ├── PLC_INTEGRATION_MANUAL.md       # AUTORITATIV reference for det FAKTISK implementerede API — til PLC-side-integrationsarbejdet (Modbus_server_slave_ESP32-repoet)
+├── GPIO_MAPPING.md                 # Samlet GPIO-opslagstabel (alle devices) — rent opslagsværk, EXPANSION_BOARD_DESIGN.md §2.0.1 er den autoritative kilde
 ├── reference-plc-source/           # statiske kode-referencer fra Hypervision PLC-repoet (se dens egen README.md)
 ├── .claude/
 │   └── settings.local.json
