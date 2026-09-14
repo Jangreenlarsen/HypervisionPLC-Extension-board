@@ -9,9 +9,9 @@ void tearDown(void) {}
 
 void test_status_json_when_connected(void) {
   const mb_status_data_t data = {
-      "0.6.0", "0006", 3661, 123456, 2, true, "192.168.1.50", -47, true, false, nullptr,
+      "0.6.0", "0006", 3661, 123456, 2, true, "192.168.1.50", -47, true, MB_CHANNEL_MODE_RS485, false, nullptr,
   };
-  char out[256];
+  char out[512];
   const size_t len = mb_status_build_json(&data, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
   TEST_ASSERT_EQUAL_size_t(strlen(out), len);
@@ -23,15 +23,26 @@ void test_status_json_when_connected(void) {
   TEST_ASSERT_NOT_NULL(strstr(out, "\"heap_free_bytes\":123456"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"active_channels\":2"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"provisioned\":true"));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"board_mode\":\"rs485\""));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"wifi\":{\"connected\":true,\"ip\":\"192.168.1.50\",\"rssi_dbm\":-47}"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"ethernet\":{\"connected\":false}"));
 }
 
+void test_status_json_board_mode_rs232(void) {
+  const mb_status_data_t data = {
+      "0.14.0", "0017", 3661, 123456, 2, true, "192.168.1.50", -47, true, MB_CHANNEL_MODE_RS232, false, nullptr,
+  };
+  char out[512];
+  const size_t len = mb_status_build_json(&data, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"board_mode\":\"rs232\""));
+}
+
 void test_status_json_when_disconnected_omits_ip_rssi(void) {
   const mb_status_data_t data = {
-      "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false, false, nullptr,
+      "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false, MB_CHANNEL_MODE_RS485, false, nullptr,
   };
-  char out[256];
+  char out[512];
   const size_t len = mb_status_build_json(&data, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
 
@@ -43,9 +54,9 @@ void test_status_json_when_disconnected_omits_ip_rssi(void) {
 
 void test_status_json_ethernet_connected(void) {
   const mb_status_data_t data = {
-      "0.12.0", "0015", 10, 300000, 2, false, nullptr, 0, true, true, "10.1.1.50",
+      "0.12.0", "0015", 10, 300000, 2, false, nullptr, 0, true, MB_CHANNEL_MODE_RS485, true, "10.1.1.50",
   };
-  char out[256];
+  char out[512];
   const size_t len = mb_status_build_json(&data, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
   TEST_ASSERT_NOT_NULL(strstr(out, "\"wifi\":{\"connected\":false}"));
@@ -54,7 +65,7 @@ void test_status_json_ethernet_connected(void) {
 
 void test_status_json_rejects_undersized_buffer(void) {
   const mb_status_data_t data = {
-      "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false, false, nullptr,
+      "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false, MB_CHANNEL_MODE_RS485, false, nullptr,
   };
   char out[8];  // alt for lille
   TEST_ASSERT_EQUAL_size_t(0, mb_status_build_json(&data, out, sizeof(out)));
@@ -62,10 +73,11 @@ void test_status_json_rejects_undersized_buffer(void) {
 
 void test_status_json_is_balanced_braces(void) {
   const mb_status_data_t data = {
-      "0.6.0", "0006", 3661, 123456, 2, true, "192.168.1.50", -47, true, true, "192.168.1.99",
+      "0.6.0", "0006", 3661, 123456, 2, true, "192.168.1.50", -47, true, MB_CHANNEL_MODE_RS485, true, "192.168.1.99",
   };
-  char out[256];
-  mb_status_build_json(&data, out, sizeof(out));
+  char out[512];  // §CLAUDE.md regel 14: nok margin til at ALDRIG stille afsløre en for-lille-buffer-fejl som "ubalancerede krøller"
+  const size_t len = mb_status_build_json(&data, out, sizeof(out));
+  TEST_ASSERT_TRUE_MESSAGE(len > 0, "mb_status_build_json fejlede (buffer for lille?) - resten af testen er meningsløs");
 
   int depth = 0;
   for (const char *p = out; *p != '\0'; p++) {
@@ -101,6 +113,7 @@ int main(int argc, char **argv) {
   UNITY_BEGIN();
 
   RUN_TEST(test_status_json_when_connected);
+  RUN_TEST(test_status_json_board_mode_rs232);
   RUN_TEST(test_status_json_when_disconnected_omits_ip_rssi);
   RUN_TEST(test_status_json_ethernet_connected);
   RUN_TEST(test_status_json_rejects_undersized_buffer);

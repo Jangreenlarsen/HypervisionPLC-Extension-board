@@ -4,6 +4,12 @@
 
 namespace {
 
+// Samme lille, lokale mode->streng-mapper som lib/channel_config/
+// channel_config.cpp har (anonymous namespace, ikke delt på tværs af
+// moduler — jf. CLAUDE.md's princip om at holde moduler begrebsmæssigt
+// adskilte fremfor at dele triviel formateringslogik).
+const char *mode_to_string(mb_channel_mode_t mode) { return mode == MB_CHANNEL_MODE_RS232 ? "rs232" : "rs485"; }
+
 // Bygger "{"connected":true,"ip":"...","rssi_dbm":N}" eller "{"connected":false}"
 // — genbrugt for BÅDE wifi- og (uden rssi_dbm) ethernet-feltet nedenfor.
 int append_wifi_object(char *out, size_t out_capacity, const mb_status_data_t *data) {
@@ -32,11 +38,13 @@ size_t mb_status_build_json(const mb_status_data_t *data, char *out, size_t out_
                                        "\"uptime_s\":%lu,"
                                        "\"heap_free_bytes\":%lu,"
                                        "\"active_channels\":%u,"
-                                       "\"provisioned\":%s,",
+                                       "\"provisioned\":%s,"
+                                       "\"board_mode\":\"%s\",",
                                        static_cast<unsigned>(MB_REST_API_VERSION), data->fw_version, data->fw_build,
                                        static_cast<unsigned long>(data->uptime_s),
                                        static_cast<unsigned long>(data->heap_free_bytes),
-                                       static_cast<unsigned>(data->active_channels), data->provisioned ? "true" : "false");
+                                       static_cast<unsigned>(data->active_channels), data->provisioned ? "true" : "false",
+                                       mode_to_string(data->board_mode));
   if (header_written <= 0 || static_cast<size_t>(header_written) >= out_capacity) {
     return 0;
   }

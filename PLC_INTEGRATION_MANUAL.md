@@ -1,6 +1,6 @@
 # PLC-integrations-manual: HypervisionPLC Extension Board
 
-Denne manual dokumenterer expansion-boardets **fulde, faktisk implementerede** grænseflade, som den ser ud efter v0.14.0 (build 0017) — til brug når PLC-siden (`Modbus_server_slave_ESP32`-repoet, `modbus_expansion.cpp`/`expansion_api_client.cpp`, §5 i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md)) skal implementeres. Alt heri er verificeret mod rigtig hardware, ikke kun designet — se [CHANGELOG.md](CHANGELOG.md) for de enkelte live-verifikationer.
+Denne manual dokumenterer expansion-boardets **fulde, faktisk implementerede** grænseflade, som den ser ud efter v0.15.0 (build 0018) — til brug når PLC-siden (`Modbus_server_slave_ESP32`-repoet, `modbus_expansion.cpp`/`expansion_api_client.cpp`, §5 i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md)) skal implementeres. Alt heri er verificeret mod rigtig hardware, ikke kun designet — se [CHANGELOG.md](CHANGELOG.md) for de enkelte live-verifikationer.
 
 **Forskel fra designdokumentet:** [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) beskriver den fulde, oprindelige vision (op til 8 kanaler, OTA, osv.). Denne manual beskriver kun det der **rent faktisk er bygget og testet** i denne repo lige nu — Variant A, 2 kanaler. Er der uoverensstemmelse, er DENNE fil den autoritative kilde for hvad et board faktisk gør i dag.
 
@@ -109,16 +109,18 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
 ```json
 {
   "api_version": 1,
-  "fw_version": "0.13.0",
-  "fw_build": "0016",
+  "fw_version": "0.15.0",
+  "fw_build": "0018",
   "uptime_s": 86412,
   "heap_free_bytes": 221856,
   "active_channels": 2,
   "provisioned": true,
+  "board_mode": "rs485",
   "wifi": {"connected": true, "ip": "10.1.1.229", "rssi_dbm": -62},
   "ethernet": {"connected": false}
 }
 ```
+`board_mode` (`"rs485"` eller `"rs232"`, v0.15.0) er boardets AKTUELLE RS232/RS485-mode — siden begge kanaler siden v0.14.0 deler én fysisk MODE_SEL-GPIO (§2.0.1), er dette den samme værdi som ENHVER kanals `mode`-felt i `GET /api/channels`. Foretrukket direkte kilde til board-mode fremfor at udlede den fra en tilfældig kanal.
 `wifi`-objektet er kun `{"connected":false}` hvis ikke forbundet (`ip`/`rssi_dbm` udelades da). `ethernet`-objektet (§1.3/§2.2, valgfrit W5500-modul, v0.13.0) er tilsvarende kun `{"connected":true,"ip":"..."}` når linket er oppe — INGEN `rssi_dbm` (kablet, ikke relevant). WiFi og Ethernet kan begge være `connected:true` samtidig (dual-stack) — boardet har ingen provisionering for Ethernet, den henter blot en IP via DHCP så snart et kabel er tilsluttet. `api_version` er en separat protokol-kontrakt-version (bumpes KUN ved brydende ændringer i selve API'et) — PLC-siden bør logge en advarsel, ikke fejle stille, hvis denne ikke matcher hvad klienten er skrevet imod.
 
 ### 4.3 `GET /api/channels` og `GET /api/channels/{n}`

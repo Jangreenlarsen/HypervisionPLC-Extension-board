@@ -134,6 +134,7 @@ esp_err_t status_handler(httpd_req_t *req) {
       ip_str.c_str(),
       connected ? static_cast<int8_t>(WiFi.RSSI()) : 0,
       cfg.provisioned,
+      modbus_channel_get_config(ModbusChannelId::kA).mode,  // §2.0.1: delt MODE_SEL - kanal A/B altid ens, se board_mode
       eth_connected,
       eth_driver_ip_string(),
   };
