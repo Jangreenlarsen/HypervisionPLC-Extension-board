@@ -2,6 +2,14 @@
 
 ---
 
+## v0.19.0 — 2026-09-14 — `reboot`-kommando i den serielle CLI
+
+Den serielle CLI har nu en `reboot`-kommando — et blødt, ikke-destruktivt genstart, der ikke rydder nogen konfiguration (modsat `factory-reset confirm`). Samme funktion som REST-API'ets `POST /api/reboot` (v0.12.0), men direkte fra den serielle forbindelse — nyttigt til hurtig hardware-iteration uden at skulle fysisk afbryde strømmen.
+
+**Næste skridt**: live-verifikation af `reboot`-kommandoen på fysisk hardware.
+
+---
+
 ## v0.18.0 — 2026-09-14 — Detaljeret W5500-Ethernet-diagnostik
 
 Ethernet-status er nu meget mere præcis end det gamle binære "link op/nede". Boardet kan nu rapportere fire tydelige tilstande — både i den serielle CLI (`status`/`show`) og via `GET /api/status`s `ethernet.status`: intet modul fundet (tjek den fysiske tilslutning), modul fundet men link nede (tjek kabel/switch), link oppe og venter på DHCP, eller fuldt forbundet. Det gør det muligt at se med det samme om et Ethernet-problem er en hardware-/wiring-sag eller "bare" et løst/manglende netværkskabel.

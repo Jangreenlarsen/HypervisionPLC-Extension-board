@@ -75,6 +75,12 @@ enum mb_provisioning_result_t {
   PROV_ACTION_VERSION,         // "version" — out_message har allerede firmware-version+build (fra version.json, §1)
   PROV_ACTION_STATUS,          // "status" — kaldstedet skal selv sammensætte+udskrive systemstatus (uptime/heap/WiFi er runtime-data lib/ ikke kender)
   PROV_ACTION_SAVE,            // "save" — kaldstedet skal gemme den aktuelle state til NVS uden at forsøge en WiFi-forbindelse
+  // v0.19.0 (Jan, under W5500-hardware-fejlsøgning: "vi har ikke en reboot
+  // kommando på board") — blødt, IKKE-destruktivt genstart-kald, samme
+  // funktion som REST-API'ets `POST /api/reboot` (v0.12.0) men fra den
+  // serielle CLI. Rydder INTET i NVS (modsat PROV_ACTION_FACTORY_RESET) —
+  // kræver derfor ingen "confirm".
+  PROV_ACTION_REBOOT,
   PROV_EMPTY_LINE,             // tomt/whitespace-only input — kaldstedet kan ignorere stille
   PROV_UNKNOWN_COMMAND,
   PROV_MISSING_ARGUMENT,       // out_message forklarer hvilket felt der mangler
