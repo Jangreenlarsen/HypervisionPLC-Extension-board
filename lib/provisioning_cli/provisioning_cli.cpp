@@ -186,8 +186,6 @@ static void mb_provisioning_format_status(const mb_provisioning_state_t *state, 
     append_line(out_buffer, out_buffer_capacity, &pos, "wifi.gw", state->has_gw ? state->gw : "(ikke sat)");
   }
   append_line(out_buffer, out_buffer_capacity, &pos, "plc.ip", state->has_plc_ip ? state->plc_ip : "(ikke sat)");
-  append_line(out_buffer, out_buffer_capacity, &pos, "rest.user", state->has_rest_user ? state->rest_user : "(ikke sat)");
-  append_line(out_buffer, out_buffer_capacity, &pos, "rest.pass", rest_pass_display);
 
   const char *auth_mode_display = "both";
   if (state->rest_auth_mode == MB_REST_AUTH_MODE_TOKEN_ONLY) {
@@ -196,6 +194,18 @@ static void mb_provisioning_format_status(const mb_provisioning_state_t *state, 
     auth_mode_display = "basic";
   }
   append_line(out_buffer, out_buffer_capacity, &pos, "rest.auth_mode", auth_mode_display);
+
+  // Jan: "hvis vi køre rest auth token så skal rest user og rest pass [kun]
+  // være i config kun hvis rest auth both" — rest.user/rest.pass vises KUN
+  // når rest_auth_mode er BOTH (præcis som formuleret — ikke også for
+  // BASIC_ONLY, selvom Basic Auth teknisk set også bruges der). Selve
+  // værdierne SLETTES ikke fra NVS ved et modeskift (kun visningen her) —
+  // de er stadig gemt hvis man senere skifter tilbage til "both".
+  if (state->rest_auth_mode == MB_REST_AUTH_MODE_BOTH) {
+    append_line(out_buffer, out_buffer_capacity, &pos, "rest.user",
+                state->has_rest_user ? state->rest_user : "(ikke sat)");
+    append_line(out_buffer, out_buffer_capacity, &pos, "rest.pass", rest_pass_display);
+  }
 
   // v0.20.0: konfigureret (staged/persisteret) Ethernet-opsætning — IKKE
   // live-status (link/IP, det kommer fra src/provisioning.cpp's

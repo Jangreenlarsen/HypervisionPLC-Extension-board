@@ -304,10 +304,6 @@ void print_status() {
   // fortsat aldrig tokenet.
   Serial.print("mgmt.token: ");
   Serial.println(config_get().has_mgmt_token ? config_get().mgmt_token : "(ikke sat)");
-  Serial.print("rest.user: ");
-  Serial.println(config_get().has_rest_user ? config_get().rest_user : "(ikke sat)");
-  Serial.print("rest.pass: ");
-  Serial.println(config_get().has_rest_pass ? config_get().rest_pass : "(ikke sat)");
   Serial.print("rest.auth_mode: ");
   switch (config_get().rest_auth_mode) {
     case MB_REST_AUTH_MODE_TOKEN_ONLY:
@@ -319,6 +315,16 @@ void print_status() {
     default:
       Serial.println("both");
       break;
+  }
+  // Jan: "hvis vi køre rest auth token så skal rest user og rest pass [kun]
+  // være i config kun hvis rest auth both" — vises KUN i BOTH-mode (præcis
+  // som formuleret, se samme regel i lib/provisioning_cli's "show"-
+  // formatter). Værdierne slettes IKKE fra NVS ved et modeskift.
+  if (config_get().rest_auth_mode == MB_REST_AUTH_MODE_BOTH) {
+    Serial.print("rest.user: ");
+    Serial.println(config_get().has_rest_user ? config_get().rest_user : "(ikke sat)");
+    Serial.print("rest.pass: ");
+    Serial.println(config_get().has_rest_pass ? config_get().rest_pass : "(ikke sat)");
   }
 
   Serial.print("modbus_tcp: ");

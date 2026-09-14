@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.22.1 build 0027] — 2026-09-14 — `rest.user`/`rest.pass` skjules i CLI'en medmindre auth_mode er `both`
+
+**Baggrund:** Jan: "hvis vi køre rest auth token så skal rest user og rest pass i være i config kun hvis rest auth both" — `show`/`status` viste hidtil altid `rest.user`/`rest.pass`, uanset `rest.auth_mode`, hvilket er misvisende når de reelt ikke bruges (Basic Auth er helt afvist i `token`-mode uanset hvad der er konfigureret).
+
+**`lib/provisioning_cli/`:** `mb_provisioning_format_status()` ("show") viser nu kun `rest.user`/`rest.pass` når `rest_auth_mode == MB_REST_AUTH_MODE_BOTH`. Bekræftet med Jan: reglen gælder EKSPLICIT kun `both` — skjules altså også i `basic`-mode, ikke kun `token`, selvom Basic Auth teknisk set er den eneste accepterede metode i det tilfælde.
+
+**`src/provisioning.cpp`:** samme regel i `print_status()` ("status"), en separat kodesti (læser direkte fra `config_get()`, ikke via `show`-formatteren).
+
+**Værdierne slettes IKKE fra NVS** ved et modeskift — kun visningen er betinget, så intet går tabt hvis man senere skifter tilbage til `both`.
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`.
+
+**Status:** 214/214 native-tests bestået (3 nye), bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.22.0 build 0026] — 2026-09-14 — Konfigurerbart DHCP-hostname (`hostname <navn>`/`hostname auto`)
 
 **Baggrund:** Jan: "vi skal lige have en hostname på kan jeg se da dhcp server bare har et espressif name nu" — firmwaren satte hidtil aldrig et eksplicit hostname; Arduino-WiFi-kernens default (`esp32-XXXXXX`) blev brugt uændret, og Ethernet fik slet intet hostname.
