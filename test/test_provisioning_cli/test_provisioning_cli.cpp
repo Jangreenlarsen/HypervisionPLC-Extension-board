@@ -223,6 +223,13 @@ void test_save_action(void) {
   TEST_ASSERT_EQUAL(PROV_ACTION_SAVE, r);
 }
 
+void test_reboot_action(void) {
+  // v0.19.0: ingen confirm noedvendig (ikke-destruktiv, rydder intet i NVS)
+  // - modsat factory-reset udloeses handlingen af selve ordet alene.
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "reboot", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_REBOOT, r);
+}
+
 void test_status_action(void) {
   // "status" delegerer selve indholdet til kaldstedet (uptime/heap/WiFi er
   // runtime-data) — her verificeres kun at kommandoen genkendes korrekt.
@@ -310,6 +317,7 @@ void test_help_action(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "plc ip"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "show"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "connect"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "reboot"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "factory-reset confirm"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest user"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest pass"));
@@ -465,6 +473,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_rest_auth_rejects_invalid_value);
   RUN_TEST(test_rest_auth_visible_in_show);
   RUN_TEST(test_save_action);
+  RUN_TEST(test_reboot_action);
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);

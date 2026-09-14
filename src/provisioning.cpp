@@ -367,6 +367,10 @@ void provisioning_poll() {
 
       if (result == PROV_ACTION_CONNECT) {
         attempt_connect();
+      } else if (result == PROV_ACTION_REBOOT) {
+        Serial.println("Genstarter (ingen konfiguration rørt).");
+        delay(500);
+        ESP.restart();
       } else if (result == PROV_ACTION_FACTORY_RESET) {
         Serial.println("Rydder NVS-konfiguration og genstarter.");
         config_factory_reset();

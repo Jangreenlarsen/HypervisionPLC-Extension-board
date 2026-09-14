@@ -4,6 +4,18 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.19.0 build 0022] — 2026-09-14 — `reboot`-kommando i den serielle CLI
+
+**Baggrund:** Jan, under W5500-hardware-fejlsøgning (skulle genstarte boardet gentagne gange efter ledningsændringer): "vi har ikke en reboot kommando på board". REST-API'et har haft `POST /api/reboot` siden v0.12.0, men den serielle CLI havde intet tilsvarende — kun `factory-reset confirm`, som også rydder al gemt config, langt mere end nødvendigt til hurtig hardware-iteration.
+
+**`lib/provisioning_cli/`:** ny `PROV_ACTION_REBOOT` — ingen "confirm" nødvendig (ikke-destruktiv, rydder intet i NVS, samme filosofi som REST-udgaven). Tilføjet til `help`-teksten.
+
+**`src/provisioning.cpp`:** `PROV_ACTION_REBOOT`-håndtering kalder `ESP.restart()` efter en kort besked — samme mønster som den eksisterende `PROV_ACTION_FACTORY_RESET`-gren, minus `config_factory_reset()`-kaldet.
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.h/.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`.
+
+**Status:** 171/171 native-tests bestået, bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.18.0 build 0021] — 2026-09-14 — Detaljeret W5500-Ethernet-diagnostik
 
 **Baggrund:** Jan: "vi skal have noget diag på det w5500 så vi kan se det fungere eller om det er link fejl". `eth_driver_link_up()` (v0.13.0) rapporterede kun et binært op/nede — umuligt at skelne et reelt hardware-/wiring-problem (intet W5500-modul fundet på SPI-bussen) fra en ren netværks-sag (modulet virker fint, men kablet mangler eller switch-porten er nede).

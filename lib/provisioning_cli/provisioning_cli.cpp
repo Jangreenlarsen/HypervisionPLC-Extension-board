@@ -234,6 +234,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "status", "systemstatus (uptime/heap/WiFi/tilstand)");
     append_line(out_message, out_message_capacity, &pos, "save", "gem nuvaerende felter til NVS uden at forsoege forbindelse");
     append_line(out_message, out_message_capacity, &pos, "connect", "anvend felterne og forsoeg WiFi-forbindelse");
+    append_line(out_message, out_message_capacity, &pos, "reboot", "blødt genstart - rydder INTET (modsat factory-reset)");
     append_line(out_message, out_message_capacity, &pos, "factory-reset confirm", "ryd WiFi/token/firewall og genstart");
     append_line(out_message, out_message_capacity, &pos, "version", "vis firmware-version+build");
     append_line(out_message, out_message_capacity, &pos, "help", "denne kommandoliste");
@@ -282,6 +283,13 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     }
     snprintf(out_message, out_message_capacity, "ok - forsoeger forbindelse");
     return PROV_ACTION_CONNECT;
+  }
+
+  if (ieq(tokens[0], "reboot")) {
+    // Ikke-destruktiv, ingen confirm noedvendig — modsat "factory-reset"
+    // rydder denne INTET i NVS (samme filosofi som REST-udgaven, v0.12.0).
+    snprintf(out_message, out_message_capacity, "ok - genstarter");
+    return PROV_ACTION_REBOOT;
   }
 
   if (ieq(tokens[0], "factory-reset")) {
