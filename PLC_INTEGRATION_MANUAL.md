@@ -1,6 +1,6 @@
 # PLC-integrations-manual: HypervisionPLC Extension Board
 
-Denne manual dokumenterer expansion-boardets **fulde, faktisk implementerede** grænseflade, som den ser ud efter v0.12.0 (build 0015) — til brug når PLC-siden (`Modbus_server_slave_ESP32`-repoet, `modbus_expansion.cpp`/`expansion_api_client.cpp`, §5 i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md)) skal implementeres. Alt heri er verificeret mod rigtig hardware, ikke kun designet — se [CHANGELOG.md](CHANGELOG.md) for de enkelte live-verifikationer.
+Denne manual dokumenterer expansion-boardets **fulde, faktisk implementerede** grænseflade, som den ser ud efter v0.13.0 (build 0016) — til brug når PLC-siden (`Modbus_server_slave_ESP32`-repoet, `modbus_expansion.cpp`/`expansion_api_client.cpp`, §5 i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md)) skal implementeres. Alt heri er verificeret mod rigtig hardware, ikke kun designet — se [CHANGELOG.md](CHANGELOG.md) for de enkelte live-verifikationer.
 
 **Forskel fra designdokumentet:** [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) beskriver den fulde, oprindelige vision (op til 8 kanaler, OTA, osv.). Denne manual beskriver kun det der **rent faktisk er bygget og testet** i denne repo lige nu — Variant A, 2 kanaler. Er der uoverensstemmelse, er DENNE fil den autoritative kilde for hvad et board faktisk gør i dag.
 
@@ -109,16 +109,17 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
 ```json
 {
   "api_version": 1,
-  "fw_version": "0.12.0",
-  "fw_build": "0015",
+  "fw_version": "0.13.0",
+  "fw_build": "0016",
   "uptime_s": 86412,
   "heap_free_bytes": 221856,
   "active_channels": 2,
   "provisioned": true,
-  "wifi": {"connected": true, "ip": "10.1.1.229", "rssi_dbm": -62}
+  "wifi": {"connected": true, "ip": "10.1.1.229", "rssi_dbm": -62},
+  "ethernet": {"connected": false}
 }
 ```
-`wifi`-objektet er kun `{"connected":false}` hvis ikke forbundet (`ip`/`rssi_dbm` udelades da). `api_version` er en separat protokol-kontrakt-version (bumpes KUN ved brydende ændringer i selve API'et) — PLC-siden bør logge en advarsel, ikke fejle stille, hvis denne ikke matcher hvad klienten er skrevet imod.
+`wifi`-objektet er kun `{"connected":false}` hvis ikke forbundet (`ip`/`rssi_dbm` udelades da). `ethernet`-objektet (§1.3/§2.2, valgfrit W5500-modul, v0.13.0) er tilsvarende kun `{"connected":true,"ip":"..."}` når linket er oppe — INGEN `rssi_dbm` (kablet, ikke relevant). WiFi og Ethernet kan begge være `connected:true` samtidig (dual-stack) — boardet har ingen provisionering for Ethernet, den henter blot en IP via DHCP så snart et kabel er tilsluttet. `api_version` er en separat protokol-kontrakt-version (bumpes KUN ved brydende ændringer i selve API'et) — PLC-siden bør logge en advarsel, ikke fejle stille, hvis denne ikke matcher hvad klienten er skrevet imod.
 
 ### 4.3 `GET /api/channels` og `GET /api/channels/{n}`
 
@@ -284,6 +285,7 @@ Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsn
 ## 7. Kendte begrænsninger lige nu
 
 - **Kun 2 kanaler** (Variant A). Variant B (8 kanaler, SPI-expander) er designet (§2.2) men ikke bygget.
+- **W5500-Ethernet (v0.13.0) er implementeret men IKKE hardware-verificeret** — kun boot-testet uden fysisk modul tilsluttet (fejler sikkert, resten af boardet upåvirket). Link/DHCP/faktisk dataoverførsel over Ethernet er endnu ikke testet.
 - **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode:"rs232"` kan sættes via config, men er utestet i praksis.
 - **Ingen `POST /api/channels/{n}/reset-stats`/`POST /api/stats/reset`** — statistikken (afsnit 4.3) kan kun nulstilles ved reboot.
 - **OTA-uploadets fremdrift kan IKKE afbrydes** — en gang startet, kører uploadet til den lykkes eller fejler; der er intet "annullér"-endpoint.

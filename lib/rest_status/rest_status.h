@@ -21,6 +21,12 @@ struct mb_status_data_t {
   const char *wifi_ip;      // ignoreres hvis !wifi_connected
   int8_t wifi_rssi_dbm;     // ignoreres hvis !wifi_connected
   bool provisioned;
+
+  // Valgfri Ethernet (W5500, §1.3/§2.2) — dual-stack med WiFi, ingen egen
+  // provisionering (ren DHCP). `eth_connected` = link op (kabel + PHY-link),
+  // IKKE nødvendigvis en IP endnu.
+  bool eth_connected;
+  const char *eth_ip;       // ignoreres hvis !eth_connected, eller tom streng hvis link op men endnu ingen DHCP-lease
 };
 
 // Bygger `GET /api/status`-JSON-svaret (EXPANSION_BOARD_DESIGN.md §4.2's
