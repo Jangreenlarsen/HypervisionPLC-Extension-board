@@ -32,6 +32,10 @@ constexpr int kEthRstPin = 23;
 // SPI2_HOST holder navngivningen fri af den forvirring.
 constexpr spi_host_device_t kEthSpiHost = SPI2_HOST;
 constexpr int kEthSpiClockHz = 8 * 1000 * 1000;  // 8 MHz — forsigtigt for et eksternt modul (længere ledninger end onboard)
+// DEBUG-note (2026-09-14): testet ned til 1 MHz under fejlsøgning af
+// "w5500_send_command timeout" (se BUGS.md) — INGEN forskel (identisk fejl
+// paa nøjagtig samme tidspunkt), hvilket udelukker signalintegritet/
+// clock-hastighed som aarsag. Sat tilbage til 8 MHz.
 
 esp_eth_handle_t g_eth_handle = nullptr;
 volatile bool g_link_up = false;
@@ -142,10 +146,22 @@ void eth_driver_begin() {
   }
 
   spi_device_interface_config_t spi_devcfg = {};
+  // Bugfix v0.19.1 (2026-09-14, se BUGS.md): W5500'ens SPI-framing kraever
+  // en 16-bit adresse-fase + 8-bit kontrol-fase FOER selve databytes
+  // (Wiznet-datasheet) - uden command_bits/address_bits sat her, klokker
+  // SPI-hardwaren dem slet ikke ud (de er en del af DEVICE-konfigurationen,
+  // ikke noget transaktionen selv kan eftergive), saa W5500-chippen aldrig
+  // kan tolke NOGEN kommando korrekt - uanset klokhastighed eller wiring.
+  // Fundet ved sammenligning med Modbus_API_Gateway (soesterprojekt, samme
+  // W5500-hardware, i produktion), hvis eth-driver eksplicit saetter disse
+  // to felter. Live-bekraeftet: loeste "w5500_send_command timeout" helt.
+  spi_devcfg.command_bits = 16;
+  spi_devcfg.address_bits = 8;
   spi_devcfg.mode = 0;
   spi_devcfg.clock_speed_hz = kEthSpiClockHz;
   spi_devcfg.queue_size = 20;
   spi_devcfg.spics_io_num = kEthCsPin;
+  spi_devcfg.cs_ena_posttrans = 5;  // lille margin efter CS-deassert - matcher soesterprojektets fungerende config
 
   spi_device_handle_t spi_handle = nullptr;
   if (spi_bus_add_device(kEthSpiHost, &spi_devcfg, &spi_handle) != ESP_OK) {

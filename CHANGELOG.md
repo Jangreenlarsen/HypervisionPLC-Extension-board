@@ -4,6 +4,18 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.19.1 build 0023] — 2026-09-14 — Fix: W5500 svarede aldrig over SPI (manglende command_bits/address_bits)
+
+**Baggrund:** Jan monterede et fysisk W5500-modul (korrekt forbundet efter GPIO_MAPPING.md, link-LED lyste), men boardet kunne aldrig tale med chippen — boot-log viste konsekvent `E w5500.mac: w5500_send_command(132): send command timeout`. Fejlsøgning udelukkede: forkert GPIO/pin-kapabilitet, manglende pull-up på INT (tilføjet, ingen ændring), og SPI-clockhastighed (8→1 MHz testet, identisk fejl på nøjagtig samme millisekund).
+
+**Root cause (fundet ved sammenligning med `Modbus_API_Gateway`, søsterprojekt med samme W5500-hardware i produktion):** `src/eth_driver.cpp`s `spi_device_interface_config_t` satte aldrig `.command_bits`/`.address_bits`. W5500'ens SPI-protokol kræver en 16-bit adresse-fase + 8-bit kontrol-fase FØR databytes (Wiznet-datasheet) — disse felter er en del af SPI-DEVICE-konfigurationen (sat ved `spi_bus_add_device()`), ikke noget den enkelte transaktion selv kan levere. Uden dem klokker SPI-hardwaren simpelthen aldrig header'en ud — chippen kan derfor aldrig tolke nogen kommando, uanset klokhastighed eller ellers korrekt wiring.
+
+**`src/eth_driver.cpp`:** tilføjet `spi_devcfg.command_bits = 16`, `spi_devcfg.address_bits = 8`, `spi_devcfg.cs_ena_posttrans = 5` (matcher søsterprojektets fungerende konfiguration).
+
+**Filer ændret:** `src/eth_driver.cpp`.
+
+**Status:** 171/171 native-tests upåvirket (ren ESP32-specifik fil), bygger rent for esp32dev. **Live-bekræftet — boardets FØRSTE succesfulde Ethernet-forbindelse nogensinde:** link op, DHCP-IP `10.1.1.90` tildelt, `GET /api/status` og et REST-kald direkte mod Ethernet-IP'en begge besvaret korrekt (bekræfter reel dataoverførsel, ikke kun link+DHCP), samtidig med WiFi forbundet (dual-stack).
+
 ## [0.19.0 build 0022] — 2026-09-14 — `reboot`-kommando i den serielle CLI
 
 **Baggrund:** Jan, under W5500-hardware-fejlsøgning (skulle genstarte boardet gentagne gange efter ledningsændringer): "vi har ikke en reboot kommando på board". REST-API'et har haft `POST /api/reboot` siden v0.12.0, men den serielle CLI havde intet tilsvarende — kun `factory-reset confirm`, som også rydder al gemt config, langt mere end nødvendigt til hurtig hardware-iteration.
