@@ -38,12 +38,14 @@ mb_error_code_t modbus_channel_submit(ModbusChannelId channel, uint8_t slave_id,
 // IKKE persistere igen. Returnerer false hvis kanalens task ikke kunne nås
 // (fx kø fuld).
 //
-// Hardware-revision 2026-09-14: MODE_SEL er ÉN delt GPIO for hele boardet
-// (§2.0.1) — kanal A og B kan derfor ALDRIG have forskellig RS232/RS485-
-// mode. Ændrer et kald `mode`, spejles den SAMME ændring automatisk til
-// den anden kanal (dens øvrige felter — baudrate/parity/osv. — er
-// upåvirkede). Et `GET`/`PUT` på ÉN kanal kan derfor ændre hvad den ANDEN
-// kanal efterfølgende rapporterer som sin `mode` — dette er IKKE en fejl.
+// Hardware-revision 2026-09-14 (2. ændring samme dag): MODE_SEL (GPIO4) er
+// en INPUT sat ved fremstilling (fysisk jumper/strap), ikke et
+// firmware-styret valg. `mode`-feltet i `new_config` IGNORERES derfor
+// bevidst — den faktiske, hardware-udlæste mode (læst én gang ved boot,
+// se `g_hardware_mode`/`read_board_mode_sel()` i modbus_channel.cpp)
+// bruges altid i stedet, for BEGGE kanaler. `mode` er ikke længere et
+// felt PLC-siden kan sætte via `PUT /api/channels/{n}/config` — kun en
+// læseværdi (se `GET .../{n}` og `GET /api/status`s `board_mode`).
 bool modbus_channel_apply_config(ModbusChannelId channel, const mb_channel_config_t &new_config);
 
 // Nuværende config/statistik — kaldes fra REST-laget (GET /api/channels/{n})

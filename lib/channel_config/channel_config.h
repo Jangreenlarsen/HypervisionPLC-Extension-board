@@ -35,4 +35,9 @@ size_t mb_channel_build_json(int channel_number, const mb_channel_config_t *conf
 // felter skal være til stede og gyldige (ingen PATCH-semantik); mangler
 // eller er blot ét ugyldigt, afvises HELE requestet (false, `*out_config`
 // røres ikke), fremfor at anvende en delvis opdatering.
+//
+// Hardware-revision 2026-09-14: `mode` er IKKE et af disse felter — MODE_SEL
+// er en fabriksvalgt hardware-input (§2.0.1), ikke noget PLC-siden sætter
+// via PUT. Et evt. `"mode"`-felt i requestet ignoreres stiltiende (kræves
+// hverken til stede eller fraværende).
 bool mb_channel_parse_config_json(const char *json, size_t len, mb_channel_config_t *out_config);

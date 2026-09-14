@@ -239,20 +239,23 @@ esp_err_t channel_config_put_handler(httpd_req_t *req) {
     return ESP_OK;
   }
 
-  // modbus_channel_apply_config() persisterer nu selv (§CHANGELOG.md 2026-09-14)
-  // — inkl. et evt. spejlet mode-skift til den ANDEN kanal (delt MODE_SEL-GPIO,
-  // §2.0.1). Persisterer EFTER kanalen selv er live-omkonfigureret — et
-  // strømudfald midt i kaldet efterlader så i værste fald flash uændret
-  // (gammel config stadig gemt), aldrig en UART der kører med en config,
-  // flash ikke ved af.
+  // modbus_channel_apply_config() persisterer nu selv (§CHANGELOG.md 2026-09-14).
+  // Persisterer EFTER kanalen selv er live-omkonfigureret — et strømudfald
+  // midt i kaldet efterlader så i værste fald flash uændret (gammel config
+  // stadig gemt), aldrig en UART der kører med en config, flash ikke ved af.
   if (!modbus_channel_apply_config(id, new_config)) {
     send_json_error(req, "500 Internal Server Error", -1, "apply_failed", "Kunne ikke anvende ny kanal-config");
     return ESP_OK;
   }
 
+  // Hardware-revision 2026-09-14: byg svaret fra den FAKTISK anvendte config
+  // (modbus_channel_get_config()), ikke den rå new_config — new_config.mode
+  // er nu altid tom/ignoreret (MODE_SEL parses ikke fra PUT-JSON længere),
+  // og svaret skal vise den ægte, hardware-udlæste mode.
+  const mb_channel_config_t applied_config = modbus_channel_get_config(id);
   const mb_channel_stats_t stats = modbus_channel_get_stats(id);
   char resp_body[512];
-  const size_t resp_len = mb_channel_build_json(channel_number, &new_config, &stats, resp_body, sizeof(resp_body));
+  const size_t resp_len = mb_channel_build_json(channel_number, &applied_config, &stats, resp_body, sizeof(resp_body));
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, resp_body, resp_len > 0 ? resp_len : HTTPD_RESP_USE_STRLEN);
   return ESP_OK;

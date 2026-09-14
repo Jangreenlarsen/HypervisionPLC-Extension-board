@@ -36,18 +36,6 @@ const char *parity_to_string(mb_channel_parity_t parity) {
   }
 }
 
-bool string_to_mode(const char *s, mb_channel_mode_t *out) {
-  if (strcmp(s, "rs485") == 0) {
-    *out = MB_CHANNEL_MODE_RS485;
-    return true;
-  }
-  if (strcmp(s, "rs232") == 0) {
-    *out = MB_CHANNEL_MODE_RS232;
-    return true;
-  }
-  return false;
-}
-
 bool string_to_parity(const char *s, mb_channel_parity_t *out) {
   if (strcmp(s, "none") == 0) {
     *out = MB_CHANNEL_PARITY_NONE;
@@ -174,13 +162,15 @@ size_t mb_channel_build_json(int channel_number, const mb_channel_config_t *conf
 bool mb_channel_parse_config_json(const char *json, size_t len, mb_channel_config_t *out_config) {
   (void)len;  // json er null-termineret (fra HTTP-body-bufferen) - strstr/strchr er derfor trygge at bruge direkte
 
+  // Hardware-revision 2026-09-14: `mode` parses BEVIDST ikke her — MODE_SEL
+  // (GPIO4) er en input sat ved fremstilling, ikke et PUT-bart felt (se
+  // src/modbus_channel.cpp's g_hardware_mode/read_board_mode_sel()). Et evt.
+  // `"mode"`-felt i den indsendte JSON ignoreres derfor stiltiende;
+  // `parsed.mode` overskrives alligevel ubetinget af
+  // modbus_channel.cpp:apply_config_now() før den bruges eller persisteres.
   mb_channel_config_t parsed{};
 
   if (!parse_bool_field(json, "enabled", &parsed.enabled)) return false;
-
-  char mode_str[8];
-  if (!parse_string_field(json, "mode", mode_str, sizeof(mode_str))) return false;
-  if (!string_to_mode(mode_str, &parsed.mode)) return false;
 
   if (!parse_uint_field(json, "baudrate", &parsed.baudrate)) return false;
   if (!mb_is_valid_baudrate(parsed.baudrate)) return false;
