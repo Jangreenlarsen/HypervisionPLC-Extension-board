@@ -7,7 +7,9 @@
 #include <strings.h>
 
 #include "config.h"
+#include "eth_driver.h"
 #include "http_server.h"
+#include "modbus_channel.h"
 #include "modbus_tcp_server.h"
 #include "provisioning_cli.h"
 
@@ -119,6 +121,26 @@ void print_wifi_connection_status() {
   }
 }
 
+// Samme princip som print_wifi_connection_status() — Jan bad om at kunne se
+// Ethernet-status (§1.3/§2.2, W5500, v0.13.0) og board_mode (§2.0.1's delte
+// MODE_SEL, v0.14.0/v0.15.0) direkte i den serielle CLI, ikke kun via REST.
+void print_ethernet_status() {
+  const bool link_up = eth_driver_link_up();
+  Serial.print("eth.connection: ");
+  Serial.println(link_up ? "link op" : "link nede (intet kabel/modul, eller endnu ingen link-detektion)");
+  if (link_up) {
+    const char *ip = eth_driver_ip_string();
+    Serial.print("eth.ip: ");
+    Serial.println(ip[0] != '\0' ? ip : "(link op, venter paa DHCP)");
+  }
+}
+
+void print_board_mode() {
+  const mb_channel_config_t cfg_a = modbus_channel_get_config(ModbusChannelId::kA);
+  Serial.print("board_mode: ");
+  Serial.println(cfg_a.mode == MB_CHANNEL_MODE_RS485 ? "rs485" : "rs232");
+}
+
 bool attempt_connect() {
   Serial.println("Forbinder til WiFi...");
 
@@ -201,7 +223,10 @@ void print_status() {
   Serial.print("heap_free_bytes: ");
   Serial.println(ESP.getFreeHeap());
 
+  print_board_mode();
+
   print_wifi_connection_status();
+  print_ethernet_status();
   if (WiFi.status() == WL_CONNECTED) {
     Serial.print("rest.api: http://");
     Serial.print(WiFi.localIP());
@@ -333,13 +358,16 @@ void provisioning_poll() {
         Serial.println("Gemt til NVS (WiFi-forbindelse IKKE forsoegt).");
       } else if (result == PROV_ACTION_SHOW) {
         // "show" (lib/provisioning_cli) kender hverken live
-        // WiFi-forbindelsesstatus eller det persisterede management-token
-        // (som slet ikke er en del af mb_provisioning_state_t — kun
-        // config.cpp/NVS) — begge tilføjes her, saa 'show' reelt viser ALT
-        // config-data (Jan: "vi kan ikke se ... hvad token key er sat til").
+        // WiFi/Ethernet-forbindelsesstatus, board_mode eller det
+        // persisterede management-token (som slet ikke er en del af
+        // mb_provisioning_state_t — kun config.cpp/NVS) — alle tilføjes
+        // her, saa 'show' reelt viser ALT config-data (Jan: "vi kan ikke
+        // se ... hvad token key er sat til").
         Serial.print("mgmt.token: ");
         Serial.println(config_get().has_mgmt_token ? config_get().mgmt_token : "(ikke sat)");
+        print_board_mode();
         print_wifi_connection_status();
+        print_ethernet_status();
       } else if (result == PROV_OK && strncasecmp(g_line_buf, "rest", 4) == 0) {
         // REST-credentials/auth-mode ("rest user/pass/auth") persisteres
         // uafhængigt af WiFi-forbindelsesstatus (§4.4) — installatøren skal

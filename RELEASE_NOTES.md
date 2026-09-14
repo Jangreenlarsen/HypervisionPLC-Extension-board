@@ -2,6 +2,14 @@
 
 ---
 
+## v0.16.0 — 2026-09-14 — Ethernet-status og board_mode i den serielle CLI
+
+Den serielle CLI's `status`- og `show`-kommandoer viser nu Ethernet-linkstatus (`eth.connection`/`eth.ip`) og boardets RS232/RS485-mode (`board_mode`) — begge var hidtil kun synlige via REST-API'et.
+
+**Næste skridt**: fysisk montering og test af W5500-modulet (afventer stadig fra v0.13.0).
+
+---
+
 ## v0.15.0 — 2026-09-14 — `GET /api/status` får et direkte `board_mode`-felt
 
 `GET /api/status` rapporterer nu direkte om boardet kører RS232 eller RS485 (`"board_mode":"rs485"`) — siden det siden v0.14.0 er én fælles indstilling for hele boardet, giver det mere mening at have det tilgængeligt her end kun indirekte via en kanals egen config.
