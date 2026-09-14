@@ -24,6 +24,15 @@ void test_defaults_are_unprovisioned(void) {
   TEST_ASSERT_FALSE(config.has_rest_pass);
 }
 
+void test_defaults_have_wifi_and_eth_enabled(void) {
+  // v0.20.0/v0.21.0: matcher den hidtidige, ubetingede adfærd FØR
+  // enable/disable fandtes for begge interfaces.
+  mb_board_config_t config;
+  mb_config_set_defaults(&config);
+  TEST_ASSERT_TRUE(config.wifi_enabled);
+  TEST_ASSERT_TRUE(config.eth_enabled);
+}
+
 void test_defaults_include_sane_channel_config(void) {
   // §4.2: defaults skal matche v0.9.0's tidligere HARDKODEDE adfaerd i
   // modbus_channel.cpp (9600 baud, RS485, 500 ms timeout) - ingen
@@ -276,6 +285,62 @@ void test_load_migrates_v3_blob_without_data_loss(void) {
   TEST_ASSERT_FALSE_MESSAGE(migrated.eth_static_ip, "nyt schema-4-felt skal faa default 'dhcp'");
 }
 
+void test_load_migrates_v4_blob_without_data_loss(void) {
+  // v0.21.0: schema 5 tilfoejede wifi_enabled - et board der naaede at
+  // opgradere til schema 4 (v0.20.0, Ethernet-config+MAC) foer dette maa
+  // ikke tabe sin eksisterende config (INKL. den persisterede MAC) under
+  // migrationen.
+  mb_board_config_v4_t v4{};
+  v4.schema_version = 4;
+  v4.provisioned = true;
+  strncpy(v4.wifi_ssid, "V4Network", sizeof(v4.wifi_ssid) - 1);
+  v4.wifi_has_ssid = true;
+  strncpy(v4.plc_ip, "10.1.1.153", sizeof(v4.plc_ip) - 1);
+  v4.has_plc_ip = true;
+  v4.eth_enabled = false;
+  v4.eth_static_ip = true;
+  strncpy(v4.eth_ip, "10.1.1.199", sizeof(v4.eth_ip) - 1);
+  const uint8_t existing_mac[6] = {0x02, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE};
+  memcpy(v4.eth_mac, existing_mac, sizeof(v4.eth_mac));
+  v4.has_eth_mac = true;
+  v4.channel[0].enabled = true;
+  v4.channel[0].baudrate = 19200;
+  v4.checksum = mb_config_calc_checksum_v4(&v4);
+
+  mb_board_config_t migrated;
+  mb_config_load_from_blob(reinterpret_cast<const uint8_t *>(&v4), sizeof(v4), &migrated);
+
+  TEST_ASSERT_EQUAL_MESSAGE(MB_CONFIG_SCHEMA_VERSION, migrated.schema_version,
+                             "migreret config skal have den AKTUELLE schema-version, ikke 4");
+  TEST_ASSERT_TRUE(migrated.provisioned);
+  TEST_ASSERT_EQUAL_STRING("V4Network", migrated.wifi_ssid);
+  TEST_ASSERT_FALSE_MESSAGE(migrated.eth_enabled, "eksisterende v4-felt maa ikke tabes/overskrives under migration");
+  TEST_ASSERT_TRUE(migrated.eth_static_ip);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.199", migrated.eth_ip);
+  TEST_ASSERT_TRUE_MESSAGE(migrated.has_eth_mac, "en allerede-genereret MAC maa ALDRIG glemmes/gen-genereres");
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(existing_mac, migrated.eth_mac, 6);
+  TEST_ASSERT_EQUAL_UINT32(19200, migrated.channel[0].baudrate);
+  TEST_ASSERT_TRUE_MESSAGE(migrated.wifi_enabled,
+                            "nyt schema-5-felt skal faa default 'true' (matcher hidtidig ubetinget adfaerd)");
+}
+
+void test_load_rejects_corrupt_v4_blob(void) {
+  mb_board_config_v4_t v4{};
+  v4.schema_version = 4;
+  v4.provisioned = true;
+  strncpy(v4.wifi_ssid, "V4Network", sizeof(v4.wifi_ssid) - 1);
+  v4.checksum = mb_config_calc_checksum_v4(&v4);
+
+  uint8_t blob[sizeof(v4)];
+  memcpy(blob, &v4, sizeof(blob));
+  blob[10] ^= 0xFF;
+
+  mb_board_config_t loaded;
+  mb_config_load_from_blob(blob, sizeof(blob), &loaded);
+  TEST_ASSERT_FALSE_MESSAGE(loaded.provisioned, "korrupt v4-blob blev fejlagtigt migreret");
+  TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
+}
+
 void test_load_rejects_corrupt_v3_blob(void) {
   mb_board_config_v3_t v3{};
   v3.schema_version = 3;
@@ -410,6 +475,7 @@ void test_apply_provisioning_state_transfers_fields(void) {
   strncpy(state.eth_ip, "10.0.0.50", sizeof(state.eth_ip) - 1);
   strncpy(state.eth_mask, "255.255.255.0", sizeof(state.eth_mask) - 1);
   strncpy(state.eth_gw, "10.0.0.1", sizeof(state.eth_gw) - 1);
+  state.wifi_enabled = false;
 
   mb_board_config_t config;
   mb_config_set_defaults(&config);
@@ -426,6 +492,7 @@ void test_apply_provisioning_state_transfers_fields(void) {
   TEST_ASSERT_EQUAL_STRING("10.0.0.50", config.eth_ip);
   TEST_ASSERT_EQUAL_STRING("255.255.255.0", config.eth_mask);
   TEST_ASSERT_EQUAL_STRING("10.0.0.1", config.eth_gw);
+  TEST_ASSERT_FALSE(config.wifi_enabled);
 }
 
 void test_to_provisioning_state_roundtrips_eth_fields(void) {
@@ -439,6 +506,7 @@ void test_to_provisioning_state_roundtrips_eth_fields(void) {
   strncpy(config.eth_ip, "192.168.5.9", sizeof(config.eth_ip) - 1);
   strncpy(config.eth_mask, "255.255.0.0", sizeof(config.eth_mask) - 1);
   strncpy(config.eth_gw, "192.168.5.1", sizeof(config.eth_gw) - 1);
+  config.wifi_enabled = false;
 
   mb_provisioning_state_t state;
   mb_config_to_provisioning_state(&config, &state);
@@ -448,6 +516,7 @@ void test_to_provisioning_state_roundtrips_eth_fields(void) {
   TEST_ASSERT_EQUAL_STRING("192.168.5.9", state.eth_ip);
   TEST_ASSERT_EQUAL_STRING("255.255.0.0", state.eth_mask);
   TEST_ASSERT_EQUAL_STRING("192.168.5.1", state.eth_gw);
+  TEST_ASSERT_FALSE(state.wifi_enabled);
 }
 
 void test_apply_provisioning_state_never_touches_mgmt_token(void) {
@@ -474,6 +543,7 @@ int main(int argc, char **argv) {
   UNITY_BEGIN();
 
   RUN_TEST(test_defaults_are_unprovisioned);
+  RUN_TEST(test_defaults_have_wifi_and_eth_enabled);
   RUN_TEST(test_defaults_include_sane_channel_config);
 
   RUN_TEST(test_save_and_load_roundtrip);
@@ -489,6 +559,8 @@ int main(int argc, char **argv) {
   RUN_TEST(test_load_rejects_corrupt_v2_blob);
   RUN_TEST(test_load_migrates_v3_blob_without_data_loss);
   RUN_TEST(test_load_rejects_corrupt_v3_blob);
+  RUN_TEST(test_load_migrates_v4_blob_without_data_loss);
+  RUN_TEST(test_load_rejects_corrupt_v4_blob);
   RUN_TEST(test_load_rejects_future_schema_version);
 
   RUN_TEST(test_token_from_random_bytes);

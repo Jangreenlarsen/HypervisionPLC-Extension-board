@@ -2,7 +2,9 @@
 
 #include "config.h"
 #include "eth_driver.h"
+#include "http_server.h"
 #include "modbus_channel.h"
+#include "modbus_tcp_server.h"
 #include "provisioning.h"
 
 void setup() {
@@ -25,6 +27,20 @@ void setup() {
   const mb_board_config_t &boot_cfg = config_get();
   eth_driver_begin(boot_cfg.eth_enabled, boot_cfg.eth_static_ip, boot_cfg.eth_ip, boot_cfg.eth_mask, boot_cfg.eth_gw,
                     eth_mac);
+  // v0.21.0-fund (Jan: "kan vi disable wifi også fra cli"): disse blev
+  // hidtil KUN startet fra attempt_connect() (src/provisioning.cpp), dvs.
+  // udelukkende udløst af en vellykket WIFI-forbindelse - et rent
+  // Ethernet-board (WiFi deaktiveret/aldrig konfigureret) ville derfor
+  // ALDRIG have faaet REST-API'et eller Modbus TCP-serverne startet,
+  // uanset hvor godt Ethernet-forbindelsen ellers virkede. Flyttet hertil,
+  // ubetinget - begge er idempotente (g_server/g_started-tjek) og
+  // httpd_start()/lytte-sockets kræver ikke at noget interface allerede
+  // har en IP (WiFiServer/WiFiClient er interface-agnostiske, jf.
+  // eth_driver.h's dual-stack-kommentar) - starter derfor korrekt uanset
+  // om det bliver WiFi, Ethernet, begge eller (via "connect") en senere
+  // WiFi-forbindelse der først giver reel netværksadgang.
+  http_server_begin();
+  modbus_tcp_server_begin();
   provisioning_begin();
 }
 

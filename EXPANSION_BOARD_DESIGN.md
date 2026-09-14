@@ -366,6 +366,7 @@ Dette er den ENESTE brugerflade boardet nogensinde selv viser (§0) — over USB
 
 | Kommando | Beskrivelse |
 |---|---|
+| `wifi enable\|disable` (v0.21.0) | Slår WiFi helt til/fra (Jan: "kan vi disable wifi også fra cli"). Default `enable`. Kræver `save` + `reboot` — gælder KUN boot-tids-auto-genforbindelsen, en eksplicit `connect` virker stadig uanset. Advarer (blokerer ikke) hvis `eth` OGSÅ er deaktiveret — boardet ville ellers miste al netværksadgang, kun seriel CLI ville virke |
 | `wifi ssid <navn>` | SSID for produktionsnetværket (1-32 tegn, 802.11-grænsen) |
 | `wifi pass <kode>` | WPA2-adgangskode (8-63 tegn, WPA2-PSK-passphrase-grænserne) |
 | `wifi open` | Marker netværket som åbent (intet password) — alternativ til `wifi pass` |

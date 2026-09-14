@@ -85,6 +85,48 @@ void test_wifi_pass_rejects_too_short(void) {
   TEST_ASSERT_FALSE(state.has_password);
 }
 
+void test_wifi_enabled_defaults_to_true(void) {
+  // mb_provisioning_state_init() (setUp()) skal saette dette eksplicit -
+  // ligesom eth_enabled er "enabled" IKKE zero-value'en.
+  TEST_ASSERT_TRUE(state.wifi_enabled);
+}
+
+void test_wifi_disable_and_enable(void) {
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "wifi disable", msg, sizeof(msg)));
+  TEST_ASSERT_FALSE(state.wifi_enabled);
+
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "wifi enable", msg, sizeof(msg)));
+  TEST_ASSERT_TRUE(state.wifi_enabled);
+}
+
+void test_wifi_disable_warns_if_eth_also_disabled(void) {
+  mb_provisioning_apply_line(&state, "eth disable", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "wifi disable", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_NOT_NULL_MESSAGE(strstr(msg, "ADVARSEL"), "skal advare naar begge interfaces deaktiveres");
+}
+
+void test_wifi_disable_no_warning_if_eth_still_enabled(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "wifi disable", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_NULL_MESSAGE(strstr(msg, "ADVARSEL"), "skal IKKE advare naar eth stadig er aktiveret");
+}
+
+void test_eth_disable_warns_if_wifi_also_disabled(void) {
+  // Symmetrisk test af den omvendte retning.
+  mb_provisioning_apply_line(&state, "wifi disable", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "eth disable", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_NOT_NULL_MESSAGE(strstr(msg, "ADVARSEL"), "skal advare naar begge interfaces deaktiveres");
+}
+
+void test_show_includes_wifi_enabled(void) {
+  mb_provisioning_apply_line(&state, "wifi disable", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi.enabled: false"));
+}
+
 void test_wifi_open_clears_password(void) {
   mb_provisioning_apply_line(&state, "wifi pass MySecretPass1", msg, sizeof(msg));
   TEST_ASSERT_TRUE(state.has_password);
@@ -381,6 +423,7 @@ void test_help_action(void) {
   // en for lille MB_PROV_MSG_MAX_LEN ville snprintf-afkorte teksten midt i en
   // sætning uden at gøre strlen(msg)==0 (fanget ved manuel test mod rigtig
   // hardware, ikke af en tidligere, svagere version af denne test).
+  TEST_ASSERT_NOT_NULL(strstr(msg, "wifi enable"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi ssid"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi pass"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "wifi open"));
@@ -523,6 +566,12 @@ int main(int argc, char **argv) {
   RUN_TEST(test_wifi_ssid_rejects_invalid);
   RUN_TEST(test_wifi_pass_sets_state_and_clears_open);
   RUN_TEST(test_wifi_pass_rejects_too_short);
+  RUN_TEST(test_wifi_enabled_defaults_to_true);
+  RUN_TEST(test_wifi_disable_and_enable);
+  RUN_TEST(test_wifi_disable_warns_if_eth_also_disabled);
+  RUN_TEST(test_wifi_disable_no_warning_if_eth_still_enabled);
+  RUN_TEST(test_eth_disable_warns_if_wifi_also_disabled);
+  RUN_TEST(test_show_includes_wifi_enabled);
   RUN_TEST(test_wifi_open_clears_password);
   RUN_TEST(test_wifi_mode_static_and_dhcp);
   RUN_TEST(test_wifi_mode_rejects_unknown);

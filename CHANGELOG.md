@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.21.0 build 0025] — 2026-09-14 — `wifi enable`/`wifi disable` i CLI'en + kritisk fix: REST/Modbus TCP startede kun via WiFi
+
+**Baggrund:** Jan: "kan vi disable wifi også fra cli" — mirroring v0.20.0's `eth enable`/`eth disable`.
+
+**`lib/provisioning_cli/`:** ny `wifi_enabled`-felt i `mb_provisioning_state_t` (default `true`). Nye underkommandoer `wifi enable`/`wifi disable` i den eksisterende `wifi`-kommando. Kræver `save` + `reboot` — bevidst SAMME mentale model som `eth disable` (Jan, bekræftet), IKKE live. Gælder KUN boot-tids-auto-genforbindelsen (`src/provisioning.cpp`) — en eksplicit `connect` virker stadig uanset flaget. **Lockout-advarsel** (Jan, bekræftet): `wifi disable` printer en ADVARSEL hvis `eth` allerede er deaktiveret på det tidspunkt (og omvendt, symmetrisk for `eth disable`) — blokerer IKKE, kun en tydelig besked (fysisk USB-adgang er stadig en udvej). Vist i `show` som `wifi.enabled`.
+
+**Kritisk arkitekturfejl fundet OG rettet under implementeringen (se BUGS.md):** `http_server_begin()`/`modbus_tcp_server_begin()` blev udelukkende kaldt fra `attempt_connect()` — dvs. KUN udløst af en vellykket WiFi-forbindelse. Et rent Ethernet-board (WiFi deaktiveret) ville derfor ALDRIG få REST-API'et eller Modbus TCP-serverne startet, selvom Ethernet forbandt korrekt — hvilket reelt ville have gjort "wifi disable" ubrugelig for netop det formål Jan bad om det til. Rettet: begge kald flyttet til `src/main.cpp::setup()`, kaldt ubetinget (begge idempotente, kræver ikke at noget interface allerede har en IP).
+
+**NVS-skema 4→5** (`lib/board_config/`): `wifi_enabled`. `mb_board_config_v4_t` frosset til migration. `migrate_v4_to_current()`: `wifi_enabled=true` (matcher hidtidig ubetinget adfærd).
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.h/.cpp`, `lib/board_config/board_config.h/.cpp`, `src/main.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`, `test/test_board_config/test_board_config.cpp`.
+
+**Status:** 195/195 native-tests bestået (9 nye), bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.20.0 build 0024] — 2026-09-14 — Ethernet enable/disable/static-IP via CLI + tilfældig persisteret MAC
 
 **Baggrund (del 1):** Jan: "har vi kommando til at enable/disable eterhnet samt ip config, modes m.m." — Ethernet startede hidtil altid ubetinget (ren DHCP), ingen CLI-styring.
