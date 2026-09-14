@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include "config.h"
+#include "eth_driver.h"
 #include "modbus_channel.h"
 #include "provisioning.h"
 
@@ -13,6 +14,7 @@ void setup() {
   // baud-auto-detektion og haenge.
   config_begin();
   modbus_channel_init_all();  // uafhaengigt af WiFi-status, se modbus_channel.h
+  eth_driver_begin();         // valgfri W5500-Ethernet, dual-stack med WiFi - fejler stille uden hardware tilsluttet
   provisioning_begin();
 }
 

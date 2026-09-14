@@ -180,7 +180,9 @@ Pr. kanal kræves 4 signaler — ikke kun 2 (TX/RX), fordi mode-valget (RS232/RS
 
 **Forudsætning:** denne allokering gælder et STANDARD ESP32-WROOM-32 DevKitC-lignende board (30/38-pin), ikke en WROVER/PSRAM-variant (§2.0's egen forudsætning) og ikke et board med afvigende pin-breakout — tjek mod det faktiske boards silketryk/pinout-diagram før tilslutning.
 
-**GPIO-reservation til valgfri W5500-Ethernet (§1.3/§2.2, planlagt, IKKE bygget endnu):** aftalt med Jan (2026-09-13) FØR nogen kode/hardware findes — reserveret nu for at undgå at et senere valg (fx en I2C-sensor) utilsigtet optager en pin Ethernet-tilføjelsen får brug for.
+**GPIO-reservation til valgfri W5500-Ethernet (§1.3/§2.2):** aftalt med Jan (2026-09-13) FØR nogen kode/hardware fandtes — reserveret for at undgå at et senere valg (fx en I2C-sensor) utilsigtet optager en pin Ethernet-tilføjelsen får brug for.
+
+> **Status pr. v0.13.0 (2026-09-14): FIRMWARE implementeret (`src/eth_driver.cpp`), boot-testet UDEN fysisk hardware — driveren fejler bevidst stille når intet W5500-modul er tilsluttet, resten af boardet upåvirket. Selve Ethernet-linket/DHCP/dataoverførslen er IKKE hardware-verificeret endnu** — kræver at Jan monterer et fysisk modul. Se CHANGELOG.md v0.13.0 og BUGS.md for detaljer, inkl. en reel bug fundet under boot-testen (manglende `gpio_install_isr_service()`).
 
 | Signal | GPIO | Bemærkning |
 |---|---|---|

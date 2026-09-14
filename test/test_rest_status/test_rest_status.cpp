@@ -9,7 +9,7 @@ void tearDown(void) {}
 
 void test_status_json_when_connected(void) {
   const mb_status_data_t data = {
-      "0.6.0", "0006", 3661, 123456, 2, true, "192.168.1.50", -47, true,
+      "0.6.0", "0006", 3661, 123456, 2, true, "192.168.1.50", -47, true, false, nullptr,
   };
   char out[256];
   const size_t len = mb_status_build_json(&data, out, sizeof(out));
@@ -23,28 +23,38 @@ void test_status_json_when_connected(void) {
   TEST_ASSERT_NOT_NULL(strstr(out, "\"heap_free_bytes\":123456"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"active_channels\":2"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"provisioned\":true"));
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"connected\":true"));
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"ip\":\"192.168.1.50\""));
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"rssi_dbm\":-47"));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"wifi\":{\"connected\":true,\"ip\":\"192.168.1.50\",\"rssi_dbm\":-47}"));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"ethernet\":{\"connected\":false}"));
 }
 
 void test_status_json_when_disconnected_omits_ip_rssi(void) {
   const mb_status_data_t data = {
-      "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false,
+      "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false, false, nullptr,
   };
   char out[256];
   const size_t len = mb_status_build_json(&data, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
 
-  TEST_ASSERT_NOT_NULL(strstr(out, "\"connected\":false"));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"wifi\":{\"connected\":false}"));
   TEST_ASSERT_NOT_NULL(strstr(out, "\"provisioned\":false"));
   TEST_ASSERT_NULL_MESSAGE(strstr(out, "\"ip\":"), "ip-felt bor ikke vaere til stede naar ikke forbundet");
   TEST_ASSERT_NULL_MESSAGE(strstr(out, "rssi_dbm"), "rssi-felt bor ikke vaere til stede naar ikke forbundet");
 }
 
+void test_status_json_ethernet_connected(void) {
+  const mb_status_data_t data = {
+      "0.12.0", "0015", 10, 300000, 2, false, nullptr, 0, true, true, "10.1.1.50",
+  };
+  char out[256];
+  const size_t len = mb_status_build_json(&data, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"wifi\":{\"connected\":false}"));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"ethernet\":{\"connected\":true,\"ip\":\"10.1.1.50\"}"));
+}
+
 void test_status_json_rejects_undersized_buffer(void) {
   const mb_status_data_t data = {
-      "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false,
+      "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false, false, nullptr,
   };
   char out[8];  // alt for lille
   TEST_ASSERT_EQUAL_size_t(0, mb_status_build_json(&data, out, sizeof(out)));
@@ -52,7 +62,7 @@ void test_status_json_rejects_undersized_buffer(void) {
 
 void test_status_json_is_balanced_braces(void) {
   const mb_status_data_t data = {
-      "0.6.0", "0006", 3661, 123456, 2, true, "192.168.1.50", -47, true,
+      "0.6.0", "0006", 3661, 123456, 2, true, "192.168.1.50", -47, true, true, "192.168.1.99",
   };
   char out[256];
   mb_status_build_json(&data, out, sizeof(out));
@@ -92,6 +102,7 @@ int main(int argc, char **argv) {
 
   RUN_TEST(test_status_json_when_connected);
   RUN_TEST(test_status_json_when_disconnected_omits_ip_rssi);
+  RUN_TEST(test_status_json_ethernet_connected);
   RUN_TEST(test_status_json_rejects_undersized_buffer);
   RUN_TEST(test_status_json_is_balanced_braces);
   RUN_TEST(test_error_json_with_error_code);

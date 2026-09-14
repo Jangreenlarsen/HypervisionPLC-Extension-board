@@ -4,6 +4,24 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.13.0 build 0016] — 2026-09-14 — Valgfri W5500-Ethernet (dual-stack med WiFi)
+
+**Baggrund:** Jan spurgte om W5500 kunne tilføjes uden at kompromittere kanal A/B's UART-pins (2026-09-13). Ingen konflikt fundet — GPIO-allokering aftalt og låst i EXPANSION_BOARD_DESIGN.md §2.0.1 samme dag, derefter implementeret.
+
+**`src/eth_driver.cpp` (ny):** bringer W5500'en op som en RIGTIG lwIP-netværksinterface via ESP-IDF's native `esp_eth`-komponent (`esp_eth_mac_new_w5500`/`esp_eth_phy_new_w5500`) — bevidst IKKE Arduino's klassiske `Ethernet`-bibliotek, som har sin egen private TCP/IP-stack (EthernetServer/EthernetClient) og derfor IKKE ville virke sammen med den WiFiServer/WiFiClient-baserede kode `modbus_tcp_server.cpp`/`http_server.cpp` allerede bruger. Fordi esp_eth registrerer sig som en almindelig netif, virker ALT eksisterende netværkskode uændret, uanset om trafikken kommer ind på WiFi eller Ethernet — kører SIDELØBENDE (dual-stack), ikke et enten-eller. Ethernet har ingen egen provisionering — ren DHCP så snart kabel+link er til stede.
+
+**GPIO-allokering (§2.0.1, aftalt 2026-09-13):** SCK=14, MOSI=13, CS=32, MISO=35, INT=39 (interrupt-drevet). Ingen dedikeret RST-GPIO — Jan bekræftede modulets eget power-on-reset er tilstrækkeligt. GPIO21/22 (I2C-default) og 26/33 (kanal-aktivitets-LED'er) bevidst IKKE brugt.
+
+**`GET /api/status`** udvidet med et `"ethernet":{"connected":bool,"ip":"..."}`-objekt (samme form som `"wifi"`, minus `rssi_dbm`) — `lib/rest_status/` udvidet, JSON-bygningen omskrevet til at dele en fælles hjælpefunktion mellem wifi/ethernet-objekterne.
+
+**Reel bug fundet og rettet UNDER live-boot-testen (se BUGS.md):** W5500-driverens interrupt-registrering (GPIO39) fejlede ved boot med `gpio_isr_handler_add(): GPIO isr service is not installed` — ESP-IDF's globale GPIO-ISR-service var aldrig eksplicit installeret. Boardet crashede IKKE, men interrupt-drevet Ethernet-drift ville reelt aldrig have virket. Rettet: `gpio_install_isr_service(0)` kaldes nu eksplicit FØR `esp_eth_driver_install()`.
+
+**API-opdagelse undervejs:** den installerede ESP32 Arduino-core (3.20017, ESP-IDF 5.x-baseret) bundler en ÆLDRE `esp_eth`-header-variant end den generelle `framework-espidf`-pakke — `eth_w5500_config_t` tager en færdigoprettet `spi_device_handle_t` direkte (`spi_bus_add_device()` kaldt manuelt), ikke en `spi_host_device_t`+`spi_device_interface_config_t*`-kombination som den nyeste ESP-IDF-dokumentation ellers beskriver. Kode tilpasset den faktisk installerede API-form.
+
+**Filer ændret:** `src/eth_driver.h/.cpp` (nye), `src/main.cpp`, `src/http_server.cpp`, `lib/rest_status/rest_status.h/.cpp`, `test/test_rest_status/test_rest_status.cpp`.
+
+**Status:** 168/168 native-tests bestået, bygger rent for esp32dev (flash 847277/1310720 bytes, 64.6%). **Live-boot-testet UDEN fysisk W5500-modul** (Jan har endnu ikke monteret hardwaren) — driveren fejler bevidst stille, resten af boardet (WiFi/CLI/Modbus TCP/REST) upåvirket, `GET /api/status` rapporterer korrekt `"ethernet":{"connected":false}`. **Selve Ethernet-funktionaliteten (link/DHCP/dataoverførsel) er IKKE verificeret endnu** — kræver at Jan fysisk monterer et W5500-modul på de reserverede GPIO'er.
+
 ## [0.12.0 build 0015] — 2026-09-12 — OTA-firmwareopdatering (Fase 5 afsluttet)
 
 **Baggrund:** sidste planlagte Fase 5-endpoint — `POST /api/ota`, `GET /api/ota/status`, `POST /api/reboot` (§4.2). Med denne feature er ALLE Jans oprindelige 6 punkter for management-API'et implementeret.

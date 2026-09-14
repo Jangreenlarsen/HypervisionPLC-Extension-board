@@ -9,6 +9,7 @@
 
 #include "config.h"
 #include "diagnostic_modbus.h"
+#include "eth_driver.h"
 #include "http_helpers.h"
 #include "modbus_channel.h"
 #include "ota_handler.h"
@@ -118,6 +119,7 @@ esp_err_t status_handler(httpd_req_t *req) {
   const bool connected = WiFi.status() == WL_CONNECTED;
   IPAddress ip = connected ? WiFi.localIP() : IPAddress();
   String ip_str = ip.toString();
+  const bool eth_connected = eth_driver_link_up();
 
   const mb_status_data_t data = {
 #ifdef FW_VERSION
@@ -132,6 +134,8 @@ esp_err_t status_handler(httpd_req_t *req) {
       ip_str.c_str(),
       connected ? static_cast<int8_t>(WiFi.RSSI()) : 0,
       cfg.provisioned,
+      eth_connected,
+      eth_driver_ip_string(),
   };
 
   char body[384];

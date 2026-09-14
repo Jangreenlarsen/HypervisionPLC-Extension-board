@@ -2,6 +2,18 @@
 
 ---
 
+## v0.13.0 — 2026-09-14 — Valgfri W5500-Ethernet (dual-stack med WiFi)
+
+Boardet kan nu få en fysisk W5500-Ethernet-modul tilsluttet ved siden af WiFi — begge forbindelser kan være aktive samtidig, og al eksisterende netværksfunktionalitet (Modbus TCP, REST-API'et) virker uændret uanset hvilken vej trafikken kommer ind. Ethernet konfigureres slet ikke manuelt — den henter bare en IP via DHCP så snart et kabel er tilsluttet. `GET /api/status` viser nu Ethernet-linkstatus og -IP ved siden af WiFi's.
+
+GPIO-allokeringen (SCK=14, MOSI=13, CS=32, MISO=35, INT=39) blev aftalt med Jan dagen før og er låst fast i designdokumentet — ingen konflikt med de eksisterende Modbus-kanalers UART-pins.
+
+**Live-boot-testet UDEN fysisk hardware** (ingen W5500-modul monteret endnu) — boardet forbliver fuldt funktionsdygtigt (WiFi/CLI/Modbus/REST upåvirket), og fandt undervejs en reel bug (manglende GPIO-interrupt-service-opsætning), som blev rettet og genverificeret. **Selve Ethernet-forbindelsen (link/DHCP/faktisk dataoverførsel) er endnu ikke testet** — det kræver at Jan fysisk monterer modulet.
+
+**Næste skridt**: fysisk montering og test af W5500-modulet.
+
+---
+
 ## v0.12.0 — 2026-09-12 — OTA-firmwareopdatering (Fase 5 afsluttet)
 
 Boardet kan nu opdateres over netværket: `POST /api/ota` (upload en `.bin`-fil som rå body — samme mønster som `curl --data-binary @firmware.bin`), `GET /api/ota/status` (følg fremdriften), `POST /api/reboot` (aktivér den uploadede firmware). Uploadet skrives direkte til den inaktive OTA-partition og verificeres automatisk — men aktiveres først når du selv kalder `/api/reboot`, så en ny firmware aldrig kommer som en overraskelse.
