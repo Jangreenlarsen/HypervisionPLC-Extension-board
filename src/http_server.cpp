@@ -238,14 +238,16 @@ esp_err_t channel_config_put_handler(httpd_req_t *req) {
     return ESP_OK;
   }
 
+  // modbus_channel_apply_config() persisterer nu selv (§CHANGELOG.md 2026-09-14)
+  // — inkl. et evt. spejlet mode-skift til den ANDEN kanal (delt MODE_SEL-GPIO,
+  // §2.0.1). Persisterer EFTER kanalen selv er live-omkonfigureret — et
+  // strømudfald midt i kaldet efterlader så i værste fald flash uændret
+  // (gammel config stadig gemt), aldrig en UART der kører med en config,
+  // flash ikke ved af.
   if (!modbus_channel_apply_config(id, new_config)) {
     send_json_error(req, "500 Internal Server Error", -1, "apply_failed", "Kunne ikke anvende ny kanal-config");
     return ESP_OK;
   }
-  // Persistér EFTER kanalen selv er live-omkonfigureret — et strømudfald
-  // midt i kaldet efterlader så i værste fald flash uændret (gammel config
-  // stadig gemt), aldrig en UART der kører med en config, flash ikke ved af.
-  config_set_channel(static_cast<size_t>(channel_number - 1), new_config);
 
   const mb_channel_stats_t stats = modbus_channel_get_stats(id);
   char resp_body[512];

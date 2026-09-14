@@ -4,6 +4,24 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.14.0 build 0017] — 2026-09-14 — Hardware-revision: delt MODE_SEL, W5500 får en rigtig RST-pin
+
+**Baggrund:** Jan bad om at samle MODE_SEL til én fælles pin for hele boardet i stedet for én pr. kanal, og bruge den frigjorte GPIO til at give W5500'en en rigtig, software-styret RST-pin (i stedet for kun at stole på modulets eget power-on-reset, jf. v0.13.0's beslutning).
+
+**GPIO-ændring (§2.0.1):** MODE_SEL er nu ÉN delt GPIO4 for hele boardet — kanal A og B kan ALDRIG have forskellig RS232/RS485-mode. GPIO23 (kanal B's tidligere dedikerede MODE_SEL) er frigjort og bruges nu som W5500's RST-pin.
+
+**`src/modbus_channel.cpp`:** `mode_sel_pin` fjernet fra `ChannelContext` (var pr.-kanal), erstattet af en ny fælles `apply_board_mode_sel()` der skriver GPIO4 én gang. `modbus_channel_apply_config()` spejler nu automatisk en `mode`-ændring på ÉN kanal til den ANDEN (kun `mode`, kanalens øvrige felter urørte) og persisterer BEGGE kanaler selv — kaldstedet (`http_server.cpp`) persisterer ikke længere separat. `modbus_channel_init_all()` fik et nyt boot-tids-konsistenstjek: findes to forskellige persisterede mode-værdier (fra en firmware fra FØR denne revision), vinder kanal A's værdi, og kanal B's persisterede config rettes.
+
+**`src/eth_driver.cpp`:** `phy_config.reset_gpio_num` ændret fra `-1` til `kEthRstPin = 23`.
+
+**API-konsekvens (dokumenteret i PLC_INTEGRATION_MANUAL.md):** `PUT /api/channels/{n}/config`s JSON-form er UÆNDRET (stadig `mode` som et felt pr. kanal, for bagudkompatibilitet) — men et kald der ændrer `mode` på ÉN kanal ændrer nu også hvad den ANDEN kanal efterfølgende rapporterer ved `GET`. Dette er en bevidst, dokumenteret sideeffekt af den fysiske hardware-begrænsning, ikke en fejl.
+
+**Ingen NVS-skema-ændring** — `mb_channel_config_t`s form er uændret, kun HVORDAN/HVORNÅR `mode` skrives til de to kanalers eksisterende felter er ændret. 168 native-tests upåvirket.
+
+**Filer ændret:** `src/modbus_channel.h/.cpp`, `src/eth_driver.cpp`, `src/http_server.cpp`, `EXPANSION_BOARD_DESIGN.md` §2.0.1, `PLC_INTEGRATION_MANUAL.md`.
+
+**Live-verificeret PÅ FYSISK HARDWARE — inkl. den FØRSTE nogensinde vellykkede test af kanal B mod en rigtig slave:** Jan flyttede test-devicet (slave 9) fra kanal A til kanal B undervejs i testen. Mode-spejling bekræftet (PUT kanal 1→rs232 spejlede korrekt til kanal 2, overlevede en ægte hardware-genstart, tilbage til rs485 igen). Kanal B (port 503): 6/6 sammenhængende, korrekte FC03-transaktioner (register 0 = 0x4616, register 1 = 0x0000) — `GET /api/channels/2` bekræftede `total_requests:6, successful_requests:6, timeout_errors:0`. Kanal B var indtil nu KUN testet via framing/firewall-tests, aldrig mod en fysisk slave — det er nu gjort. W5500 RST-GPIO23-ændringen forstyrrede ikke kanal A/B's UART-drift.
+
 ## [0.13.0 build 0016] — 2026-09-14 — Valgfri W5500-Ethernet (dual-stack med WiFi)
 
 **Baggrund:** Jan spurgte om W5500 kunne tilføjes uden at kompromittere kanal A/B's UART-pins (2026-09-13). Ingen konflikt fundet — GPIO-allokering aftalt og låst i EXPANSION_BOARD_DESIGN.md §2.0.1 samme dag, derefter implementeret.

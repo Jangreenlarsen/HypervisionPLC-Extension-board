@@ -160,17 +160,24 @@ Samme dual-populerings-princip som §2.2.1 (RS232 OG RS485-transceiver monteret 
 
 ### 2.0.1 GPIO-allokering, Variant A (ESP32-WROOM-32 DevKit, IKKE WROVER/PSRAM)
 
-Pr. kanal kræves 4 signaler — ikke kun 2 (TX/RX), fordi mode-valget (RS232/RS485) er STATISK (sat én gang ved kanal-konfiguration) mens retningsstyringen (DE/RE) er DYNAMISK (toggles omkring hver enkelt transmission i RS485 half-duplex, §3.2) — de kan derfor ikke dele én GPIO:
+> **Hardware-revision 2026-09-14 (Jan, bekræftet):** MODE_SEL blev samlet til ÉN delt GPIO for HELE boardet — kanal A og B kan derfor ALDRIG have forskellig RS232/RS485-mode, kun ét fast valg der gælder begge. Frigav GPIO23 (kanal B's tidligere dedikerede MODE_SEL), som nu bruges til en rigtig, software-styret RST-pin for W5500'en (se §2.0.1's W5500-tabel nedenfor — erstatter den tidligere "intet dedikeret RST"-beslutning fra 2026-09-13).
+
+Pr. kanal kræves 3 kanal-specifikke signaler (TX/RX/DIR) + 1 boardfælles signal (MODE_SEL) — DIR (DE/RE) er DYNAMISK (toggles omkring hver enkelt transmission i RS485 half-duplex, §3.2) og derfor stadig én pr. kanal, men MODE_SEL er STATISK (sat én gang, gælder hele boardet) og deles nu:
 
 | Signal | Kanal A | Kanal B | Formål |
 |---|---|---|---|
 | UART TX | GPIO17 | GPIO18 | Fodrer BEGGE transceiveres driver-input (§2.2.1's princip, uændret for Variant A) |
 | UART RX | GPIO16 | GPIO19 | Fra den 2:1-mux der kombinerer begge transceiveres modtager-output |
-| MODE_SEL (RS232/RS485-valg) | GPIO4 | GPIO23 | Statisk — sat ved `PUT /api/channels/{n}/config`, styrer mux-valg + RS232-transceiverens SHDN |
 | DIR (DE/RE, RS485-retning) | GPIO27 | GPIO25 | Dynamisk — toggles af kanal-tasken omkring hver sending, KUN relevant når MODE_SEL=RS485 |
 | Aktivitets-LED (valgfri) | GPIO26 | GPIO33 | §2.2's anbefalede diagnostik-LED, én pr. kanal |
 
-**Hardware-detalje — RS485-driveren skal IKKE aktiveres af DIR alene:** DE-benet på RS485-transceiveren (SP3485) skal kun være aktiv når BÅDE `MODE_SEL=RS485` OG `DIR=send` — ellers ville et RS232-konfigureret kanal utilsigtet aktivere RS485-driveren når DIR'ens boot-default tilfældigvis er høj. Løses med en simpel 2-input AND-gate (eller en enkelt transistor) mellem MODE_SEL og DIR, hvis output fodrer RS485-transceiverens DE-ben; RS232-transceiverens SHDN/enable-ben fodres separat, direkte (evt. inverteret) af MODE_SEL alene — samme "kun én transceiver aktiv ad gangen"-garanti som §2.2.1 kræver, blot implementeret med 2 GPIO'er + en logikport i stedet for expander-chippens indbyggede GPIO.
+| Signal | GPIO | Formål |
+|---|---|---|
+| MODE_SEL (RS232/RS485-valg, HELE boardet) | GPIO4 | Statisk — sat ved `PUT /api/channels/{n}/config` (spejles automatisk til begge kanaler, §3.2/modbus_channel.cpp), styrer mux-valg + RS232-transceiverens SHDN for BEGGE kanaler samtidig |
+
+**Hardware-detalje — RS485-driveren skal IKKE aktiveres af DIR alene:** DE-benet på RS485-transceiveren (SP3485) skal kun være aktiv når BÅDE `MODE_SEL=RS485` OG `DIR=send` — ellers ville et RS232-konfigureret kanal utilsigtet aktivere RS485-driveren når DIR'ens boot-default tilfældigvis er høj. Løses med en simpel 2-input AND-gate (eller en enkelt transistor) mellem MODE_SEL og hver kanals egen DIR, hvis output fodrer den pågældende RS485-transceivers DE-ben — MODE_SEL'ens GPIO4-signal fødes altså til BEGGE kanalers AND-gate (ét fælles signal, to gates); RS232-transceivernes SHDN/enable-ben fodres separat, direkte (evt. inverteret) af samme MODE_SEL alene — samme "kun én transceiver aktiv ad gangen"-garanti som §2.2.1 kræver.
+
+**Firmware-konsekvens:** `PUT /api/channels/{n}/config` accepterer stadig `mode` som et felt pr. kanal (uændret API-form, §4.2/PLC_INTEGRATION_MANUAL.md) — men sætter man `mode` forskelligt fra den ANDEN kanals nuværende mode, spejles ændringen automatisk til den anden kanal (kun `mode`, ikke dens øvrige felter). Et `GET`/`PUT` på ÉN kanal kan altså ændre hvad den ANDEN kanal efterfølgende rapporterer.
 
 **Bevidst undgåede GPIO'er (ESP32-WROOM-32-specifikke begrænsninger, ikke vilkårlige):**
 - **GPIO1/GPIO3 (UART0 TX/RX):** i brug af den serielle provisioning-CLI (§3.4) — kan ikke genbruges.
@@ -190,8 +197,8 @@ Pr. kanal kræves 4 signaler — ikke kun 2 (TX/RX), fordi mode-valget (RS232/RS
 | SPI MOSI | GPIO13 | |
 | SPI CS | GPIO32 | |
 | SPI MISO | GPIO35 | input-only — naturligt egnet, retningen er ind mod ESP32'en |
-| INT (valgfri) | GPIO39 | input-only, kun nødvendig ved interrupt-drevet (ikke polling) drift af Ethernet-biblioteket |
-| RST | *(ingen dedikeret GPIO)* | Jan bekræftet (2026-09-13): modulets eget power-on-reset-kredsløb er tilstrækkeligt — en software-styret RST var det eneste der ville have krævet at ofre en af de reserverede LED-pins (GPIO26/33) eller en strapping-pin |
+| INT | GPIO39 | input-only, interrupt-drevet drift (ikke polling) af esp_eth-driveren |
+| RST | GPIO23 | Software-styret — **ændret 2026-09-14** (var oprindeligt "intet dedikeret RST" pr. 2026-09-13's beslutning). Frigjort ved at samle MODE_SEL til én delt GPIO (se ovenfor) i stedet for én pr. kanal. |
 
 Bevidst IKKE brugt: GPIO21/GPIO22 (Arduino-frameworkets sædvanlige default I2C-pins, SDA/SCL) — holdt fri til fremtidig I2C (display, RTC, e.l.), selvom de var elektrisk lige så velegnede til SPI. GPIO26/33 (aktivitets-LED'erne ovenfor) er heller ikke rørt.
 
@@ -685,7 +692,7 @@ Fundet ved en kritisk analyse af dette dokument mod PLC-projektets egne, allered
 **Anbefaling fra PLC-projektets egen erfaring:** før en let, append-only bug/feature-log (samme ånd som PLC-repoets `BUGS_INDEX.md`) i det nye repo fra Fase 1 — én kort entry pr. væsentlig beslutning eller fejl, inkl. HVORFOR, ikke kun HVAD. Det var netop en sådan log der gjorde det muligt præcist at rekonstruere FEAT-408s fulde fejlfindingsforløb og begrunde rollback-beslutningen (§0) måneder senere. **Gjort:** se [BUGS.md](BUGS.md), fulgt konsekvent siden Fase 1.
 
 1. **Fase 1 — Hardware-bring-up:** Gateway-MCU + WiFi + ÉN UART-expander-chip (2-4 kanaler) på breadboard/prototype. Verificér SPI-kommunikation til expander-chippen, verificér én RS485-kanal kan tale Modbus RTU til en kendt slave (brug fx PLC'ens egen `mb scan`/`mb read`-kommandoer som referenceimplementering af "hvordan ser en korrekt Modbus RTU-master-transaktion ud").
-   **✅ FÆRDIG (Variant A, v0.9.0.3).** Ingen SPI-expander-chip — ESP32's egne UART1/UART2 direkte (§2.0). Kanal A live-verificeret mod en rigtig slave (44+ sammenhængende korrekte transaktioner). **Kanal B er endnu IKKE fysisk afprøvet** (intet device tilsluttet).
+   **✅ FÆRDIG (Variant A, v0.9.0.3 + v0.14.0).** Ingen SPI-expander-chip — ESP32's egne UART1/UART2 direkte (§2.0). Begge kanaler live-verificeret mod en rigtig slave: kanal A i v0.9.0.3 (44+ sammenhængende korrekte transaktioner), kanal B i v0.14.0 (Jan flyttede test-devicet dertil, 6/6 korrekte transaktioner).
 2. **Fase 2 — Alle 8 kanaler (ét board):** Udvid til fuld hardware (2× expander-chip), verificér alle 8 kanaler kan køre SAMTIDIGT uden krydsforstyrrelse (parallel test på alle 8 mod 8 forskellige test-busser, eller mod samme testbus-adresse-range på isolerede busser). **Verificér også auto-detektionen (§2.2.2)** med en bevidst delvist bestykket testopstilling (fx kun 2 af 8 positioner monteret) — bekræft `active_channels` rapporterer præcis 2, og at `GET`/`PUT` mod kanal 3-8 konsekvent svarer `404`, ikke en falsk "0 fejl"-status for ikke-eksisterende kanaler.
    **⏸ IKKE RELEVANT for Variant A** — kun 2 faste kanaler, ingen bestykning/auto-detektion (§2.2.2 gælder ikke). Udskudt til en eventuel Variant B.
 3. **Fase 3 — Provisioning:** Implementér WiFi-bootstrap + token-udstedelse + firewall-seed (§3.4). Test at et fabriksnyt board kan bringes på produktionsnetværket, og at management-API'et bagefter kræver det udstedte token og afviser alt andet.
@@ -711,8 +718,8 @@ Fundet ved en kritisk analyse af dette dokument mod PLC-projektets egne, allered
 - [ ] Kanal-auto-detektion (§2.2.2): på mindst to forskellige hardware-varianter... — **IKKE RELEVANT for Variant A** (fast 2 kanaler, ingen bestykning/auto-detektion). `GET/PUT` mod `n>2` svarer dog konsekvent `404`, verificeret.
 - [ ] Alle 8 kanaler kan konfigureres uafhængigt... — **Begge Variant A-kanaler** (baudrate/parity/mode/osv.) verificeret uafhængigt konfigurerbare via `PUT /api/channels/{n}/config`, bekræftet ved `GET` tilbage, inkl. overlevelse af en ægte hardware-genstart (v0.10.0).
 - [x] Management-API'et afviser ALLE kald uden gyldigt Bearer-token (ELLER Basic Auth, §4.4 — udvidet fra kun Bearer-token) med `401`, på tværs af samtlige endpoints. **Verificeret.**
-- [ ] Alle 8 Modbus TCP data-porte (502-509) svarer korrekt... — **Variant A's 2 porte** (502-503) svarer korrekt med rigtig MBAP-framing og FC01-06/16-semantik; kun kanal A (port 502) er testet mod en FYSISK slave, kanal B (503) kun via firewall-/framing-tests.
-- [ ] Alle 8 kanaler kan udføre en Modbus RTU-transaktion SAMTIDIGT... — **IKKE testet** (kræver 2 samtidige fysiske slaver, én pr. kanal — kanal B har ingen tilsluttet endnu).
+- [x] Alle 8 Modbus TCP data-porte (502-509) svarer korrekt... — **Variant A's 2 porte** (502-503) svarer korrekt med rigtig MBAP-framing og FC01-06/16-semantik; BEGGE kanaler nu testet mod en FYSISK slave (kanal A v0.9.0.3, kanal B v0.14.0).
+- [ ] Alle 8 kanaler kan udføre en Modbus RTU-transaktion SAMTIDIGT... — **IKKE testet endnu** — begge kanaler er nu hver for sig live-verificeret mod en rigtig slave (v0.9.0.3/v0.14.0), men kun med ÉT fysisk testdevice der er blevet flyttet mellem kanalerne, ikke to samtidigt tilsluttede.
 - [x] En TCP-forbindelse til en data-plan-port (502-503) fra en IP FORSKELLIG FRA det provisionerede `plc_ip` afvises ved `accept()`, uden at nå Modbus-parsing; ingen `plc_ip` sat → data-planet er lukket for ALLE. **Verificeret** (live, gentagne gange under sessionens fejlsøgning).
 - [x] En gyldig firmware uploadet via `POST /api/ota` aktiveres korrekt efter `POST /api/reboot`; en korrupt/ugyldig upload afvises og boardet forbliver funktionsdygtigt på den hidtidige firmware. **Verificeret** (v0.12.0, se CHANGELOG.md).
 - [ ] Fysisk afbrydelse af én kanals RS485-bus midt i drift påvirker IKKE de andre 7 kanaler... — **IKKE testet** (kun 1 kanal har en fysisk bus tilsluttet).

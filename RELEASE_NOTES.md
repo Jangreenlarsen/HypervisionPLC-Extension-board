@@ -2,6 +2,18 @@
 
 ---
 
+## v0.14.0 — 2026-09-14 — Hardware-revision: delt MODE_SEL, W5500 får en rigtig RST-pin
+
+MODE_SEL (valget mellem RS232 og RS485) er nu ÉN fælles indstilling for hele boardet i stedet for én pr. kanal — kanal A og B kan derfor ikke længere have forskellig mode. Til gengæld blev der frigjort en GPIO, som nu bruges til en rigtig, software-styret nulstillings-pin til W5500-Ethernet-modulet (i stedet for kun at stole på modulets eget power-on-reset).
+
+REST-API'et er uændret at kalde på (`PUT /api/channels/{n}/config` tager stadig `mode` pr. kanal), men ændrer du mode på den ene kanal, følger den anden automatisk med — det er en bevidst konsekvens af at de nu deler samme fysiske hardware-pin, ikke en fejl.
+
+**Live-verificeret, inkl. kanal B's FØRSTE test nogensinde mod en rigtig slave:** Jan flyttede test-devicet til kanal B under testen — 6/6 sammenhængende, korrekte Modbus-transaktioner. Mode-spejlingen bekræftet at virke og overleve en ægte genstart.
+
+**Næste skridt**: fysisk montering og test af W5500-modulet (afventer stadig fra v0.13.0).
+
+---
+
 ## v0.13.0 — 2026-09-14 — Valgfri W5500-Ethernet (dual-stack med WiFi)
 
 Boardet kan nu få en fysisk W5500-Ethernet-modul tilsluttet ved siden af WiFi — begge forbindelser kan være aktive samtidig, og al eksisterende netværksfunktionalitet (Modbus TCP, REST-API'et) virker uændret uanset hvilken vej trafikken kommer ind. Ethernet konfigureres slet ikke manuelt — den henter bare en IP via DHCP så snart et kabel er tilsluttet. `GET /api/status` viser nu Ethernet-linkstatus og -IP ved siden af WiFi's.

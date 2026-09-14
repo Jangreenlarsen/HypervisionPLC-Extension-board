@@ -1,6 +1,6 @@
 # PLC-integrations-manual: HypervisionPLC Extension Board
 
-Denne manual dokumenterer expansion-boardets **fulde, faktisk implementerede** grænseflade, som den ser ud efter v0.13.0 (build 0016) — til brug når PLC-siden (`Modbus_server_slave_ESP32`-repoet, `modbus_expansion.cpp`/`expansion_api_client.cpp`, §5 i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md)) skal implementeres. Alt heri er verificeret mod rigtig hardware, ikke kun designet — se [CHANGELOG.md](CHANGELOG.md) for de enkelte live-verifikationer.
+Denne manual dokumenterer expansion-boardets **fulde, faktisk implementerede** grænseflade, som den ser ud efter v0.14.0 (build 0017) — til brug når PLC-siden (`Modbus_server_slave_ESP32`-repoet, `modbus_expansion.cpp`/`expansion_api_client.cpp`, §5 i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md)) skal implementeres. Alt heri er verificeret mod rigtig hardware, ikke kun designet — se [CHANGELOG.md](CHANGELOG.md) for de enkelte live-verifikationer.
 
 **Forskel fra designdokumentet:** [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) beskriver den fulde, oprindelige vision (op til 8 kanaler, OTA, osv.). Denne manual beskriver kun det der **rent faktisk er bygget og testet** i denne repo lige nu — Variant A, 2 kanaler. Er der uoverensstemmelse, er DENNE fil den autoritative kilde for hvad et board faktisk gør i dag.
 
@@ -176,6 +176,8 @@ Request-body (samme felter som i GET's svar, minus statistikken):
 - Anvendes LIVE med det samme (ingen reboot nødvendig) og persisteres til flash — overlever en genstart. En igangværende transaktion på kanalen fuldføres altid på den GAMLE config før omkobling.
 - Sæt `enabled:false` for at deaktivere en kanal helt — Modbus TCP-forespørgsler til den kanal afvises derefter øjeblikkeligt med gateway-exception `0x0A` (afsnit 3.3), uden at røre UART'en.
 
+**VIGTIGT — `mode` er reelt en BOARD-indstilling, ikke en ren pr.-kanal-indstilling (hardware-revision 2026-09-14):** RS232/RS485-valget deler nu ÉN fysisk GPIO for hele boardet (§2.0.1) — kanal A og B kan ALDRIG have forskellig `mode` i praksis. JSON-formen er uændret (stadig `mode` som et felt i hver kanals `PUT`-body), men sætter du `mode` forskelligt fra den ANDEN kanals nuværende værdi, **spejles ændringen automatisk til den anden kanal** (kun `mode` — dens `baudrate`/`parity`/osv. er upåvirkede). Et `PUT` på kanal 1 kan altså ændre hvad `GET /api/channels/2` efterfølgende rapporterer. Dette er en bevidst, dokumenteret konsekvens af hardwaren — ikke en fejl i API'et.
+
 ### 4.5 `POST /api/channels/{n}/read` — diagnostisk læsning
 
 **Til ad-hoc test/fejlsøgning — IKKE beregnet til høj-frekvent drift** (brug Modbus TCP, afsnit 3, til det). Udfører ÉN synkron Modbus RTU-transaktion og returnerer resultatet direkte, uden at PLC'en selv skal åbne en Modbus TCP-forbindelse.
@@ -289,6 +291,6 @@ Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsn
 - **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode:"rs232"` kan sættes via config, men er utestet i praksis.
 - **Ingen `POST /api/channels/{n}/reset-stats`/`POST /api/stats/reset`** — statistikken (afsnit 4.3) kan kun nulstilles ved reboot.
 - **OTA-uploadets fremdrift kan IKKE afbrydes** — en gang startet, kører uploadet til den lykkes eller fejler; der er intet "annullér"-endpoint.
-- **Kanal B er ikke live-testet mod en rigtig slave** (kun kanal A har haft et fysisk device tilsluttet under udviklingen).
 - **`active_channels` er altid 2, ikke auto-detekteret** — designdokumentets §2.2.2 (auto-detektion af bestykning) gælder kun Variant B.
+- **RS232/RS485-mode er nu ÉN indstilling for HELE boardet** (hardware-revision 2026-09-14, §2.0.1) — kanal A og B kan ikke længere have forskellig mode. Se afsnit 4.4's boks om dette.
 - Se [FEATURES.md](FEATURES.md)'s "Planlagte features" for den fulde, opdaterede liste over hvad der mangler.
