@@ -1,6 +1,7 @@
 #include "eth_driver.h"
 
 #include <Arduino.h>
+#include <cstring>
 #include <driver/gpio.h>
 #include <driver/spi_master.h>
 #include <esp_eth.h>
@@ -38,13 +39,47 @@ constexpr int kEthSpiClockHz = 8 * 1000 * 1000;  // 8 MHz — forsigtigt for et 
 // clock-hastighed som aarsag. Sat tilbage til 8 MHz.
 
 esp_eth_handle_t g_eth_handle = nullptr;
+esp_netif_t *g_eth_netif = nullptr;
 volatile bool g_link_up = false;
 char g_ip_string[16] = "";  // "255.255.255.255\0"
+uint8_t g_mac[6] = {0};  // v0.20.0: kopi af den NVS-persisterede MAC, se eth_driver_get_mac()
+
 // v0.18.0: default NOT_DETECTED — ethvert tidligt "return" i
 // eth_driver_begin() (SPI-/GPIO-/netif-opsætning ELLER selve
 // esp_eth_start()-chip-detektionen, se dens fejlgren nedenfor) efterlader
 // den bevidst her.
 volatile eth_driver_status_t g_eth_status = ETH_STATUS_NOT_DETECTED;
+
+// v0.20.0: static-IP-config (Jan: "eth mode static/ip/mask/gw") — sat af
+// eth_driver_begin() FØR link kan komme op, anvendt af apply_ip_config()
+// (nedenfor) hver gang ETHERNET_EVENT_CONNECTED fyrer. `false` (default) =
+// DHCP, uændret hidtidig adfærd.
+bool g_use_static_ip = false;
+esp_netif_ip_info_t g_static_ip_info{};
+
+// Anvendes ved hvert link-up (ETHERNET_EVENT_CONNECTED) — IKKE kun én gang
+// ved boot, da et Ethernet-link kan gå op/ned/op igen (kabel trukket ud og
+// sat i igen) uden en fuld gentart af boardet. Mirror af
+// Modbus_API_Gateway's (søsterprojekt) tilsvarende, fungerende
+// apply_ip_config()-mønster.
+void apply_ip_config() {
+  if (g_eth_netif == nullptr) return;
+  esp_netif_dhcpc_stop(g_eth_netif);  // ignorér fejl hvis allerede stoppet
+  if (g_use_static_ip) {
+    if (esp_netif_set_ip_info(g_eth_netif, &g_static_ip_info) == ESP_OK) {
+      snprintf(g_ip_string, sizeof(g_ip_string), IPSTR, IP2STR(&g_static_ip_info.ip));
+      g_eth_status = ETH_STATUS_CONNECTED;
+      Serial.print("Ethernet: statisk IP anvendt: ");
+      Serial.println(g_ip_string);
+    } else {
+      Serial.println("Ethernet: esp_netif_set_ip_info() fejlede for statisk IP.");
+    }
+  } else {
+    esp_netif_dhcpc_start(g_eth_netif);
+    g_eth_status = ETH_STATUS_WAITING_DHCP;
+    Serial.println("Ethernet: link op — DHCP starter.");
+  }
+}
 
 void eth_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
   (void)arg;
@@ -53,8 +88,8 @@ void eth_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id,
   switch (event_id) {
     case ETHERNET_EVENT_CONNECTED:
       g_link_up = true;
-      g_eth_status = ETH_STATUS_WAITING_DHCP;
       Serial.println("Ethernet: link op.");
+      apply_ip_config();
       break;
     case ETHERNET_EVENT_DISCONNECTED:
       g_link_up = false;
@@ -100,7 +135,42 @@ void got_ip_event_handler(void *arg, esp_event_base_t event_base, int32_t event_
 
 }  // namespace
 
-void eth_driver_begin() {
+void eth_driver_begin(bool enabled, bool static_ip, const char *ip, const char *mask, const char *gw,
+                       const uint8_t *mac) {
+  // Gemmes UBETINGET, uafhængigt af "enabled" nedenfor — eth_driver_get_mac()
+  // (CLI's "show"/"status", Jan: "MAC skal så ved en show status") skal
+  // kunne vise boardets MAC selvom Ethernet er slået fra.
+  memcpy(g_mac, mac, sizeof(g_mac));
+
+  // v0.20.0 (Jan: "har vi kommando til at enable/disable eterhnet..."):
+  // springer HELT over hvis deaktiveret via "eth disable" - ingen SPI-/
+  // GPIO-/netif-initialisering forsøgt overhovedet. g_eth_status forbliver
+  // sin default (ETH_STATUS_NOT_DETECTED) - "not_detected" er en rimelig,
+  // om end ikke perfekt, beskrivelse ("Ethernet er bevidst ikke i brug" og
+  // "intet modul fundet" ligner hinanden for en installatør: begge betyder
+  // "der er ingen Ethernet lige nu").
+  if (!enabled) {
+    Serial.println("Ethernet: deaktiveret via config (eth disable) - springer over.");
+    return;
+  }
+
+  // v0.20.0: parses FØR selve driver-opstarten - en ugyldig/ufuldstændig
+  // "eth ip/mask/gw" (fx tom streng, hvis kun ÉT af de tre felter blev sat
+  // før "eth mode static") falder sikkert tilbage til DHCP (advarsel
+  // logges) i stedet for udefineret adfærd eller en fastlåst boot.
+  if (static_ip) {
+    IPAddress ip_addr, mask_addr, gw_addr;
+    if (ip_addr.fromString(ip) && mask_addr.fromString(mask) && gw_addr.fromString(gw)) {
+      g_static_ip_info.ip.addr = static_cast<uint32_t>(ip_addr);
+      g_static_ip_info.netmask.addr = static_cast<uint32_t>(mask_addr);
+      g_static_ip_info.gw.addr = static_cast<uint32_t>(gw_addr);
+      g_use_static_ip = true;
+      Serial.printf("Ethernet: statisk IP konfigureret (anvendes ved link op): %s\n", ip);
+    } else {
+      Serial.println("Ethernet: ugyldig/ufuldstaendig eth ip/mask/gw - falder tilbage til DHCP.");
+    }
+  }
+
   // WiFi.mode()/WiFi.begin() (provisioning.cpp) initialiserer allerede
   // esp_netif/event-loopet ved foerste brug — begge kald her er derfor
   // idempotente og trygge uanset raekkefoelgen mellem Ethernet- og
@@ -133,6 +203,7 @@ void eth_driver_begin() {
     Serial.println("Ethernet: kunne ikke oprette netif.");
     return;
   }
+  g_eth_netif = eth_netif;  // apply_ip_config() (kaldt fra event-handleren) skal kunne tilgaa netif'et
 
   spi_bus_config_t bus_cfg = {};
   bus_cfg.mosi_io_num = kEthMosiPin;
@@ -173,8 +244,8 @@ void eth_driver_begin() {
   w5500_config.int_gpio_num = kEthIntPin;  // interrupt-drevet, ikke polling — se §2.0.1's INT-reservation
 
   eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
-  esp_eth_mac_t *mac = esp_eth_mac_new_w5500(&w5500_config, &mac_config);
-  if (mac == nullptr) {
+  esp_eth_mac_t *mac_driver = esp_eth_mac_new_w5500(&w5500_config, &mac_config);
+  if (mac_driver == nullptr) {
     Serial.println("Ethernet: esp_eth_mac_new_w5500() fejlede.");
     return;
   }
@@ -188,13 +259,26 @@ void eth_driver_begin() {
     return;
   }
 
-  esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac, phy);
+  esp_eth_config_t eth_config = ETH_DEFAULT_CONFIG(mac_driver, phy);
   // Allokerer/konfigurerer kun driver-strukturerne - taler ENDNU ikke SPI
   // til selve W5500-chippen (det sker foerst i esp_eth_start() nedenfor).
   // Lykkes normalt uanset om et fysisk modul er tilsluttet.
   if (esp_eth_driver_install(&eth_config, &g_eth_handle) != ESP_OK) {
     Serial.println("Ethernet: esp_eth_driver_install() fejlede.");
     return;
+  }
+
+  // v0.20.0: W5500'en har ingen fabriks-MAC (modsat ESP32'ens interne EMAC)
+  // — uden dette kører den med 00:00:00:00:00:00, som giver MAC-kollisioner
+  // hvis flere boards er på samme netværk samtidig (jf. Modbus_API_Gateway,
+  // BUGS.md F6). Fejler ioctl'en (usandsynligt, kun hvis driveren internt er
+  // i en uventet tilstand), fortsætter opstarten alligevel — en manglende
+  // MAC-tildeling er ikke i sig selv fatalt for resten af boardet.
+  if (esp_eth_ioctl(g_eth_handle, ETH_CMD_S_MAC_ADDR, g_mac) != ESP_OK) {
+    Serial.println("Ethernet: MAC-tildeling (ETH_CMD_S_MAC_ADDR) fejlede — chippen kan faa en ikke-unik MAC.");
+  } else {
+    Serial.printf("Ethernet: MAC %02X:%02X:%02X:%02X:%02X:%02X\n", g_mac[0], g_mac[1], g_mac[2], g_mac[3], g_mac[4],
+                  g_mac[5]);
   }
 
   if (esp_netif_attach(eth_netif, esp_eth_new_netif_glue(g_eth_handle)) != ESP_OK) {
@@ -227,6 +311,8 @@ void eth_driver_begin() {
 bool eth_driver_link_up() { return g_link_up; }
 
 const char *eth_driver_ip_string() { return g_ip_string; }
+
+void eth_driver_get_mac(uint8_t out_mac[6]) { memcpy(out_mac, g_mac, 6); }
 
 eth_driver_status_t eth_driver_status() { return g_eth_status; }
 

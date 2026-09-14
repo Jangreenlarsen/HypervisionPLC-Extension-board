@@ -2,6 +2,14 @@
 
 ---
 
+## v0.20.0 — 2026-09-14 — Ethernet enable/disable/static-IP via CLI + tilfældig persisteret MAC
+
+Den serielle CLI kan nu styre Ethernet direkte: `eth enable`/`eth disable` slår W5500-driveren helt til/fra, og `eth mode dhcp|static` + `eth ip/mask/gw <a.b.c.d>` giver en statisk IP i stedet for DHCP — begge dele kun via CLI (`save` + `reboot`), ikke via REST. Boardet får desuden nu altid en unik, tilfældig MAC-adresse (persisteret i NVS ved første opstart) i stedet for W5500-chippens usikre default på `00:00:00:00:00:00`, som ellers ville give MAC-kollisioner hvis flere boards sad på samme netværk. MAC'en vises i `show`/`status` som `eth.mac`.
+
+**Næste skridt**: live-verifikation af enable/disable, static-IP og MAC-tildeling på fysisk hardware.
+
+---
+
 ## v0.19.1 — 2026-09-14 — W5500-Ethernet virker nu fysisk (fix)
 
 Boardets W5500-Ethernet-modul virker nu for første gang på rigtig hardware. Efter Jan monterede et fysisk modul, kunne boardet stadig ikke tale med chippen over SPI, selvom al wiring var korrekt (link-LED lyste fint). Root cause: en manglende del af SPI-konfigurationen (`command_bits`/`address_bits`), fundet ved at sammenligne med et søsterprojekt med samme hardware i produktion. Efter rettelsen: link kommer op, DHCP tildeler en IP, og både REST-API'et og Modbus TCP kan nås direkte over Ethernet-kablet — samtidig med WiFi.

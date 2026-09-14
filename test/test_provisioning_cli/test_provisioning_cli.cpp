@@ -248,6 +248,77 @@ void test_wifi_unknown_subcommand(void) {
 }
 
 // ---------------------------------------------------------------------------
+// "eth ..." (v0.20.0) - mirroring "wifi ..."-testene ovenfor
+// ---------------------------------------------------------------------------
+
+void test_eth_enabled_defaults_to_true(void) {
+  // mb_provisioning_state_init() (setUp()) skal saette dette eksplicit -
+  // modsat rest_auth_mode er "enabled" IKKE zero-value'en.
+  TEST_ASSERT_TRUE(state.eth_enabled);
+}
+
+void test_eth_disable_and_enable(void) {
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "eth disable", msg, sizeof(msg)));
+  TEST_ASSERT_FALSE(state.eth_enabled);
+
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "eth enable", msg, sizeof(msg)));
+  TEST_ASSERT_TRUE(state.eth_enabled);
+}
+
+void test_eth_mode_static_and_dhcp(void) {
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "eth mode static", msg, sizeof(msg)));
+  TEST_ASSERT_TRUE(state.eth_static_ip);
+
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "eth mode dhcp", msg, sizeof(msg)));
+  TEST_ASSERT_FALSE(state.eth_static_ip);
+}
+
+void test_eth_mode_rejects_unknown(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "eth mode bogus", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_eth_mode_missing_argument(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "eth mode", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_eth_ip_mask_gw_set_state(void) {
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "eth ip 10.0.0.50", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "eth mask 255.255.255.0", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_OK, mb_provisioning_apply_line(&state, "eth gw 10.0.0.1", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL_STRING("10.0.0.50", state.eth_ip);
+  TEST_ASSERT_EQUAL_STRING("255.255.255.0", state.eth_mask);
+  TEST_ASSERT_EQUAL_STRING("10.0.0.1", state.eth_gw);
+}
+
+void test_eth_ip_rejects_invalid(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "eth ip not.an.ip", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_eth_missing_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "eth", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_eth_unknown_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "eth bogus value", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_UNKNOWN_COMMAND, r);
+}
+
+void test_show_includes_eth_config(void) {
+  mb_provisioning_apply_line(&state, "eth disable", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "eth mode static", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "eth ip 10.0.0.50", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "eth.enabled: false"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "eth.mode: static"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "eth.ip: 10.0.0.50"));
+}
+
+// ---------------------------------------------------------------------------
 // Kommando-ord er versalfoelsomheds-uafhaengige; vaerdier er DET (SSID/password)
 // ---------------------------------------------------------------------------
 
@@ -477,6 +548,17 @@ int main(int argc, char **argv) {
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);
+
+  RUN_TEST(test_eth_enabled_defaults_to_true);
+  RUN_TEST(test_eth_disable_and_enable);
+  RUN_TEST(test_eth_mode_static_and_dhcp);
+  RUN_TEST(test_eth_mode_rejects_unknown);
+  RUN_TEST(test_eth_mode_missing_argument);
+  RUN_TEST(test_eth_ip_mask_gw_set_state);
+  RUN_TEST(test_eth_ip_rejects_invalid);
+  RUN_TEST(test_eth_missing_subcommand);
+  RUN_TEST(test_eth_unknown_subcommand);
+  RUN_TEST(test_show_includes_eth_config);
 
   RUN_TEST(test_command_words_are_case_insensitive);
 

@@ -6,6 +6,13 @@
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state) {
   memset(state, 0, sizeof(*state));
+  // v0.20.0: matcher den hidtidige, ubetingede adfærd FØR enable/disable
+  // fandtes (Ethernet altid forsøgt startet, ren DHCP) - modsat
+  // rest_auth_mode (MB_REST_AUTH_MODE_BOTH == 0) er "enabled" IKKE
+  // zero-value'en, så skal sættes eksplicit her for at et fabriksnyt board
+  // (der endnu ikke har kørt "eth enable"/en persisteret config) ikke
+  // utilsigtet starter med Ethernet slået fra.
+  state->eth_enabled = true;
 }
 
 bool mb_provisioning_validate_ssid(const char *ssid) {
@@ -165,6 +172,19 @@ static void mb_provisioning_format_status(const mb_provisioning_state_t *state, 
     auth_mode_display = "basic";
   }
   append_line(out_buffer, out_buffer_capacity, &pos, "rest.auth_mode", auth_mode_display);
+
+  // v0.20.0: konfigureret (staged/persisteret) Ethernet-opsætning — IKKE
+  // live-status (link/IP, det kommer fra src/provisioning.cpp's
+  // print_ethernet_status(), samme adskillelse som wifi.mode vs
+  // wifi.connection ovenfor).
+  append_line(out_buffer, out_buffer_capacity, &pos, "eth.enabled", state->eth_enabled ? "true" : "false");
+  append_line(out_buffer, out_buffer_capacity, &pos, "eth.mode", state->eth_static_ip ? "static" : "dhcp");
+  if (state->eth_static_ip) {
+    append_line(out_buffer, out_buffer_capacity, &pos, "eth.ip", state->eth_ip[0] != '\0' ? state->eth_ip : "(ikke sat)");
+    append_line(out_buffer, out_buffer_capacity, &pos, "eth.mask",
+                state->eth_mask[0] != '\0' ? state->eth_mask : "(ikke sat)");
+    append_line(out_buffer, out_buffer_capacity, &pos, "eth.gw", state->eth_gw[0] != '\0' ? state->eth_gw : "(ikke sat)");
+  }
 }
 
 // Tjekker om `state` har alle påkrævede felter til et "connect"-forsøg.
@@ -230,6 +250,9 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "rest user <navn>", "brugernavn til REST-management-API'et");
     append_line(out_message, out_message_capacity, &pos, "rest pass <kode>", "adgangskode til REST-management-API'et (8-63 tegn)");
     append_line(out_message, out_message_capacity, &pos, "rest auth token|basic|both", "hvilke(n) REST-auth-metode(r) der accepteres, default both");
+    append_line(out_message, out_message_capacity, &pos, "eth enable|disable", "slaa W5500-Ethernet til/fra, default enabled");
+    append_line(out_message, out_message_capacity, &pos, "eth mode dhcp|static", "Ethernet-netvaerkstype, default dhcp");
+    append_line(out_message, out_message_capacity, &pos, "eth ip/mask/gw <a.b.c.d>", "kun ved eth mode static");
     append_line(out_message, out_message_capacity, &pos, "show", "vis alt der er sat (password maskeret)");
     append_line(out_message, out_message_capacity, &pos, "status", "systemstatus (uptime/heap/WiFi/tilstand)");
     append_line(out_message, out_message_capacity, &pos, "save", "gem nuvaerende felter til NVS uden at forsoege forbindelse");
@@ -458,6 +481,72 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     }
 
     snprintf(out_message, out_message_capacity, "ukendt rest-underkommando: %s", tokens[1]);
+    return PROV_UNKNOWN_COMMAND;
+  }
+
+  // v0.20.0 (Jan: "har vi kommando til at enable/disable eterhnet samt ip
+  // config, modes m.m.") — mirroring "wifi ..."-moenstret. Aendringer her
+  // saettes kun i in-memory state (samme som "wifi ssid"/"rest user" osv.)
+  // - kraever "save" for at persistere, og traeder foerst i kraft ved naeste
+  // "reboot" (eth_driver_begin() koeres kun EN gang, ved boot).
+  if (ieq(tokens[0], "eth")) {
+    if (token_count < 2) {
+      snprintf(out_message, out_message_capacity, "eth kraever en underkommando (enable/disable/mode/ip/mask/gw)");
+      return PROV_MISSING_ARGUMENT;
+    }
+
+    if (ieq(tokens[1], "enable")) {
+      state->eth_enabled = true;
+      snprintf(out_message, out_message_capacity, "ok - eth.enabled=true (kraever 'save' + 'reboot')");
+      return PROV_OK;
+    }
+
+    if (ieq(tokens[1], "disable")) {
+      state->eth_enabled = false;
+      snprintf(out_message, out_message_capacity, "ok - eth.enabled=false (kraever 'save' + 'reboot')");
+      return PROV_OK;
+    }
+
+    if (ieq(tokens[1], "mode")) {
+      if (token_count < 3) {
+        snprintf(out_message, out_message_capacity, "eth mode kraever 'dhcp' eller 'static'");
+        return PROV_MISSING_ARGUMENT;
+      }
+      if (ieq(tokens[2], "dhcp")) {
+        state->eth_static_ip = false;
+        snprintf(out_message, out_message_capacity, "ok - eth.mode=dhcp (kraever 'save' + 'reboot')");
+        return PROV_OK;
+      }
+      if (ieq(tokens[2], "static")) {
+        state->eth_static_ip = true;
+        snprintf(out_message, out_message_capacity, "ok - eth.mode=static (kraever 'save' + 'reboot')");
+        return PROV_OK;
+      }
+      snprintf(out_message, out_message_capacity, "ugyldig eth mode '%s' - brug 'dhcp' eller 'static'", tokens[2]);
+      return PROV_INVALID_VALUE;
+    }
+
+    if (ieq(tokens[1], "ip") || ieq(tokens[1], "mask") || ieq(tokens[1], "gw")) {
+      if (token_count < 3) {
+        snprintf(out_message, out_message_capacity, "brug 'eth %s <a.b.c.d>'", tokens[1]);
+        return PROV_MISSING_ARGUMENT;
+      }
+      if (!mb_provisioning_validate_ipv4(tokens[2])) {
+        snprintf(out_message, out_message_capacity, "ugyldig IPv4-adresse: %s", tokens[2]);
+        return PROV_INVALID_VALUE;
+      }
+      if (ieq(tokens[1], "ip")) {
+        set_ipv4_field(state->eth_ip, tokens[2]);
+      } else if (ieq(tokens[1], "mask")) {
+        set_ipv4_field(state->eth_mask, tokens[2]);
+      } else {
+        set_ipv4_field(state->eth_gw, tokens[2]);
+      }
+      snprintf(out_message, out_message_capacity, "ok - eth.%s sat (kraever 'save' + 'reboot')", tokens[1]);
+      return PROV_OK;
+    }
+
+    snprintf(out_message, out_message_capacity, "ukendt eth-underkommando: %s", tokens[1]);
     return PROV_UNKNOWN_COMMAND;
   }
 

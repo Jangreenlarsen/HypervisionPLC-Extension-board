@@ -22,6 +22,16 @@ void config_factory_reset();
 // `config_get().has_mgmt_token` FØR kaldet.
 void config_ensure_mgmt_token(char *out_token, size_t out_capacity);
 
+// v0.20.0 (Jan: "vi skal også have en random MAC adr brændt ind i NVS ved
+// start") — sikrer at en tilfældig, lokalt-administreret unicast-MAC findes
+// (genererer + persisterer én, hardware-RNG, hvis der endnu ikke er én) og
+// kopierer den (altid, uanset om den lige blev genereret eller allerede
+// fandtes) til `out_mac` (6 bytes). Kaldes ved HVERT boot, FØR
+// eth_driver_begin() — modsat mgmt_token (kun genereret ved første
+// "connect") skal MAC'en være klar før Ethernet-driveren overhovedet
+// starter.
+void config_ensure_eth_mac(uint8_t *out_mac);
+
 void config_mark_provisioned();
 
 // §4.2: persisterer ét kanals config (index 0=kanal A, 1=kanal B) — kaldes

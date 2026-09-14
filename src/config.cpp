@@ -79,6 +79,21 @@ void config_ensure_mgmt_token(char *out_token, size_t out_capacity) {
   }
 }
 
+void config_ensure_eth_mac(uint8_t *out_mac) {
+  if (!g_config.has_eth_mac) {
+    uint8_t random_bytes[6];
+    esp_fill_random(random_bytes, sizeof(random_bytes));
+    if (mb_config_mac_from_random_bytes(random_bytes, sizeof(random_bytes), g_config.eth_mac)) {
+      g_config.has_eth_mac = true;
+    }
+    save_current_config();
+  }
+
+  if (out_mac != nullptr) {
+    memcpy(out_mac, g_config.eth_mac, sizeof(g_config.eth_mac));
+  }
+}
+
 void config_mark_provisioned() {
   g_config.provisioned = true;
   save_current_config();

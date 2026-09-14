@@ -375,9 +375,13 @@ Dette er den ENESTE brugerflade boardet nogensinde selv viser (§0) — over USB
 | `rest user <navn>` / `rest pass <kode>` | REST-API Basic Auth-credentials (§4.4, dual auth-model) — ved siden af det auto-genererede Bearer-token. Persisteres uafhængigt af WiFi-forbindelsesstatus |
 | `rest auth token\|basic\|both` | Hvilke(n) REST-auth-metode(r) der accepteres (Jan: "auth-metoden vi bruger skal kunne config'es") — default `both`. Slår man den anden fra, afviser REST-API'et den med `401` og en tydelig "denne metode er slået fra"-besked, uanset om credentials ville have matchet |
 | `show` | Viser ALT konfigureret data — INKL. adgangskoder, management-tokenet og firmware-version+build i klartekst (revideret, Jan: "al config skal være synlig i CLI'en" — fysisk USB-adgang er allerede tillidsgrænsen, maskering her giver ingen reel beskyttelse, kun friktion). Gælder KUN denne CLI — REST-API'et (§4.4) returnerer fortsat aldrig tokenet, uanset auth-metode |
-| `status` | Systemstatus: firmware-version+build, uptime, fri heap, WiFi-forbindelsesstatus/IP/RSSI, REST-API-URL, samt samme config-felter som `show` (provisioned/token/rest-credentials/auth-mode) |
+| `status` | Systemstatus: firmware-version+build, uptime, fri heap, WiFi-forbindelsesstatus/IP/RSSI, Ethernet-status/IP/MAC (v0.20.0), REST-API-URL, samt samme config-felter som `show` (provisioned/token/rest-credentials/auth-mode/eth-config) |
+| `eth enable\|disable` (v0.20.0) | Slår W5500-Ethernet helt til/fra (Jan: "har vi kommando til at enable/disable eterhnet..."). Default `enable` (matcher hidtidig ubetinget adfærd). Kræver `save` + `reboot` — ingen live-genstart af den SPI-baserede driver |
+| `eth mode dhcp\|static` (v0.20.0) | Ethernet-netværkstype, default `dhcp`. Kun CLI — bevidst intet REST-endpoint (installations-/fremstillingstidsbeslutning) |
+| `eth ip/mask/gw <a.b.c.d>` (v0.20.0) | Kun påkrævet ved `eth mode static` |
 | `save` | Gemmer de aktuelle felter til NVS UDEN at forsøge en WiFi-forbindelse — til fx REST-credential-ændringer der ikke kræver en (gen)forbindelse |
 | `connect` | Anvender de indtastede felter, forsøger en rigtig forbindelse, og genstarter boardet ved succes. Afvises med en forklarende fejl (hvilke(t) felt(er) mangler) hvis påkrævede felter ikke er sat — ingen generisk "noget gik galt" |
+| `reboot` (v0.19.0) | Blødt, IKKE-destruktivt genstart — rydder INTET i NVS (modsat `factory-reset`). Samme funktion som REST-API'ets `POST /api/reboot` (v0.12.0), fra den serielle CLI |
 | `factory-reset confirm` | Samme effekt som en fysisk fabriksnulstillings-knap (§3.4 punkt 6) — kræver det eksplicitte `confirm`-argument for at undgå et utilsigtet tryk/enter |
 | `version` | Firmware-version+build (samme data som `show`/`status`s `firmware`-linje) |
 | `help` | Kommando-oversigt |

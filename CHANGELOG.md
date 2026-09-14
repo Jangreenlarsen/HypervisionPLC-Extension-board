@@ -4,6 +4,28 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.20.0 build 0024] — 2026-09-14 — Ethernet enable/disable/static-IP via CLI + tilfældig persisteret MAC
+
+**Baggrund (del 1):** Jan: "har vi kommando til at enable/disable eterhnet samt ip config, modes m.m." — Ethernet startede hidtil altid ubetinget (ren DHCP), ingen CLI-styring.
+
+**`lib/provisioning_cli/`:** nye felter i `mb_provisioning_state_t` (`eth_enabled`, `eth_static_ip`, `eth_ip/mask/gw`) og en ny `eth`-kommando: `eth enable`/`eth disable`, `eth mode dhcp|static`, `eth ip/mask/gw <a.b.c.d>` — mirroring `wifi ...`-mønsteret. `eth_enabled` defaulter til `true` (sat eksplicit i `mb_provisioning_state_init()`, IKKE zero-value'en). Vises i `show` (`eth.enabled`/`eth.mode`/`eth.ip`/osv.).
+
+**`src/eth_driver.h/.cpp`:** ny signatur `eth_driver_begin(enabled, static_ip, ip, mask, gw, mac)`. `enabled=false` springer al SPI-/GPIO-/netif-opsætning over. Ny `apply_ip_config()` (kaldt ved hvert `ETHERNET_EVENT_CONNECTED`, ikke kun ved boot — mirroring `Modbus_API_Gateway`s fungerende mønster) — `esp_netif_dhcpc_stop()` + enten `esp_netif_set_ip_info()` (statisk) eller `esp_netif_dhcpc_start()` (DHCP).
+
+**`src/main.cpp`:** læser `config_get().eth_*` og sender til `eth_driver_begin()` ved boot. Ændringer via `eth ...`+`save` kræver et `reboot` for at træde i kraft (ingen forsøg på live-genstart af den SPI-baserede driver).
+
+**Baggrund (del 2):** Jan: "vi skal også have en random MAC adr brændt ind i NVS ved start" (fandt samme rodårsag som `Modbus_API_Gateway`s BUGS.md F6: W5500 uden MAC-tildeling kører med `00:00:00:00:00:00`).
+
+**`lib/board_config/`:** ny `mb_config_mac_from_random_bytes()` — sætter unicast+lokalt-administreret-bits (IEEE 802) på 6 rå bytes. `src/config.cpp`: ny `config_ensure_eth_mac()` (mirroring `config_ensure_mgmt_token()`, `esp_fill_random()`), kaldt ved HVERT boot, FØR `eth_driver_begin()`. Bevidst en NVS-persisteret TILFÆLDIG MAC (ikke `esp_read_mac(ESP_MAC_ETH)`, søsterprojektets tilgang) — overlever en fysisk WROOM-modul-udskiftning ved reparation. Sat på chippen via `esp_eth_ioctl(ETH_CMD_S_MAC_ADDR)` (efter `esp_eth_driver_install()`, før `esp_netif_attach()`). Vist i `show`/`status` (Jan: "MAC skal så ved en show status i cli") som `eth.mac: AA:BB:CC:DD:EE:FF`, uafhængigt af eth_enabled/forbindelsesstatus.
+
+**NVS-skema 3→4** (`lib/board_config/`): `eth_enabled`, `eth_static_ip`, `eth_ip/mask/gw`, `eth_mac[6]`, `has_eth_mac`. `mb_board_config_v3_t` frosset til migration. `migrate_v3_to_current()`: `eth_enabled=true` (matcher hidtidig ubetinget adfærd), `has_eth_mac=false` (genereres ved næste boot).
+
+**Bug fundet og rettet undervejs (3. gang, se BUGS.md):** `MB_PROV_MSG_MAX_LEN` (1024) blev igen for lille — de nye `eth ...`-hjælpelinjer i `help` afkortede teksten stille (fanget af `test_help_action` FØR nogen hardware-upload). Hævet til 2048.
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.h/.cpp`, `lib/board_config/board_config.h/.cpp`, `src/config.h/.cpp`, `src/eth_driver.h/.cpp`, `src/main.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`, `test/test_board_config/test_board_config.cpp`.
+
+**Status:** 186/186 native-tests bestået (14 nye), bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.19.1 build 0023] — 2026-09-14 — Fix: W5500 svarede aldrig over SPI (manglende command_bits/address_bits)
 
 **Baggrund:** Jan monterede et fysisk W5500-modul (korrekt forbundet efter GPIO_MAPPING.md, link-LED lyste), men boardet kunne aldrig tale med chippen — boot-log viste konsekvent `E w5500.mac: w5500_send_command(132): send command timeout`. Fejlsøgning udelukkede: forkert GPIO/pin-kapabilitet, manglende pull-up på INT (tilføjet, ingen ændring), og SPI-clockhastighed (8→1 MHz testet, identisk fejl på nøjagtig samme millisekund).
