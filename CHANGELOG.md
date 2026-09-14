@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.15.0 build 0018] — 2026-09-14 — `GET /api/status` får et direkte `board_mode`-felt
+
+**Baggrund:** Jan påpegede at siden MODE_SEL (v0.14.0) nu er én delt GPIO for hele boardet, burde REST-API'et også rapportere RS232/RS485-tilstanden direkte som en board-egenskab, i stedet for at en klient skal udlede den indirekte via en tilfældig kanals `mode`-felt.
+
+**`lib/rest_status/`:** nyt `mb_channel_mode_t board_mode` i `mb_status_data_t`. `rest_status.h` inkluderer nu `board_config.h` for enum'en. `mb_status_build_json()` skriver `"board_mode":"rs485"`/`"rs232"` lige efter `"provisioned"`.
+
+**`src/http_server.cpp`:** `status_handler()` udfylder feltet via `modbus_channel_get_config(ModbusChannelId::kA).mode` — kanal A's config bruges vilkårligt, da begge kanaler altid er synkroniseret efter v0.14.0.
+
+**Bug fundet og rettet UNDER test:** det nye felt gjorde JSON-outputtet netop langt nok til at overskride `test_rest_status.cpp`s 256-byte test-buffere for de tungeste fixtures — `mb_status_build_json()` selv opførte sig korrekt (returnerede 0 ved den deraf følgende snprintf-truncation), men testen tjekkede ikke returværdien før den scannede indholdet, og fejlede derfor med en forvirrende "ubalancerede krøllede parenteser"-besked i stedet for en klar "buffer for lille". Rettet: alle test-buffere hævet til 512 bytes, og testen tjekker nu returværdien FØRST.
+
+**Filer ændret:** `lib/rest_status/rest_status.h/.cpp`, `src/http_server.cpp`, `test/test_rest_status/test_rest_status.cpp`.
+
+**Status:** 169/169 native-tests bestået, bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.14.0 build 0017] — 2026-09-14 — Hardware-revision: delt MODE_SEL, W5500 får en rigtig RST-pin
 
 **Baggrund:** Jan bad om at samle MODE_SEL til én fælles pin for hele boardet i stedet for én pr. kanal, og bruge den frigjorte GPIO til at give W5500'en en rigtig, software-styret RST-pin (i stedet for kun at stole på modulets eget power-on-reset, jf. v0.13.0's beslutning).

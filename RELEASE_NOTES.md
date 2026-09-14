@@ -2,6 +2,14 @@
 
 ---
 
+## v0.15.0 — 2026-09-14 — `GET /api/status` får et direkte `board_mode`-felt
+
+`GET /api/status` rapporterer nu direkte om boardet kører RS232 eller RS485 (`"board_mode":"rs485"`) — siden det siden v0.14.0 er én fælles indstilling for hele boardet, giver det mere mening at have det tilgængeligt her end kun indirekte via en kanals egen config.
+
+**Næste skridt**: fysisk montering og test af W5500-modulet (afventer stadig fra v0.13.0).
+
+---
+
 ## v0.14.0 — 2026-09-14 — Hardware-revision: delt MODE_SEL, W5500 får en rigtig RST-pin
 
 MODE_SEL (valget mellem RS232 og RS485) er nu ÉN fælles indstilling for hele boardet i stedet for én pr. kanal — kanal A og B kan derfor ikke længere have forskellig mode. Til gengæld blev der frigjort en GPIO, som nu bruges til en rigtig, software-styret nulstillings-pin til W5500-Ethernet-modulet (i stedet for kun at stole på modulets eget power-on-reset).

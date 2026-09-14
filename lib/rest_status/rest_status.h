@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "board_config.h"  // mb_channel_mode_t
+
 // API-versionering (kontrakten, ikke firmware-versionen) — bumpes KUN ved et
 // brydende skift i selve endpoint-kontrakten, jf. EXPANSION_BOARD_DESIGN.md
 // §4.2. Aldrig ved en ren tilføjelse af et nyt, valgfrit felt.
@@ -21,6 +23,14 @@ struct mb_status_data_t {
   const char *wifi_ip;      // ignoreres hvis !wifi_connected
   int8_t wifi_rssi_dbm;     // ignoreres hvis !wifi_connected
   bool provisioned;
+
+  // Hardware-revision 2026-09-14 (§2.0.1): MODE_SEL er ÉN delt GPIO for hele
+  // boardet — RS232/RS485 er derfor reelt en BOARD-egenskab, ikke en
+  // pr.-kanal-egenskab (selvom `GET /api/channels/{n}` stadig rapporterer
+  // den pr. kanal, for bagudkompatibilitet — begge kanaler er altid ens).
+  // Direkte, eksplicit rapporteret her, så en klient ikke skal udlede den
+  // indirekte via en tilfældig kanals `mode`-felt.
+  mb_channel_mode_t board_mode;
 
   // Valgfri Ethernet (W5500, §1.3/§2.2) — dual-stack med WiFi, ingen egen
   // provisionering (ren DHCP). `eth_connected` = link op (kabel + PHY-link),
