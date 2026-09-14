@@ -137,6 +137,7 @@ esp_err_t status_handler(httpd_req_t *req) {
       modbus_channel_get_config(ModbusChannelId::kA).mode,  // §2.0.1: delt MODE_SEL - kanal A/B altid ens, se board_mode
       eth_connected,
       eth_driver_ip_string(),
+      eth_driver_status_string(),  // v0.18.0: not_detected/link_down/waiting_dhcp/connected
   };
 
   char body[384];

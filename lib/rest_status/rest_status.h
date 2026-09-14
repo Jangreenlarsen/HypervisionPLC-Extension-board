@@ -37,6 +37,13 @@ struct mb_status_data_t {
   // IKKE nødvendigvis en IP endnu.
   bool eth_connected;
   const char *eth_ip;       // ignoreres hvis !eth_connected, eller tom streng hvis link op men endnu ingen DHCP-lease
+
+  // v0.18.0 (Jan: diag for om W5500 reelt virker eller om det "bare" er en
+  // link-fejl) — én af "not_detected"/"link_down"/"waiting_dhcp"/"connected"
+  // (se eth_driver_status_string() i src/eth_driver.cpp, den autoritative
+  // kilde til strengene — duplikeres bevidst ikke her, kaldstedet
+  // http_server.cpp overfører blot pointeren). ALDRIG nullptr.
+  const char *eth_status;
 };
 
 // Bygger `GET /api/status`-JSON-svaret (EXPANSION_BOARD_DESIGN.md §4.2's

@@ -4,6 +4,22 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.18.0 build 0021] — 2026-09-14 — Detaljeret W5500-Ethernet-diagnostik
+
+**Baggrund:** Jan: "vi skal have noget diag på det w5500 så vi kan se det fungere eller om det er link fejl". `eth_driver_link_up()` (v0.13.0) rapporterede kun et binært op/nede — umuligt at skelne et reelt hardware-/wiring-problem (intet W5500-modul fundet på SPI-bussen) fra en ren netværks-sag (modulet virker fint, men kablet mangler eller switch-porten er nede).
+
+**`src/eth_driver.h/.cpp`:** ny `eth_driver_status_t`-enum: `ETH_STATUS_NOT_DETECTED` (default — `esp_eth_driver_install()`, som reelt taler SPI til W5500-chippen og læser dens versions-register, er aldrig lykkedes), `ETH_STATUS_LINK_DOWN` (modul bekræftet fundet og driver kører, men PHY'en rapporterer intet link), `ETH_STATUS_WAITING_DHCP` (link oppe, venter på IP), `ETH_STATUS_CONNECTED` (link oppe + IP). Sat fra `ETHERNET_EVENT_START`/`ETHERNET_EVENT_CONNECTED`/`ETHERNET_EVENT_DISCONNECTED`/`ETHERNET_EVENT_STOP` og `got_ip_event_handler()`. Nye `eth_driver_status()`/`eth_driver_status_string()`.
+
+**`src/provisioning.cpp`:** ny `eth_status_text()` — fire klare danske sætninger i stedet for det tidligere udifferentierede "link nede (intet kabel/modul...)". `print_ethernet_status()` bruger nu `eth_driver_status()` i stedet for kun `eth_driver_link_up()`.
+
+**`lib/rest_status/`:** nyt `const char *eth_status` i `mb_status_data_t`, skrevet som `"status"` i `ethernet`-JSON-objektet (additivt felt, ingen `api_version`-bump). `src/http_server.cpp` overfører `eth_driver_status_string()`.
+
+**Bug fundet og rettet UNDER live-boot-testen (se BUGS.md):** status blev oprindeligt sat i `ETHERNET_EVENT_START`-eventet, som fyrer så snart `esp_eth_start()` KALDES — ikke når hardwaren reelt er bekræftet til stede. Den faktiske SPI-samtale med W5500-chippen sker FØRST inde i `esp_eth_start()` selv. Resultat: boardet (uden noget fysisk W5500-modul) rapporterede fejlagtigt "modul fundet, link nede" i stedet for "intet modul fundet". Rettet: status sættes nu eksplicit EFTER `esp_eth_start()`s egen retur-kode i `eth_driver_begin()`, ikke i event-handleren.
+
+**Filer ændret:** `src/eth_driver.h/.cpp`, `src/provisioning.cpp`, `lib/rest_status/rest_status.h/.cpp`, `src/http_server.cpp`, `test/test_rest_status/test_rest_status.cpp`.
+
+**Status:** 170/170 native-tests bestået, bygger rent for esp32dev. **Live-verificeret på fysisk hardware for `not_detected`-stien** (boardet har stadig intet fysisk W5500-modul monteret) — CLI (`status`/`show`) og `GET /api/status` viser begge korrekt "intet W5500-modul fundet". De øvrige tre tilstande (`link_down`/`waiting_dhcp`/`connected`) er endnu ikke live-verificerbare — afventer fysisk modul-montering (v0.13.0).
+
 ## [0.17.0 build 0020] — 2026-09-14 — MODE_SEL (GPIO4) er nu en fabriks-input, ikke et PUT-bart felt
 
 **Baggrund:** Jan rapporterede at `show status` altid viste `board_mode: rs485` uanset hvad han påtrykte GPIO4 udefra. Årsag: GPIO4 var siden v0.14.0 en OUTPUT drevet af firmwarens egen software-config, ikke en INPUT. Efter afklaring (Jan: "Paatrykte selv en spaending udefra", "ok det skal være et input til at sætte board ved framstilling") blev arkitekturen ændret til: `mode` bliver en ren, hardware-udlæst, READ-ONLY egenskab; MODE_SEL læses kun ved boot (ikke løbende).

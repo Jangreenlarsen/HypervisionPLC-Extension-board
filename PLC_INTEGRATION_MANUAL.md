@@ -117,10 +117,12 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
   "provisioned": true,
   "board_mode": "rs485",
   "wifi": {"connected": true, "ip": "10.1.1.229", "rssi_dbm": -62},
-  "ethernet": {"connected": false}
+  "ethernet": {"connected": false, "status": "not_detected"}
 }
 ```
 `board_mode` (`"rs485"` eller `"rs232"`, v0.15.0) er boardets AKTUELLE RS232/RS485-mode — siden begge kanaler siden v0.14.0 deler én fysisk MODE_SEL-GPIO (§2.0.1), er dette den samme værdi som ENHVER kanals `mode`-felt i `GET /api/channels`. Foretrukket direkte kilde til board-mode fremfor at udlede den fra en tilfældig kanal. **Ren læseværdi (hardware-revision 2026-09-14, 2. ændring):** afspejler MODE_SEL-jumperens fysiske position, læst af firmwaren ved boot — kan IKKE påvirkes via REST, se afsnit 4.4.
+
+`ethernet.status` (v0.18.0) skelner mere præcist end `connected` alene: `"not_detected"` (intet W5500-modul fundet på SPI-bussen — hardware-/wiring-problem), `"link_down"` (modul fundet og driver kører, men PHY'en rapporterer intet link — netværkskabel/switch-port), `"waiting_dhcp"` (link oppe, venter på IP) eller `"connected"` (link oppe + IP). `connected` (boolean, uændret siden v0.13.0) er `true` UDELUKKENDE ved `"connected"`-status — de tre øvrige giver alle `connected:false`, men `status` fortæller PLC-siden PRÆCIS hvorfor, i stedet for kun at vide at Ethernet ikke virker lige nu.
 `wifi`-objektet er kun `{"connected":false}` hvis ikke forbundet (`ip`/`rssi_dbm` udelades da). `ethernet`-objektet (§1.3/§2.2, valgfrit W5500-modul, v0.13.0) er tilsvarende kun `{"connected":true,"ip":"..."}` når linket er oppe — INGEN `rssi_dbm` (kablet, ikke relevant). WiFi og Ethernet kan begge være `connected:true` samtidig (dual-stack) — boardet har ingen provisionering for Ethernet, den henter blot en IP via DHCP så snart et kabel er tilsluttet. `api_version` er en separat protokol-kontrakt-version (bumpes KUN ved brydende ændringer i selve API'et) — PLC-siden bør logge en advarsel, ikke fejle stille, hvis denne ikke matcher hvad klienten er skrevet imod.
 
 ### 4.3 `GET /api/channels` og `GET /api/channels/{n}`

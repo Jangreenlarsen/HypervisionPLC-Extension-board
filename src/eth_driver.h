@@ -32,3 +32,36 @@ bool eth_driver_link_up();
 // men INDHOLDET kan ændre sig ved næste DHCP-lease/link-skift, så kaldstedet
 // bør ikke gemme pointeren på tværs af kald.
 const char *eth_driver_ip_string();
+
+// v0.18.0 (Jan: "vi skal have noget diag på det w5500 så vi kan se det
+// fungere eller om det er link fejl") — `eth_driver_link_up()` alene kan
+// IKKE skelne "intet W5500-modul fundet/forkert forbundet" (et
+// firmware-/hardware-problem — tjek loedning/forbindelser) fra "modul
+// fundet og virker fint, men netværkskablet mangler eller switch-porten er
+// nede" (en ren netværks-/kabel-sag). Denne mere detaljerede status gør
+// præcis det skel muligt.
+enum eth_driver_status_t {
+  // esp_eth_start() (den FØRSTE reelle SPI-samtale med W5500-chippen — se
+  // src/eth_driver.cpp's kommentar ved kaldet, IKKE esp_eth_driver_install()
+  // som kun allokerer driver-strukturer uden at røre hardwaren) er ALDRIG
+  // lykkedes — enten intet modul fysisk tilsluttet, forkert forbundet,
+  // eller en tidligere SPI-/GPIO-opsætningsfejl (alle ender her, da
+  // handlingen for installatøren er den samme: tjek den fysiske Ethernet-
+  // tilslutning).
+  ETH_STATUS_NOT_DETECTED = 0,
+  // Modulet ER fundet og driveren kører, men PHY'en rapporterer intet link
+  // — netværkskabel ikke tilsluttet, eller den anden ende (switch) er nede.
+  ETH_STATUS_LINK_DOWN = 1,
+  // Link er oppe, men DHCP har endnu ikke tildelt en IP.
+  ETH_STATUS_WAITING_DHCP = 2,
+  // Link oppe OG en IP er modtaget via DHCP — fuldt funktionsdygtig.
+  ETH_STATUS_CONNECTED = 3,
+};
+
+eth_driver_status_t eth_driver_status();
+
+// Kort, stabil status-slug (samme stil som channel_config.cpp's
+// "ok"/"error"/"disabled" for `status`-feltet) — bruges direkte i JSON
+// (`GET /api/status`s `ethernet.status`) og som grundlag for CLI'ens
+// danske visning (se src/provisioning.cpp).
+const char *eth_driver_status_string();
