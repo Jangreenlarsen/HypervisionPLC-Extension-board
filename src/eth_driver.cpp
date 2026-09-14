@@ -10,15 +10,21 @@
 
 namespace {
 
-// GPIO-allokering — EXPANSION_BOARD_DESIGN.md §2.0.1, aftalt 2026-09-13.
-// Bevidst IKKE brugt: GPIO21/22 (holdt fri til fremtidig I2C), GPIO26/33
-// (kanal-aktivitets-LED'er). Ingen dedikeret RST-GPIO — W5500-modulets eget
-// power-on-reset-kredsløb er tilstrækkeligt (Jan, bekræftet 2026-09-13).
+// GPIO-allokering — EXPANSION_BOARD_DESIGN.md §2.0.1, aftalt 2026-09-13,
+// RST tilføjet 2026-09-14. Bevidst IKKE brugt: GPIO21/22 (holdt fri til
+// fremtidig I2C), GPIO26/33 (kanal-aktivitets-LED'er).
 constexpr int kEthSckPin = 14;
 constexpr int kEthMosiPin = 13;
 constexpr int kEthMisoPin = 35;
 constexpr int kEthCsPin = 32;
 constexpr int kEthIntPin = 39;
+// Hardware-revision 2026-09-14: MODE_SEL blev samlet til ÉN delt GPIO for
+// hele boardet (kanal A/B kan ikke længere have forskellig RS232/RS485-mode,
+// se modbus_channel.cpp) — det frigav GPIO23 (kanal B's tidligere
+// dedikerede MODE_SEL), som nu bruges til en RIGTIG, software-styret
+// RST-pin for W5500'en i stedet for kun at stole på modulets eget
+// power-on-reset.
+constexpr int kEthRstPin = 23;
 
 // HSPI (SPI2_HOST) — bevidst IKKE VSPI (SPI3_HOST), hvis default-pins
 // (MOSI=23/MISO=19/SCK=18) overlapper direkte med kanal B's UART-pins.
@@ -138,8 +144,8 @@ void eth_driver_begin() {
   }
 
   eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
-  phy_config.phy_addr = 1;         // W5500's interne PHY — fast adresse 1, ESP-IDF-konvention
-  phy_config.reset_gpio_num = -1;  // ingen dedikeret RST-GPIO — modulets eget power-on-reset er nok (Jan, bekræftet)
+  phy_config.phy_addr = 1;                  // W5500's interne PHY — fast adresse 1, ESP-IDF-konvention
+  phy_config.reset_gpio_num = kEthRstPin;   // software-styret RST (hardware-revision 2026-09-14)
   esp_eth_phy_t *phy = esp_eth_phy_new_w5500(&phy_config);
   if (phy == nullptr) {
     Serial.println("Ethernet: esp_eth_phy_new_w5500() fejlede.");

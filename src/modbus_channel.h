@@ -34,7 +34,16 @@ mb_error_code_t modbus_channel_submit(ModbusChannelId channel, uint8_t slave_id,
 // almindelige transaktioner, så en igangværende transaktion altid fuldføres
 // på den GAMLE config før omkobling (designdokumentets eksplicitte krav),
 // uden at kræve en separat lås omkring kanalens hardware-tilstand.
-// Returnerer false hvis kanalens task ikke kunne nås (fx kø fuld).
+// Persisterer selv (config_set_channel()) ved succes — kaldstedet skal
+// IKKE persistere igen. Returnerer false hvis kanalens task ikke kunne nås
+// (fx kø fuld).
+//
+// Hardware-revision 2026-09-14: MODE_SEL er ÉN delt GPIO for hele boardet
+// (§2.0.1) — kanal A og B kan derfor ALDRIG have forskellig RS232/RS485-
+// mode. Ændrer et kald `mode`, spejles den SAMME ændring automatisk til
+// den anden kanal (dens øvrige felter — baudrate/parity/osv. — er
+// upåvirkede). Et `GET`/`PUT` på ÉN kanal kan derfor ændre hvad den ANDEN
+// kanal efterfølgende rapporterer som sin `mode` — dette er IKKE en fejl.
 bool modbus_channel_apply_config(ModbusChannelId channel, const mb_channel_config_t &new_config);
 
 // Nuværende config/statistik — kaldes fra REST-laget (GET /api/channels/{n})
