@@ -119,6 +119,14 @@ enum mb_provisioning_result_t {
   // serielle CLI. Rydder INTET i NVS (modsat PROV_ACTION_FACTORY_RESET) —
   // kræver derfor ingen "confirm".
   PROV_ACTION_REBOOT,
+  // v0.23.0 (Jan: "hvordan generare vi ny token") — "token regenerate".
+  // Management-API-tokenet blev hidtil KUN genereret ÉN gang (ved første
+  // "connect") — eneste vej til et nyt var "factory-reset confirm", som
+  // også rydder WiFi/firewall/alt andet. Ikke-destruktiv (rører KUN
+  // tokenet), ingen "confirm" krævet (Jan bekræftet). Kaldstedet skal
+  // generere+persistere et helt nyt token (hardware-RNG, ikke en del af
+  // denne hardware-uafhængige lib) og vise det.
+  PROV_ACTION_TOKEN_REGENERATE,
   PROV_EMPTY_LINE,             // tomt/whitespace-only input — kaldstedet kan ignorere stille
   PROV_UNKNOWN_COMMAND,
   PROV_MISSING_ARGUMENT,       // out_message forklarer hvilket felt der mangler

@@ -426,6 +426,18 @@ void provisioning_poll() {
         Serial.println("Genstarter (ingen konfiguration rørt).");
         delay(500);
         ESP.restart();
+      } else if (result == PROV_ACTION_TOKEN_REGENERATE) {
+        // v0.23.0 (Jan: "hvordan generare vi ny token") — ikke-destruktiv,
+        // roerer KUN tokenet. Vises i klartekst (samme tillidsmodel som
+        // resten af CLI'en, §3.4/CLAUDE.md regel 6) - kaldstedet er den
+        // ENESTE plads et nyt token nogensinde kan ses, REST-API'et
+        // returnerer det aldrig.
+        char new_token[MB_MGMT_TOKEN_LEN + 1];
+        config_regenerate_mgmt_token(new_token, sizeof(new_token));
+        Serial.println();
+        Serial.println("Nyt management-API-token:");
+        Serial.println(new_token);
+        Serial.println("ADVARSEL: det GAMLE token virker IKKE laengere - opdater det med det samme i PLC'ens System-side under 'Modbus Expansion Boards'.");
       } else if (result == PROV_ACTION_FACTORY_RESET) {
         Serial.println("Rydder NVS-konfiguration og genstarter.");
         config_factory_reset();

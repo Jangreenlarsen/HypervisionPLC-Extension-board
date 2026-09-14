@@ -395,6 +395,23 @@ void test_reboot_action(void) {
   TEST_ASSERT_EQUAL(PROV_ACTION_REBOOT, r);
 }
 
+void test_token_regenerate_action(void) {
+  // v0.23.0: ingen confirm noedvendig (ikke-destruktiv, roerer KUN tokenet)
+  // - selve genereringen sker i kaldstedet (hardware-RNG), ikke her.
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "token regenerate", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_TOKEN_REGENERATE, r);
+}
+
+void test_token_missing_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "token", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_token_unknown_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "token bogus", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
 void test_status_action(void) {
   // "status" delegerer selve indholdet til kaldstedet (uptime/heap/WiFi er
   // runtime-data) — her verificeres kun at kommandoen genkendes korrekt.
@@ -556,6 +573,7 @@ void test_help_action(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "show"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "connect"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "reboot"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "token regenerate"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "factory-reset confirm"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest user"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest pass"));
@@ -733,6 +751,9 @@ int main(int argc, char **argv) {
   RUN_TEST(test_rest_user_pass_visible_in_show_when_mode_both);
   RUN_TEST(test_save_action);
   RUN_TEST(test_reboot_action);
+  RUN_TEST(test_token_regenerate_action);
+  RUN_TEST(test_token_missing_subcommand);
+  RUN_TEST(test_token_unknown_subcommand);
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);

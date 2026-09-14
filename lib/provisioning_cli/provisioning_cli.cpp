@@ -295,6 +295,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "save", "gem nuvaerende felter til NVS uden at forsoege forbindelse");
     append_line(out_message, out_message_capacity, &pos, "connect", "anvend felterne og forsoeg WiFi-forbindelse");
     append_line(out_message, out_message_capacity, &pos, "reboot", "blødt genstart - rydder INTET (modsat factory-reset)");
+    append_line(out_message, out_message_capacity, &pos, "token regenerate", "nyt management-API-token - roerer INTET andet (husk at opdatere PLC'en)");
     append_line(out_message, out_message_capacity, &pos, "factory-reset confirm", "ryd WiFi/token/firewall og genstart");
     append_line(out_message, out_message_capacity, &pos, "version", "vis firmware-version+build");
     append_line(out_message, out_message_capacity, &pos, "help", "denne kommandoliste");
@@ -350,6 +351,19 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     // rydder denne INTET i NVS (samme filosofi som REST-udgaven, v0.12.0).
     snprintf(out_message, out_message_capacity, "ok - genstarter");
     return PROV_ACTION_REBOOT;
+  }
+
+  // v0.23.0 (Jan: "hvordan generare vi ny token") — ikke-destruktiv, ingen
+  // confirm noedvendig (Jan bekraeftet - roerer KUN tokenet, intet andet).
+  // Selve genereringen (hardware-RNG) og persisteringen sker i kaldstedet
+  // (src/provisioning.cpp/src/config.cpp), som ogsaa printer det nye token.
+  if (ieq(tokens[0], "token")) {
+    if (token_count < 2 || !ieq(tokens[1], "regenerate")) {
+      snprintf(out_message, out_message_capacity, "brug 'token regenerate'");
+      return PROV_MISSING_ARGUMENT;
+    }
+    snprintf(out_message, out_message_capacity, "ok - genererer nyt management-API-token");
+    return PROV_ACTION_TOKEN_REGENERATE;
   }
 
   if (ieq(tokens[0], "factory-reset")) {
