@@ -2,6 +2,14 @@
 
 ---
 
+## v0.19.1 — 2026-09-14 — W5500-Ethernet virker nu fysisk (fix)
+
+Boardets W5500-Ethernet-modul virker nu for første gang på rigtig hardware. Efter Jan monterede et fysisk modul, kunne boardet stadig ikke tale med chippen over SPI, selvom al wiring var korrekt (link-LED lyste fint). Root cause: en manglende del af SPI-konfigurationen (`command_bits`/`address_bits`), fundet ved at sammenligne med et søsterprojekt med samme hardware i produktion. Efter rettelsen: link kommer op, DHCP tildeler en IP, og både REST-API'et og Modbus TCP kan nås direkte over Ethernet-kablet — samtidig med WiFi.
+
+**Næste skridt**: selvstændig test af Modbus TCP (ikke kun REST) over Ethernet-interfacet, samt langtidstest af dual-stack-stabiliteten.
+
+---
+
 ## v0.19.0 — 2026-09-14 — `reboot`-kommando i den serielle CLI
 
 Den serielle CLI har nu en `reboot`-kommando — et blødt, ikke-destruktivt genstart, der ikke rydder nogen konfiguration (modsat `factory-reset confirm`). Samme funktion som REST-API'ets `POST /api/reboot` (v0.12.0), men direkte fra den serielle forbindelse — nyttigt til hurtig hardware-iteration uden at skulle fysisk afbryde strømmen.
