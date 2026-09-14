@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.23.0 build 0028] — 2026-09-14 — `token regenerate` i den serielle CLI
+
+**Baggrund:** Jan: "hvordan generare vi ny token" — management-API'ets Bearer-token blev hidtil kun genereret ÉN gang nogensinde (ved første vellykkede `connect`, `config_ensure_mgmt_token()`, som kun genererer hvis der IKKE allerede er ét). Eneste vej til et NYT token var `factory-reset confirm`, som også rydder WiFi/firewall/al anden config.
+
+**`lib/provisioning_cli/`:** ny `PROV_ACTION_TOKEN_REGENERATE`, udløst af `token regenerate` — ingen `confirm` krævet (Jan bekræftet: ikke-destruktiv, rører KUN tokenet, langt mindre indgribende end `factory-reset`).
+
+**`src/config.h/.cpp`:** ny `config_regenerate_mgmt_token()` — genererer og persisterer UBETINGET et nyt token (samme hardware-RNG/`mb_config_token_from_random_bytes()` som `config_ensure_mgmt_token()`), modsat den eksisterende funktion som kun genererer hvis der ikke allerede findes ét.
+
+**`src/provisioning.cpp`:** viser det nye token i klartekst (samme tillidsmodel som resten af CLI'en) og en tydelig ADVARSEL om at det gamle token øjeblikkeligt holder op med at virke — husk at opdatere PLC'ens System-side.
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.h/.cpp`, `src/config.h/.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`.
+
+**Status:** 217/217 native-tests bestået (3 nye), bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.22.1 build 0027] — 2026-09-14 — `rest.user`/`rest.pass` skjules i CLI'en medmindre auth_mode er `both`
 
 **Baggrund:** Jan: "hvis vi køre rest auth token så skal rest user og rest pass i være i config kun hvis rest auth both" — `show`/`status` viste hidtil altid `rest.user`/`rest.pass`, uanset `rest.auth_mode`, hvilket er misvisende når de reelt ikke bruges (Basic Auth er helt afvist i `token`-mode uanset hvad der er konfigureret).

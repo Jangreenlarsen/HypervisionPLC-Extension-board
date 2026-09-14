@@ -2,6 +2,14 @@
 
 ---
 
+## v0.23.0 — 2026-09-14 — Ny `token regenerate`-kommando
+
+Den serielle CLI kan nu generere et helt nyt management-API-token (`token regenerate`) uden at røre noget andet — ingen grund til at bruge en fuld `factory-reset` bare for at rotere tokenet. Det gamle token holder øjeblikkeligt op med at virke, så husk at opdatere det i PLC'ens System-side under "Modbus Expansion Boards" bagefter.
+
+**Næste skridt**: live-verifikation på fysisk hardware.
+
+---
+
 ## v0.22.1 — 2026-09-14 — REST Basic Auth-credentials skjules i CLI'en når de ikke bruges
 
 `show` og `status` i den serielle CLI viser nu kun `rest.user`/`rest.pass` når REST-API'ets auth-mode er `both` — ikke i `token`- eller `basic`-mode, hvor de enten slet ikke bruges eller ville have givet et misvisende billede af hvad der reelt kræves. Selve værdierne bliver stadig gemt i baggrunden, så intet går tabt hvis man senere skifter tilbage til `both`.

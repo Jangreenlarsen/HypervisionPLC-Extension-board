@@ -22,6 +22,14 @@ void config_factory_reset();
 // `config_get().has_mgmt_token` FØR kaldet.
 void config_ensure_mgmt_token(char *out_token, size_t out_capacity);
 
+// v0.23.0 (Jan: "hvordan generare vi ny token") — genererer et HELT NYT
+// token (hardware-RNG, samme kilde som config_ensure_mgmt_token()) OG
+// persisterer det, UANSET om der allerede fandtes ét — modsat
+// config_ensure_mgmt_token() (som kun genererer hvis der IKKE allerede er
+// ét). Det gamle token holder øjeblikkeligt op med at virke. `out_token`
+// (hvis ikke nullptr) får det nye token kopieret.
+void config_regenerate_mgmt_token(char *out_token, size_t out_capacity);
+
 // v0.20.0 (Jan: "vi skal også have en random MAC adr brændt ind i NVS ved
 // start") — sikrer at en tilfældig, lokalt-administreret unicast-MAC findes
 // (genererer + persisterer én, hardware-RNG, hvis der endnu ikke er én) og
