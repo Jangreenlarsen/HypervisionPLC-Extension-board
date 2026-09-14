@@ -23,10 +23,12 @@ constexpr size_t MB_PROV_REST_PASS_MAX_LEN = 63;
 // Multi-linje CLI-output (Jan: "alle [beskeder] skal IKKE komme på en
 // linje") — hvert felt/hver kommando på sin egen linje (\r\n-separeret, for
 // kompatibilitet med simple seriel-terminaler der ikke auto-CR'er på bar
-// \n). 1024 er bevidst rigeligt (den fulde help-tekst målt til 717 bytes) —
-// ESP32 har 320KB RAM, så det er billigere at have god margin end at ramme
-// den samme afkortnings-klasse-bug igen (se BUGS.md).
-constexpr size_t MB_PROV_MSG_MAX_LEN = 1024;
+// \n). v0.20.0: hævet 1024→2048 — de 3 nye "eth ..."-help-linjer (samt
+// "eth.*"-felterne i "show") fik help-teksten til at overskride 1024 og
+// blive stille afkortet (samme BUGS.md v0.4.0-klasse-bug). ESP32 har 320KB
+// RAM, så det er billigere at have rigelig margin end at ramme denne
+// afkortnings-bug en tredje gang.
+constexpr size_t MB_PROV_MSG_MAX_LEN = 2048;
 
 // Tilstanden CLI-kommandoerne bygger op, indtil "connect" eller
 // "factory-reset confirm" udløser en handling i src/provisioning.cpp
@@ -62,6 +64,18 @@ struct mb_provisioning_state_t {
   // bruger skal kunne config'es i CLI'en") — sat via "rest auth
   // token|basic|both", default BOTH (mb_provisioning_state_init()).
   mb_rest_auth_mode_t rest_auth_mode;
+
+  // v0.20.0 (Jan: "har vi kommando til at enable/disable eterhnet samt ip
+  // config, modes m.m.") — valgfri W5500-Ethernet enable/disable +
+  // static-IP-config, sat via "eth enable/disable/mode/ip/mask/gw". KUN
+  // seriel CLI (bekræftet) — intet REST-endpoint, samme filosofi som resten
+  // af netværksprovisionering (§3.4). Træder i kraft ved næste "reboot",
+  // ikke live — se src/eth_driver.cpp. `eth_static_ip=false` betyder DHCP.
+  bool eth_enabled;
+  bool eth_static_ip;
+  char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_gw[MB_PROV_IPV4_MAX_LEN + 1];
 };
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state);

@@ -154,6 +154,12 @@ void print_ethernet_status() {
     Serial.print("eth.ip: ");
     Serial.println(eth_driver_ip_string());
   }
+  // v0.20.0 (Jan: "og MAC skal så ved en show status i cli") — vises
+  // UAFHÆNGIGT af forbindelsesstatus (den NVS-persisterede MAC findes og er
+  // relevant selv med intet modul tilsluttet/Ethernet slået fra).
+  uint8_t mac[6];
+  eth_driver_get_mac(mac);
+  Serial.printf("eth.mac: %02X:%02X:%02X:%02X:%02X:%02X\r\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
 
 void print_board_mode() {

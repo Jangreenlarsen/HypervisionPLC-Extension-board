@@ -12,14 +12,13 @@
 // testet på rigtig hardware, behold tallet og marker feltet
 // "reserveret, ubrugt" i stedet for at sænke det.
 //
-// Schema 3 (denne version): tilføjede persisteret pr.-kanal-config
-// (§4.2's `PUT /api/channels/{n}/config` — baudrate/mode/parity/stop-bits/
-// timeout/inter-frame-delay/enabled), som REST-laget nu kan læse/skrive i
-// stedet for de tidligere hardkodede værdier i `modbus_channel.cpp`.
-// `mb_board_config_v2_t`/`v1_t` nedenfor er FROSSNE kopier af ældre
+// Schema 4 (denne version): tilføjede persisteret Ethernet-config
+// (`eth enable`/`disable`/`mode dhcp|static`/`ip`/`mask`/`gw`, v0.20.0) —
+// se `eth_enabled`/`eth_static_ip`/`eth_ip`/`eth_mask`/`eth_gw` nedenfor.
+// `mb_board_config_v3_t`/`v2_t`/`v1_t` nedenfor er FROSSNE kopier af ældre
 // schema-layouts, udelukkende til migration af allerede-gemte blobs — ÆNDR
 // DEM ALDRIG, de skal blive ved med at matche hvad der faktisk blev udgivet.
-constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 3;
+constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 4;
 
 // §4.2: RS485/RS232-modevalg pr. kanal (§2.2.1) — styrer både
 // MODE_SEL-GPIO'en og om kanal-tasken toggler DE/RE (kun RS485).
@@ -118,7 +117,41 @@ struct mb_board_config_v2_t {
 // migration, se mb_config_load_from_blob().
 uint16_t mb_config_calc_checksum_v2(const mb_board_config_v2_t *config);
 
-// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 3. Rent
+// FROSSEN — schema 3's nøjagtige layout (identisk med `mb_board_config_t`
+// FØR schema 4 tilføjede Ethernet-felterne), kun til migration af
+// allerede-gemte v3-blobs. Ret ALDRIG denne struct.
+#pragma pack(push, 1)
+struct mb_board_config_v3_t {
+  uint16_t schema_version;
+  bool provisioned;
+  char wifi_ssid[MB_PROV_SSID_MAX_LEN + 1];
+  bool wifi_has_ssid;
+  char wifi_password[MB_PROV_PASSWORD_MAX_LEN + 1];
+  bool wifi_has_password;
+  bool wifi_open_network;
+  bool wifi_static_ip;
+  char wifi_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  char plc_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  bool has_plc_ip;
+  char mgmt_token[MB_MGMT_TOKEN_LEN + 1];
+  bool has_mgmt_token;
+  char rest_user[MB_PROV_REST_USER_MAX_LEN + 1];
+  bool has_rest_user;
+  char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
+  bool has_rest_pass;
+  mb_rest_auth_mode_t rest_auth_mode;
+  mb_channel_config_t channel[MB_CHANNEL_COUNT];
+  uint16_t checksum;
+};
+#pragma pack(pop)
+
+// CRC16 over v3-structen — bruges KUN til at verificere en v3-blob under
+// migration, se mb_config_load_from_blob().
+uint16_t mb_config_calc_checksum_v3(const mb_board_config_v3_t *config);
+
+// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 4. Rent
 // data — ingen hardware-afhængighed, se board_config.cpp for hvorfor det kan
 // native-testes. `schema_version` er bevidst FØRSTE felt (kan altid læses
 // uanset hvordan resten af structen ændrer sig i en senere schema-version),
@@ -163,6 +196,33 @@ struct mb_board_config_t {
   // REST-API'et), index 1 = kanal B (n=2) — se MB_CHANNEL_COUNT.
   mb_channel_config_t channel[MB_CHANNEL_COUNT];
 
+  // Schema 4 (nye felter, v0.20.0): valgfri W5500-Ethernet enable/disable +
+  // static-IP-config, sat via seriel CLI ("eth enable/disable/mode/ip/mask/
+  // gw", §3.4.1) — KUN CLI, bevidst intet REST-endpoint (Jan, bekræftet:
+  // en installations-/fremstillingstidsbeslutning, ikke noget PLC'en skal
+  // fjernstyre). `eth_static_ip=false` betyder DHCP. Ændringer træder først
+  // i kraft ved næste `reboot` — `eth_driver_begin()` (src/eth_driver.cpp)
+  // kaldes kun én gang, ved boot; ingen forsøg på at live-reinitialisere
+  // den SPI-baserede esp_eth-driver under kørsel.
+  bool eth_enabled;
+  bool eth_static_ip;
+  char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_gw[MB_PROV_IPV4_MAX_LEN + 1];
+
+  // Schema 4 (nyt felt, samme v0.20.0-udgivelse som eth_enabled ovenfor):
+  // tilfældig, persisteret MAC-adresse til W5500'en (Jan: "vi skal også have
+  // en random MAC adr brændt ind i NVS ved start"). Genereres ÉN gang (§3.5-
+  // mønsteret — samme hardware-RNG-tilgang som mgmt_token, src/config.cpp),
+  // uafhængigt af ESP32'ens egen eFuse-udledte ESP_MAC_ETH — det giver
+  // MAC'en mulighed for at overleve en fysisk WROOM-modul-udskiftning ved
+  // reparation (en eFuse-baseret MAC ville ellers ændre sig sammen med selve
+  // chippen, hvilket kan bryde en DHCP-reservation/allowlist keyed på den
+  // gamle MAC). `has_eth_mac=false` betyder "ikke genereret endnu" — sat af
+  // `config_ensure_eth_mac()` (src/config.cpp) ved boot, FØR eth_driver_begin().
+  uint8_t eth_mac[6];
+  bool has_eth_mac;
+
   uint16_t checksum;
 };
 #pragma pack(pop)
@@ -196,6 +256,16 @@ size_t mb_config_save_to_blob(mb_board_config_t *config, uint8_t *out_blob, size
 // testbar uden en rigtig RNG.
 bool mb_config_token_from_random_bytes(const uint8_t *random_bytes, size_t random_len, char *out_token,
                                         size_t out_capacity);
+
+// Formaterer 6 rå tilfældige bytes til en gyldig, lokalt-administreret
+// unicast-MAC (IEEE 802-konvention): bit 0 af FØRSTE byte ryddes (unicast,
+// ikke multicast — et krav for at hosten overhovedet kan bruge adressen
+// normalt), bit 1 sættes (lokalt administreret — signalerer eksplicit at
+// dette IKKE er en ægte vendor-tildelt OUI-adresse, undgår enhver
+// (om end statistisk usandsynlig) kollision med en rigtig fabrikat-MAC).
+// `out_mac` skal have plads til 6 bytes. Returnerer false hvis
+// `random_len < 6` eller en pointer er nullptr.
+bool mb_config_mac_from_random_bytes(const uint8_t *random_bytes, size_t random_len, uint8_t *out_mac);
 
 // Overfører WiFi/PLC-IP/REST-felter fra en afsluttet mb_provisioning_state_t
 // (§3.4.1) ind i `config` — kaldes når "connect" lykkes, ELLER når en

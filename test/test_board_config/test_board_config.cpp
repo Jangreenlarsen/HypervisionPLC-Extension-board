@@ -237,6 +237,62 @@ void test_load_migrates_v2_blob_without_data_loss(void) {
   TEST_ASSERT_EQUAL_UINT32(9600, migrated.channel[1].baudrate);
 }
 
+void test_load_migrates_v3_blob_without_data_loss(void) {
+  // v0.20.0: schema 4 tilfoejede Ethernet enable/disable + static-IP-config
+  // - et board der naaede at opgradere til schema 3 (v0.10.0, kanal-config)
+  // foer dette maa ikke tabe sin eksisterende config under migrationen.
+  mb_board_config_v3_t v3{};
+  v3.schema_version = 3;
+  v3.provisioned = true;
+  strncpy(v3.wifi_ssid, "V3Network", sizeof(v3.wifi_ssid) - 1);
+  v3.wifi_has_ssid = true;
+  strncpy(v3.plc_ip, "10.1.1.153", sizeof(v3.plc_ip) - 1);
+  v3.has_plc_ip = true;
+  strncpy(v3.mgmt_token, "f4353305b96b5f1e61e5e70b49b18e1c", sizeof(v3.mgmt_token) - 1);
+  v3.has_mgmt_token = true;
+  v3.rest_auth_mode = MB_REST_AUTH_MODE_BASIC_ONLY;
+  v3.channel[0].enabled = true;
+  v3.channel[0].baudrate = 19200;
+  v3.channel[1].enabled = false;
+  v3.channel[1].baudrate = 9600;
+  v3.checksum = mb_config_calc_checksum_v3(&v3);
+
+  mb_board_config_t migrated;
+  mb_config_load_from_blob(reinterpret_cast<const uint8_t *>(&v3), sizeof(v3), &migrated);
+
+  TEST_ASSERT_EQUAL_MESSAGE(MB_CONFIG_SCHEMA_VERSION, migrated.schema_version,
+                             "migreret config skal have den AKTUELLE schema-version, ikke 3");
+  TEST_ASSERT_TRUE(migrated.provisioned);
+  TEST_ASSERT_EQUAL_STRING("V3Network", migrated.wifi_ssid);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.153", migrated.plc_ip);
+  TEST_ASSERT_EQUAL_STRING("f4353305b96b5f1e61e5e70b49b18e1c", migrated.mgmt_token);
+  TEST_ASSERT_EQUAL_MESSAGE(MB_REST_AUTH_MODE_BASIC_ONLY, migrated.rest_auth_mode,
+                             "eksisterende v3-felt maa ikke tabes/overskrives under migration");
+  TEST_ASSERT_EQUAL_UINT32(19200, migrated.channel[0].baudrate);
+  TEST_ASSERT_FALSE_MESSAGE(migrated.channel[1].enabled,
+                             "eksisterende schema-3 kanal-config maa ikke tabes under migration");
+  TEST_ASSERT_TRUE_MESSAGE(migrated.eth_enabled,
+                            "nyt schema-4-felt skal faa default 'true' (matcher hidtidig ubetinget adfaerd)");
+  TEST_ASSERT_FALSE_MESSAGE(migrated.eth_static_ip, "nyt schema-4-felt skal faa default 'dhcp'");
+}
+
+void test_load_rejects_corrupt_v3_blob(void) {
+  mb_board_config_v3_t v3{};
+  v3.schema_version = 3;
+  v3.provisioned = true;
+  strncpy(v3.wifi_ssid, "V3Network", sizeof(v3.wifi_ssid) - 1);
+  v3.checksum = mb_config_calc_checksum_v3(&v3);
+
+  uint8_t blob[sizeof(v3)];
+  memcpy(blob, &v3, sizeof(blob));
+  blob[10] ^= 0xFF;
+
+  mb_board_config_t loaded;
+  mb_config_load_from_blob(blob, sizeof(blob), &loaded);
+  TEST_ASSERT_FALSE_MESSAGE(loaded.provisioned, "korrupt v3-blob blev fejlagtigt migreret");
+  TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
+}
+
 void test_load_rejects_corrupt_v2_blob(void) {
   mb_board_config_v2_t v2{};
   v2.schema_version = 2;
@@ -310,6 +366,33 @@ void test_token_from_random_bytes_rejects_undersized_output(void) {
 }
 
 // ---------------------------------------------------------------------------
+// MAC-generering (v0.20.0)
+// ---------------------------------------------------------------------------
+
+void test_mac_from_random_bytes_sets_unicast_and_locally_administered_bits(void) {
+  // 0x01 haver multicast-bit sat, 0x00 (2. bit) har lokalt-administreret-bit
+  // ryddet - begge skal fikses af mb_config_mac_from_random_bytes(), uanset
+  // hvad de "tilfaeldige" input-bytes tilfaeldigvis indeholder.
+  const uint8_t random_bytes[6] = {0x01, 0xAD, 0xBE, 0xEF, 0x12, 0x34};
+  uint8_t mac[6];
+  TEST_ASSERT_TRUE(mb_config_mac_from_random_bytes(random_bytes, sizeof(random_bytes), mac));
+  TEST_ASSERT_EQUAL_HEX8(0x02, mac[0]);  // (0x01 & 0xFE) | 0x02 = 0x00 | 0x02 = 0x02
+  TEST_ASSERT_EQUAL_HEX8(0xAD, mac[1]);
+  TEST_ASSERT_EQUAL_HEX8(0xBE, mac[2]);
+  TEST_ASSERT_EQUAL_HEX8(0xEF, mac[3]);
+  TEST_ASSERT_EQUAL_HEX8(0x12, mac[4]);
+  TEST_ASSERT_EQUAL_HEX8(0x34, mac[5]);
+  TEST_ASSERT_EQUAL_MESSAGE(0, mac[0] & 0x01, "unicast-bit (LSB) skal vaere 0");
+  TEST_ASSERT_EQUAL_MESSAGE(0x02, mac[0] & 0x02, "lokalt-administreret-bit skal vaere 1");
+}
+
+void test_mac_from_random_bytes_rejects_undersized_input(void) {
+  const uint8_t random_bytes[5] = {1, 2, 3, 4, 5};  // kun 5 - kraever 6
+  uint8_t mac[6];
+  TEST_ASSERT_FALSE(mb_config_mac_from_random_bytes(random_bytes, sizeof(random_bytes), mac));
+}
+
+// ---------------------------------------------------------------------------
 // Overførsel fra mb_provisioning_state_t
 // ---------------------------------------------------------------------------
 
@@ -322,6 +405,11 @@ void test_apply_provisioning_state_transfers_fields(void) {
   state.has_plc_ip = true;
   strncpy(state.rest_user, "admin", sizeof(state.rest_user) - 1);
   state.has_rest_user = true;
+  state.eth_enabled = false;
+  state.eth_static_ip = true;
+  strncpy(state.eth_ip, "10.0.0.50", sizeof(state.eth_ip) - 1);
+  strncpy(state.eth_mask, "255.255.255.0", sizeof(state.eth_mask) - 1);
+  strncpy(state.eth_gw, "10.0.0.1", sizeof(state.eth_gw) - 1);
 
   mb_board_config_t config;
   mb_config_set_defaults(&config);
@@ -333,6 +421,33 @@ void test_apply_provisioning_state_transfers_fields(void) {
   TEST_ASSERT_TRUE(config.has_plc_ip);
   TEST_ASSERT_EQUAL_STRING("admin", config.rest_user);
   TEST_ASSERT_TRUE(config.has_rest_user);
+  TEST_ASSERT_FALSE(config.eth_enabled);
+  TEST_ASSERT_TRUE(config.eth_static_ip);
+  TEST_ASSERT_EQUAL_STRING("10.0.0.50", config.eth_ip);
+  TEST_ASSERT_EQUAL_STRING("255.255.255.0", config.eth_mask);
+  TEST_ASSERT_EQUAL_STRING("10.0.0.1", config.eth_gw);
+}
+
+void test_to_provisioning_state_roundtrips_eth_fields(void) {
+  // Den omvendte overfoersel (bruges ved boot til at genopbygge state fra
+  // persisteret config, §3.4.1) - v0.20.0's eth-felter skal med, ellers ville
+  // en genstart stille "glemme" en gemt "eth disable"/static-IP-config.
+  mb_board_config_t config;
+  mb_config_set_defaults(&config);
+  config.eth_enabled = false;
+  config.eth_static_ip = true;
+  strncpy(config.eth_ip, "192.168.5.9", sizeof(config.eth_ip) - 1);
+  strncpy(config.eth_mask, "255.255.0.0", sizeof(config.eth_mask) - 1);
+  strncpy(config.eth_gw, "192.168.5.1", sizeof(config.eth_gw) - 1);
+
+  mb_provisioning_state_t state;
+  mb_config_to_provisioning_state(&config, &state);
+
+  TEST_ASSERT_FALSE(state.eth_enabled);
+  TEST_ASSERT_TRUE(state.eth_static_ip);
+  TEST_ASSERT_EQUAL_STRING("192.168.5.9", state.eth_ip);
+  TEST_ASSERT_EQUAL_STRING("255.255.0.0", state.eth_mask);
+  TEST_ASSERT_EQUAL_STRING("192.168.5.1", state.eth_gw);
 }
 
 void test_apply_provisioning_state_never_touches_mgmt_token(void) {
@@ -372,13 +487,18 @@ int main(int argc, char **argv) {
   RUN_TEST(test_load_rejects_corrupt_v1_blob);
   RUN_TEST(test_load_migrates_v2_blob_without_data_loss);
   RUN_TEST(test_load_rejects_corrupt_v2_blob);
+  RUN_TEST(test_load_migrates_v3_blob_without_data_loss);
+  RUN_TEST(test_load_rejects_corrupt_v3_blob);
   RUN_TEST(test_load_rejects_future_schema_version);
 
   RUN_TEST(test_token_from_random_bytes);
   RUN_TEST(test_token_from_random_bytes_rejects_undersized_output);
+  RUN_TEST(test_mac_from_random_bytes_sets_unicast_and_locally_administered_bits);
+  RUN_TEST(test_mac_from_random_bytes_rejects_undersized_input);
 
   RUN_TEST(test_apply_provisioning_state_transfers_fields);
   RUN_TEST(test_apply_provisioning_state_never_touches_mgmt_token);
+  RUN_TEST(test_to_provisioning_state_roundtrips_eth_fields);
 
   return UNITY_END();
 }
