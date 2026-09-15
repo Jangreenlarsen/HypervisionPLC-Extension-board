@@ -36,6 +36,13 @@ constexpr size_t MB_PROV_HOSTNAME_MAX_LEN = 32;
 // afkortnings-bug en tredje gang.
 constexpr size_t MB_PROV_MSG_MAX_LEN = 2048;
 
+// v0.25.0 (Jan: "lave en debug som outputer til console alt hvad der forgå
+// på kanal A og B") — hvilke(n) kanal(er) en "debug modbus ..."-kommando
+// gælder. Jans egen syntaks: "debug modbus a|b|all level 1-8".
+enum class mb_debug_target_t : uint8_t { kA, kB, kAll };
+
+constexpr uint8_t MB_PROV_DEBUG_LEVEL_MAX = 8;
+
 // Tilstanden CLI-kommandoerne bygger op, indtil "connect" eller
 // "factory-reset confirm" udløser en handling i src/provisioning.cpp
 // (EXPANSION_BOARD_DESIGN.md §3.4.1). Rent data — ingen hardware-afhængighed.
@@ -112,6 +119,17 @@ struct mb_provisioning_state_t {
   // konvention som REST-API'ets `PUT/GET /api/channels/{n}`.
   uint8_t test_channel_number;
   mb_diag_read_request_t test_read;
+
+  // v0.25.0 (Jan: "lave en debug som outputer til console alt hvad der
+  // forgå på kanal A og B") — SCRATCH-felter (samme filosofi som
+  // test_channel_number/test_read ovenfor), IKKE en del af den persisterede
+  // config — nulstilles altid til FRA ved reboot (Jan bekræftet: bevidst
+  // ikke persisteret, så det aldrig utilsigtet efterlades kørende).
+  // `debug_level == 0` betyder FRA. Sat via "debug modbus <a|b|all> level
+  // <1-8>", ryddet via "no debug modbus"/"no debug all" (begge synonymer,
+  // Jan: "man skal kunne disable debug fra cli også").
+  mb_debug_target_t debug_target;
+  uint8_t debug_level;
 };
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state);
@@ -147,6 +165,13 @@ enum mb_provisioning_result_t {
   // RIGTIG Modbus-transaktion (og dermed kanalens aktivitets-LED, v0.23.1)
   // — kaldstedet skal bruge `state->test_channel_number`/`state->test_read`.
   PROV_ACTION_TEST_READ,
+  // v0.25.0 (Jan: "lave en debug som outputer til console alt hvad der
+  // forgå på kanal A og B") — "debug modbus <a|b|all> level <1-8>" ELLER
+  // "no debug modbus"/"no debug all" (sidstnævnte to sætter blot
+  // `state->debug_level = 0`, samme action). Kaldstedet skal kalde
+  // modbus_channel_set_debug_level() for den/de valgte kanal(er)
+  // (`state->debug_target`) — ren runtime-tilstand, ikke persisteret.
+  PROV_ACTION_DEBUG_SET,
   PROV_EMPTY_LINE,             // tomt/whitespace-only input — kaldstedet kan ignorere stille
   PROV_UNKNOWN_COMMAND,
   PROV_MISSING_ARGUMENT,       // out_message forklarer hvilket felt der mangler

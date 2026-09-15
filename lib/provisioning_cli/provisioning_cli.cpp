@@ -312,6 +312,8 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "reboot", "blødt genstart - rydder INTET (modsat factory-reset)");
     append_line(out_message, out_message_capacity, &pos, "token regenerate", "nyt management-API-token - roerer INTET andet (husk at opdatere PLC'en)");
     append_line(out_message, out_message_capacity, &pos, "test <kanal> <slave_id> <fc> <adresse> <antal>", "diagnostisk Modbus-laesning (kanal 1|2, fc 1-4)");
+    append_line(out_message, out_message_capacity, &pos, "debug modbus <a|b|all> level <1-8>", "leveled debug-output til konsollen, level 8 = raa hex-dump - IKKE persisteret");
+    append_line(out_message, out_message_capacity, &pos, "no debug modbus", "slaa modbus-debug fra (begge kanaler) - synonymt med 'no debug all'");
     append_line(out_message, out_message_capacity, &pos, "factory-reset confirm", "ryd WiFi/token/firewall og genstart");
     append_line(out_message, out_message_capacity, &pos, "version", "vis firmware-version+build");
     append_line(out_message, out_message_capacity, &pos, "help", "denne kommandoliste");
@@ -724,6 +726,56 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     snprintf(out_message, out_message_capacity, "ok - udfoerer diagnostisk laesning paa kanal %u...",
              static_cast<unsigned>(n));
     return PROV_ACTION_TEST_READ;
+  }
+
+  // v0.25.0 (Jan: "lave en debug som outputer til console alt hvad der
+  // forgå på kanal A og B") — "debug modbus <a|b|all> level <1-8>". Jans
+  // egen Cisco-inspirerede syntaks. IKKE persisteret (kaldstedet saetter
+  // den kun live via modbus_channel_set_debug_level(), rører aldrig NVS).
+  if (ieq(tokens[0], "debug")) {
+    if (token_count < 4 || !ieq(tokens[1], "modbus") || !ieq(tokens[3], "level") || token_count < 5) {
+      snprintf(out_message, out_message_capacity, "brug 'debug modbus <a|b|all> level <1-8>'");
+      return PROV_MISSING_ARGUMENT;
+    }
+
+    mb_debug_target_t target;
+    if (ieq(tokens[2], "a")) {
+      target = mb_debug_target_t::kA;
+    } else if (ieq(tokens[2], "b")) {
+      target = mb_debug_target_t::kB;
+    } else if (ieq(tokens[2], "all")) {
+      target = mb_debug_target_t::kAll;
+    } else {
+      snprintf(out_message, out_message_capacity, "ugyldig kanal '%s' - brug 'a', 'b' eller 'all'", tokens[2]);
+      return PROV_INVALID_VALUE;
+    }
+
+    uint32_t level = 0;
+    if (!parse_uint_token(tokens[4], &level) || level == 0 || level > MB_PROV_DEBUG_LEVEL_MAX) {
+      snprintf(out_message, out_message_capacity, "ugyldigt level '%s' - skal vaere 1-%u", tokens[4],
+               static_cast<unsigned>(MB_PROV_DEBUG_LEVEL_MAX));
+      return PROV_INVALID_VALUE;
+    }
+
+    state->debug_target = target;
+    state->debug_level = static_cast<uint8_t>(level);
+    snprintf(out_message, out_message_capacity, "ok - modbus-debug level %u for kanal %s",
+             static_cast<unsigned>(level), ieq(tokens[2], "all") ? "A+B" : tokens[2]);
+    return PROV_ACTION_DEBUG_SET;
+  }
+
+  // "no debug modbus" / "no debug all" — begge er synonymer for FULD
+  // deaktivering, paa BEGGE kanaler (Jan: "man skal kunne disable debug fra
+  // cli også").
+  if (ieq(tokens[0], "no")) {
+    if (token_count < 3 || !ieq(tokens[1], "debug") || (!ieq(tokens[2], "modbus") && !ieq(tokens[2], "all"))) {
+      snprintf(out_message, out_message_capacity, "brug 'no debug modbus' eller 'no debug all'");
+      return PROV_MISSING_ARGUMENT;
+    }
+    state->debug_target = mb_debug_target_t::kAll;
+    state->debug_level = 0;
+    snprintf(out_message, out_message_capacity, "ok - modbus-debug slaaet fra (begge kanaler)");
+    return PROV_ACTION_DEBUG_SET;
   }
 
   snprintf(out_message, out_message_capacity, "ukendt kommando: %s (proev 'help')", tokens[0]);
