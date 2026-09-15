@@ -88,21 +88,37 @@
 ├── extract_version.py              # PlatformIO pre-build-script — injicerer version.json som FW_VERSION/FW_BUILD-defines (kun esp32dev)
 ├── src/                             # Lag 1-3 + cross-cutting orchestration (ESP32/Arduino-specifik, IKKE native-testbar)
 │   ├── main.cpp
-│   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect (§3.4/§3.4.1) — v0.6.0, firewall-seed mangler stadig (hører til Fase 5)
-│   ├── config.cpp/.h               # NVS (ESP32 Preferences) omkring lib/board_config/ — v0.6.0, færdig
-│   └── http_server.cpp/.h          # REST management-API, port 8080 (§4.2), ESP-IDF esp_http_server — v0.7.0, kun GET /api/status indtil videre
+│   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect (§3.4/§3.4.1)
+│   ├── config.cpp/.h               # NVS (ESP32 Preferences) omkring lib/board_config/
+│   ├── modbus_channel.cpp/.h       # Lag 2 — kanal-eksekvering, én FreeRTOS-task pr. kanal
+│   ├── modbus_tcp_server.cpp/.h    # Lag 1 — data-plan, port 502-503, plc_ip-permit (§4.3)
+│   ├── http_server.cpp/.h          # Lag 1 — REST management-API, port 8080 (§4.2)
+│   ├── http_helpers.h/.cpp         # require_auth()/send_json_error() — delt af http_server.cpp/ota_handler.cpp
+│   ├── ota_handler.cpp/.h          # POST /api/ota, GET /api/ota/status, POST /api/reboot
+│   ├── eth_driver.cpp/.h           # valgfri W5500-Ethernet (SPI), dual-stack med WiFi
+│   └── syslog_sender.h/.cpp        # ESP32 UDP-afsendelse for lib/syslog_client/'s pakker
 ├── lib/                             # Hardware-uafhængig, native-testbar logik — se note nedenfor
-│   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (Lag 2's protokol-kerne, delt med Lag 1)
+│   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (Lag 2's protokol-kerne, delt med Lag 1) — FC01-06/15/16
+│   ├── modbus_tcp/                 # MBAP-header parsing/bygning (§4.1)
 │   ├── provisioning_cli/           # Seriel CLI-kommando-parsing/validering (§3.4.1) — bruges af provisioning.cpp
 │   ├── board_config/               # Persisteret config-schema + serialisering (§3.5) — bruges af config.cpp
+│   ├── channel_config/             # JSON build/parse for §4.2's kanal-config
+│   ├── diagnostic_modbus/          # JSON<->PDU for §4.2's diagnostiske read/write (FC01-06/15/16)
+│   ├── ota_validation/             # ESP32-firmware-magic-byte-tjek
 │   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — bruges af http_server.cpp
-│   └── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — bruges af http_server.cpp
+│   ├── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — bruges af http_server.cpp
+│   └── syslog_client/              # RFC 3164-pakkeformatering (facility/severity), hardware-uafhængig
 └── test/                            # PlatformIO native unit-tests (`pio test -e native`, ingen hardware nødvendig)
     ├── test_modbus_pdu/
+    ├── test_modbus_tcp/
     ├── test_provisioning_cli/
     ├── test_board_config/
+    ├── test_channel_config/
+    ├── test_diagnostic_modbus/
+    ├── test_ota_validation/
     ├── test_rest_auth/
-    └── test_rest_status/
+    ├── test_rest_status/
+    └── test_syslog_client/
 ```
 
 **Hvorfor `lib/` og ikke `src/include/` for hardware-uafhængig logik:** PlatformIOs Library Dependency Finder linker kun et `lib/<modul>` ind der hvor det faktisk `#include`s (af enten `src/` eller `test/`) — modsat `src/`, som for `native`-miljøet ellers skal ekskluderes fil for fil for at undgå at trække Arduino/FreeRTOS/SPI-afhængige filer ind i en testbuild der ikke har den slags hardware til rådighed. Enhver fremtidig logik der skal kunne køre i `pio test -e native` (config-parsing, cache/dedup, schema-migration, §3.5) hører derfor til i `lib/`, ikke i `src/`.

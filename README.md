@@ -2,7 +2,7 @@
 
 Firmware til en selvstændig Modbus RTU-gateway ("expansion board") på ESP32: tilføjer RS485/RS232-feltbus-kanaler til en Hypervision PLC via netværk — Modbus TCP (data) + REST/JSON (management) — uden at røre PLC'ens egen chip.
 
-**Status (v0.14.0):** Variant A (2 kanaler via ESP32's egne UART1/UART2) er implementeret og live-verificeret på fysisk hardware — begge kanaler har hver især talt Modbus RTU korrekt med en rigtig slave. Fase 1-5 af den oprindelige plan er færdige: hardware-bring-up, provisionering, Modbus TCP-data-plan, og hele management-API'et (status, kanal-config, diagnostisk read/write, OTA). Valgfri W5500-Ethernet er implementeret (dual-stack med WiFi), men endnu ikke hardware-verificeret. Se [FEATURES.md](FEATURES.md) for den løbende, detaljerede status.
+**Status (v0.27.0):** Variant A (2 kanaler via ESP32's egne UART1/UART2) er implementeret og live-verificeret på fysisk hardware — begge kanaler har hver især talt Modbus RTU korrekt med en rigtig slave (FC01-06/15/16). Fase 1-5 af den oprindelige plan er færdige: hardware-bring-up, provisionering, Modbus TCP-data-plan, og hele management-API'et (status, kanal-config, diagnostisk read/write, OTA). Valgfri W5500-Ethernet er implementeret OG live-verificeret (dual-stack med WiFi). Siden er der tilføjet driftsfunktioner ud over den oprindelige plan: konfigurerbart hostname, aktivitets-LED'er, diagnostisk `test`-kommando i den serielle CLI, leveled Modbus-debug-output (`debug modbus ...`), og en syslog-klient (RFC 3164/UDP, op til 4 modtagere). Se [FEATURES.md](FEATURES.md) for den løbende, detaljerede status.
 
 ## Hvad er dette?
 
