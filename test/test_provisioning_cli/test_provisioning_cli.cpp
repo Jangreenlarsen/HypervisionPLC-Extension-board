@@ -543,6 +543,111 @@ void test_no_missing_args(void) {
   TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
 }
 
+void test_syslog_add_sets_target(void) {
+  const mb_provisioning_result_t r =
+      mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 514 board1 5", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_TRUE(state.syslog_targets[0].in_use);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.50", state.syslog_targets[0].ip);
+  TEST_ASSERT_EQUAL_UINT16(514, state.syslog_targets[0].port);
+  TEST_ASSERT_EQUAL_STRING("board1", state.syslog_targets[0].tag);
+  TEST_ASSERT_EQUAL_UINT8(5, state.syslog_targets[0].max_level);
+}
+
+void test_syslog_add_rejects_invalid_ip(void) {
+  const mb_provisioning_result_t r =
+      mb_provisioning_apply_line(&state, "syslog add not.an.ip 514 board1 5", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_syslog_add_rejects_invalid_port(void) {
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE,
+                     mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 0 board1 5", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE,
+                     mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 70000 board1 5", msg, sizeof(msg)));
+}
+
+void test_syslog_add_rejects_invalid_tag(void) {
+  const mb_provisioning_result_t r =
+      mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 514 bad.tag! 5", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_syslog_add_rejects_invalid_level(void) {
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE,
+                     mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 514 board1 0", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE,
+                     mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 514 board1 9", msg, sizeof(msg)));
+}
+
+void test_syslog_add_missing_args(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 514 board1", msg,
+                                                                  sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_syslog_add_updates_existing_tag_in_place(void) {
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 514 board1 5", msg, sizeof(msg));
+  const mb_provisioning_result_t r =
+      mb_provisioning_apply_line(&state, "syslog add 10.1.1.99 601 board1 2", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_TRUE(state.syslog_targets[0].in_use);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.99", state.syslog_targets[0].ip);
+  TEST_ASSERT_EQUAL_UINT16(601, state.syslog_targets[0].port);
+  TEST_ASSERT_EQUAL_UINT8(2, state.syslog_targets[0].max_level);
+  TEST_ASSERT_FALSE_MESSAGE(state.syslog_targets[1].in_use, "opdatering af eksisterende tag maa ikke bruge en ny slot");
+}
+
+void test_syslog_add_fills_multiple_slots(void) {
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.1 514 t1 1", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.2 514 t2 1", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.3 514 t3 1", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "syslog add 10.1.1.4 514 t4 1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_TRUE(state.syslog_targets[3].in_use);
+
+  const mb_provisioning_result_t full =
+      mb_provisioning_apply_line(&state, "syslog add 10.1.1.5 514 t5 1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, full);
+}
+
+void test_syslog_remove_clears_target(void) {
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 514 board1 5", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "syslog remove board1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_FALSE(state.syslog_targets[0].in_use);
+}
+
+void test_syslog_remove_rejects_unknown_tag(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "syslog remove nosuchtag", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_syslog_missing_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "syslog", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_syslog_unknown_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "syslog foo", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_UNKNOWN_COMMAND, r);
+}
+
+void test_show_includes_syslog_targets(void) {
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.50 514 board1 5", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "syslog.target1"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "10.1.1.50"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "board1"));
+}
+
+void test_show_indicates_no_syslog_targets(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "show", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_SHOW, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "syslog.targets"));
+}
+
 void test_status_action(void) {
   // "status" delegerer selve indholdet til kaldstedet (uptime/heap/WiFi er
   // runtime-data) — her verificeres kun at kommandoen genkendes korrekt.
@@ -907,6 +1012,20 @@ int main(int argc, char **argv) {
   RUN_TEST(test_no_debug_all_disables);
   RUN_TEST(test_no_debug_rejects_unknown_subcommand);
   RUN_TEST(test_no_missing_args);
+  RUN_TEST(test_syslog_add_sets_target);
+  RUN_TEST(test_syslog_add_rejects_invalid_ip);
+  RUN_TEST(test_syslog_add_rejects_invalid_port);
+  RUN_TEST(test_syslog_add_rejects_invalid_tag);
+  RUN_TEST(test_syslog_add_rejects_invalid_level);
+  RUN_TEST(test_syslog_add_missing_args);
+  RUN_TEST(test_syslog_add_updates_existing_tag_in_place);
+  RUN_TEST(test_syslog_add_fills_multiple_slots);
+  RUN_TEST(test_syslog_remove_clears_target);
+  RUN_TEST(test_syslog_remove_rejects_unknown_tag);
+  RUN_TEST(test_syslog_missing_subcommand);
+  RUN_TEST(test_syslog_unknown_subcommand);
+  RUN_TEST(test_show_includes_syslog_targets);
+  RUN_TEST(test_show_indicates_no_syslog_targets);
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);

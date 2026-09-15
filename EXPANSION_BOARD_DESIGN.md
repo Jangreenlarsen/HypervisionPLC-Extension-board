@@ -390,6 +390,8 @@ Dette er den ENESTE brugerflade boardet nogensinde selv viser (§0) — over USB
 | `test <kanal 1\|2> <slave_id> <fc 1-4> <adresse> <antal>` (v0.24.0) | Diagnostisk Modbus-læsning, CLI-udgave af §4.2's `POST /api/channels/{n}/read` — samme grænser, KUN læsning (fc 1-4). Udløser en rigtig transaktion (og dermed kanalens aktivitets-LED) |
 | `debug modbus <a\|b\|all> level <1-8>` (v0.25.0) | Leveled debug-output til konsollen pr. kanal — level 1 = kort start/slut-resumé pr. transaktion, stigende detaljegrad (støj-dræning, DE/RE-retningsskift, RX-byte-timing, inter-frame-delay, rå parse-resultat), level 7-8 = rå TX/RX hex-dump. Bevidst IKKE persisteret — nulstilles altid til fra ved `reboot`. Vist i `status` (live værdi, ikke `show`) |
 | `no debug modbus` / `no debug all` (v0.25.0) | Slår modbus-debug fra igen på BEGGE kanaler — de to former er synonymer |
+| `syslog add <ip> <port> <tag> <level 1-8>` (v0.26.0) | Tilføjer/opdaterer en UDP-syslog-modtager (op til 4 samtidige, `lib/syslog_client/`) — `level` er en pr.-modtager verbositets-tærskel, genbruger `debug modbus`s 1-8-skala. Facility (`local0`-`local7`) er fast pr. delsystem, ikke konfigurerbar. **Persisteret** (modsat `debug modbus`) — kræver `save`, virker straks uden reboot |
+| `syslog remove <tag>` (v0.26.0) | Fjerner en syslog-modtager |
 | `version` | Firmware-version+build (samme data som `show`/`status`s `firmware`-linje) |
 | `help` | Kommando-oversigt |
 

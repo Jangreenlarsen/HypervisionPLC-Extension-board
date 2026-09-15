@@ -72,6 +72,10 @@ uint16_t mb_config_calc_checksum_v5(const mb_board_config_v5_t *config) {
   return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v5_t, checksum));
 }
 
+uint16_t mb_config_calc_checksum_v6(const mb_board_config_v6_t *config) {
+  return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v6_t, checksum));
+}
+
 // Migrerer en verificeret v1-kandidat til v2-layout. Nye felter får deres
 // default — her `rest_auth_mode = MB_REST_AUTH_MODE_BOTH`, som matcher
 // adfærden FØR denne indstilling fandtes (§3.5: migration tilføjer,
@@ -239,6 +243,45 @@ static void migrate_v5_to_current(const mb_board_config_v5_t &v5, mb_board_confi
   // out_config->hostname/has_hostname beholder de defaults mb_config_set_defaults() satte ovenfor.
 }
 
+// Migrerer en verificeret v6-kandidat til nuværende (v7) layout. Nyt felt:
+// `syslog_targets[]` (v0.26.0) — ingen konfigureret (alle `in_use=false`)
+// matcher hidtidig adfærd (intet syslog-output overhovedet fandtes før).
+static void migrate_v6_to_current(const mb_board_config_v6_t &v6, mb_board_config_t *out_config) {
+  mb_config_set_defaults(out_config);  // saetter ogsaa channel[]-, eth-, wifi_enabled-, hostname- og syslog-defaults
+
+  out_config->provisioned = v6.provisioned;
+  out_config->wifi_enabled = v6.wifi_enabled;
+  memcpy(out_config->wifi_ssid, v6.wifi_ssid, sizeof(out_config->wifi_ssid));
+  out_config->wifi_has_ssid = v6.wifi_has_ssid;
+  memcpy(out_config->wifi_password, v6.wifi_password, sizeof(out_config->wifi_password));
+  out_config->wifi_has_password = v6.wifi_has_password;
+  out_config->wifi_open_network = v6.wifi_open_network;
+  out_config->wifi_static_ip = v6.wifi_static_ip;
+  memcpy(out_config->wifi_ip, v6.wifi_ip, sizeof(out_config->wifi_ip));
+  memcpy(out_config->wifi_mask, v6.wifi_mask, sizeof(out_config->wifi_mask));
+  memcpy(out_config->wifi_gw, v6.wifi_gw, sizeof(out_config->wifi_gw));
+  memcpy(out_config->plc_ip, v6.plc_ip, sizeof(out_config->plc_ip));
+  out_config->has_plc_ip = v6.has_plc_ip;
+  memcpy(out_config->mgmt_token, v6.mgmt_token, sizeof(out_config->mgmt_token));
+  out_config->has_mgmt_token = v6.has_mgmt_token;
+  memcpy(out_config->rest_user, v6.rest_user, sizeof(out_config->rest_user));
+  out_config->has_rest_user = v6.has_rest_user;
+  memcpy(out_config->rest_pass, v6.rest_pass, sizeof(out_config->rest_pass));
+  out_config->has_rest_pass = v6.has_rest_pass;
+  out_config->rest_auth_mode = v6.rest_auth_mode;
+  memcpy(out_config->channel, v6.channel, sizeof(out_config->channel));
+  out_config->eth_enabled = v6.eth_enabled;
+  out_config->eth_static_ip = v6.eth_static_ip;
+  memcpy(out_config->eth_ip, v6.eth_ip, sizeof(out_config->eth_ip));
+  memcpy(out_config->eth_mask, v6.eth_mask, sizeof(out_config->eth_mask));
+  memcpy(out_config->eth_gw, v6.eth_gw, sizeof(out_config->eth_gw));
+  memcpy(out_config->eth_mac, v6.eth_mac, sizeof(out_config->eth_mac));
+  out_config->has_eth_mac = v6.has_eth_mac;
+  out_config->has_hostname = v6.has_hostname;
+  memcpy(out_config->hostname, v6.hostname, sizeof(out_config->hostname));
+  // out_config->syslog_targets beholder de defaults mb_config_set_defaults() satte ovenfor (ingen konfigureret).
+}
+
 void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_board_config_t *out_config) {
   if (stored_blob == nullptr || stored_len == 0) {
     mb_config_set_defaults(out_config);
@@ -261,10 +304,26 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
     return;
   }
 
+  if (stored_len == sizeof(mb_board_config_v6_t)) {
+    mb_board_config_v6_t v6_candidate;
+    memcpy(&v6_candidate, stored_blob, sizeof(v6_candidate));
+    if (v6_candidate.checksum == mb_config_calc_checksum_v6(&v6_candidate) && v6_candidate.schema_version == 6) {
+      migrate_v6_to_current(v6_candidate, out_config);
+      return;
+    }
+    // Størrelsen matcher v6, men checksum eller schema_version gør ikke —
+    // korrupt v6-blob, ikke en gyldig ældre version. Fald til defaults.
+    mb_config_set_defaults(out_config);
+    return;
+  }
+
   if (stored_len == sizeof(mb_board_config_v5_t)) {
     mb_board_config_v5_t v5_candidate;
     memcpy(&v5_candidate, stored_blob, sizeof(v5_candidate));
     if (v5_candidate.checksum == mb_config_calc_checksum_v5(&v5_candidate) && v5_candidate.schema_version == 5) {
+      // migrate_v5_to_current() kalder selv mb_config_set_defaults() først,
+      // som allerede sætter syslog_targets-defaults (og hostname-defaults) —
+      // ingen mellemtrin via v6 nødvendigt her.
       migrate_v5_to_current(v5_candidate, out_config);
       return;
     }
@@ -459,6 +518,8 @@ void mb_config_apply_provisioning_state(mb_board_config_t *config, const mb_prov
   config->has_hostname = state->has_hostname;
   strncpy(config->hostname, state->hostname, sizeof(config->hostname) - 1);
   config->hostname[sizeof(config->hostname) - 1] = '\0';
+
+  memcpy(config->syslog_targets, state->syslog_targets, sizeof(config->syslog_targets));
 }
 
 void mb_config_to_provisioning_state(const mb_board_config_t *config, mb_provisioning_state_t *out_state) {
@@ -503,4 +564,6 @@ void mb_config_to_provisioning_state(const mb_board_config_t *config, mb_provisi
 
   out_state->has_hostname = config->has_hostname;
   strncpy(out_state->hostname, config->hostname, sizeof(out_state->hostname) - 1);
+
+  memcpy(out_state->syslog_targets, config->syslog_targets, sizeof(out_state->syslog_targets));
 }

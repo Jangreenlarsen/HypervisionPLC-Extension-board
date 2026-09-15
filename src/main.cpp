@@ -6,6 +6,7 @@
 #include "modbus_channel.h"
 #include "modbus_tcp_server.h"
 #include "provisioning.h"
+#include "syslog_sender.h"
 
 void setup() {
   Serial.begin(115200);
@@ -15,6 +16,11 @@ void setup() {
   // (baudrate=0!) g_config, som faar HardwareSerial::begin() til at forsoege
   // baud-auto-detektion og haenge.
   config_begin();
+  // v0.26.0 (Jan: "kan vi lave en syslog funktion...") — laeser den
+  // persisterede modtager-liste/hostname. Uafhaengigt af WiFi/Ethernet-
+  // status (samme filosofi som modbus_channel_init_all() nedenfor) -
+  // UDP-afsendelse fejler blot stille indtil et interface reelt har en IP.
+  syslog_sender_begin();
   modbus_channel_init_all();  // uafhaengigt af WiFi-status, se modbus_channel.h
   // valgfri W5500-Ethernet, dual-stack med WiFi - fejler stille uden hardware
   // tilsluttet. enable/disable + static-IP (v0.20.0, "eth ..."-CLI) laeses

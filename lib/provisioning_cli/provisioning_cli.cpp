@@ -67,6 +67,18 @@ bool mb_provisioning_validate_ipv4(const char *ip) {
   return octets == 4;
 }
 
+bool mb_provisioning_validate_syslog_tag(const char *tag) {
+  if (tag == nullptr) return false;
+  const size_t len = strlen(tag);
+  if (len == 0 || len > MB_SYSLOG_TAG_MAX_LEN) return false;
+  for (size_t i = 0; i < len; i++) {
+    const char c = tag[i];
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_';
+    if (!ok) return false;
+  }
+  return true;
+}
+
 bool mb_provisioning_validate_hostname(const char *hostname) {
   if (hostname == nullptr) return false;
   const size_t len = strlen(hostname);
@@ -232,6 +244,25 @@ static void mb_provisioning_format_status(const mb_provisioning_state_t *state, 
                 state->eth_mask[0] != '\0' ? state->eth_mask : "(ikke sat)");
     append_line(out_buffer, out_buffer_capacity, &pos, "eth.gw", state->eth_gw[0] != '\0' ? state->eth_gw : "(ikke sat)");
   }
+
+  // v0.26.0 — persisteret syslog-modtager-liste (§3.4.1). Ingen konfigureret
+  // = én linje der siger det, i stedet for slet ingen "syslog.*"-linjer
+  // (samme "gør fraværet eksplicit"-stil som resten af show).
+  bool any_syslog_target = false;
+  for (size_t i = 0; i < MB_SYSLOG_MAX_TARGETS; i++) {
+    if (!state->syslog_targets[i].in_use) continue;
+    any_syslog_target = true;
+    char line[64];
+    snprintf(line, sizeof(line), "%s:%u tag=%s level<=%u", state->syslog_targets[i].ip,
+             static_cast<unsigned>(state->syslog_targets[i].port), state->syslog_targets[i].tag,
+             static_cast<unsigned>(state->syslog_targets[i].max_level));
+    char label[24];
+    snprintf(label, sizeof(label), "syslog.target%u", static_cast<unsigned>(i + 1));
+    append_line(out_buffer, out_buffer_capacity, &pos, label, line);
+  }
+  if (!any_syslog_target) {
+    append_line(out_buffer, out_buffer_capacity, &pos, "syslog.targets", "(ingen konfigureret)");
+  }
 }
 
 // Tjekker om `state` har alle påkrævede felter til et "connect"-forsøg.
@@ -314,6 +345,8 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "test <kanal> <slave_id> <fc> <adresse> <antal>", "diagnostisk Modbus-laesning (kanal 1|2, fc 1-4)");
     append_line(out_message, out_message_capacity, &pos, "debug modbus <a|b|all> level <1-8>", "leveled debug-output til konsollen, level 8 = raa hex-dump - IKKE persisteret");
     append_line(out_message, out_message_capacity, &pos, "no debug modbus", "slaa modbus-debug fra (begge kanaler) - synonymt med 'no debug all'");
+    append_line(out_message, out_message_capacity, &pos, "syslog add <ip> <port> <tag> <level 1-8>", "tilfoej/opdater en UDP-syslog-modtager (op til 4), level=verbositets-loft");
+    append_line(out_message, out_message_capacity, &pos, "syslog remove <tag>", "fjern en syslog-modtager");
     append_line(out_message, out_message_capacity, &pos, "factory-reset confirm", "ryd WiFi/token/firewall og genstart");
     append_line(out_message, out_message_capacity, &pos, "version", "vis firmware-version+build");
     append_line(out_message, out_message_capacity, &pos, "help", "denne kommandoliste");
@@ -682,6 +715,100 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     }
 
     snprintf(out_message, out_message_capacity, "ukendt eth-underkommando: %s", tokens[1]);
+    return PROV_UNKNOWN_COMMAND;
+  }
+
+  // v0.26.0 (Jan: "kan vi lave en syslog funktion som vi kan sætte et
+  // target på som modtager af syslog" / "en eller flere target") — "syslog
+  // add <ip> <port> <tag> <level 1-8>" / "syslog remove <tag>". Persisteret
+  // (§3.4.1-mønsteret, samme som eth/hostname ovenfor) — kræver 'save' for
+  // at overleve en reboot. `level` genbruger v0.25.0's 1-8-verbositetsskala
+  // som denne ENE modtagers loft (se provisioning_cli.h).
+  if (ieq(tokens[0], "syslog")) {
+    if (token_count < 2) {
+      snprintf(out_message, out_message_capacity, "syslog kraever en underkommando (add/remove)");
+      return PROV_MISSING_ARGUMENT;
+    }
+
+    if (ieq(tokens[1], "add")) {
+      if (token_count < 6) {
+        snprintf(out_message, out_message_capacity, "brug 'syslog add <ip> <port> <tag> <level 1-8>'");
+        return PROV_MISSING_ARGUMENT;
+      }
+      if (!mb_provisioning_validate_ipv4(tokens[2])) {
+        snprintf(out_message, out_message_capacity, "ugyldig IPv4-adresse: %s", tokens[2]);
+        return PROV_INVALID_VALUE;
+      }
+      uint32_t port = 0;
+      if (!parse_uint_token(tokens[3], &port) || port == 0 || port > 65535) {
+        snprintf(out_message, out_message_capacity, "ugyldig port '%s' - skal vaere 1-65535", tokens[3]);
+        return PROV_INVALID_VALUE;
+      }
+      if (!mb_provisioning_validate_syslog_tag(tokens[4])) {
+        snprintf(out_message, out_message_capacity, "ugyldigt tag (1-%u tegn, kun bogstaver/tal/'-'/'_')",
+                 static_cast<unsigned>(MB_SYSLOG_TAG_MAX_LEN));
+        return PROV_INVALID_VALUE;
+      }
+      uint32_t level = 0;
+      if (!parse_uint_token(tokens[5], &level) || level == 0 || level > MB_PROV_DEBUG_LEVEL_MAX) {
+        snprintf(out_message, out_message_capacity, "ugyldigt level '%s' - skal vaere 1-%u", tokens[5],
+                 static_cast<unsigned>(MB_PROV_DEBUG_LEVEL_MAX));
+        return PROV_INVALID_VALUE;
+      }
+
+      // Genbrug en eksisterende slot med samme tag (opdatering), ellers
+      // foerste ledige slot - ellers afvis (listen er fuld).
+      int slot = -1;
+      for (size_t i = 0; i < MB_SYSLOG_MAX_TARGETS; i++) {
+        if (state->syslog_targets[i].in_use && ieq(state->syslog_targets[i].tag, tokens[4])) {
+          slot = static_cast<int>(i);
+          break;
+        }
+      }
+      if (slot < 0) {
+        for (size_t i = 0; i < MB_SYSLOG_MAX_TARGETS; i++) {
+          if (!state->syslog_targets[i].in_use) {
+            slot = static_cast<int>(i);
+            break;
+          }
+        }
+      }
+      if (slot < 0) {
+        snprintf(out_message, out_message_capacity,
+                 "syslog-modtager-listen er fuld (maks %u) - fjern en foerst med 'syslog remove <tag>'",
+                 static_cast<unsigned>(MB_SYSLOG_MAX_TARGETS));
+        return PROV_INVALID_VALUE;
+      }
+
+      mb_syslog_target_t &target = state->syslog_targets[slot];
+      target.in_use = true;
+      set_ipv4_field(target.ip, tokens[2]);
+      target.port = static_cast<uint16_t>(port);
+      strncpy(target.tag, tokens[4], MB_SYSLOG_TAG_MAX_LEN);
+      target.tag[MB_SYSLOG_TAG_MAX_LEN] = '\0';
+      target.max_level = static_cast<uint8_t>(level);
+      snprintf(out_message, out_message_capacity, "ok - syslog-modtager '%s' sat (%s:%u, level<=%u) - kraever 'save'",
+               target.tag, target.ip, static_cast<unsigned>(target.port), static_cast<unsigned>(target.max_level));
+      return PROV_OK;
+    }
+
+    if (ieq(tokens[1], "remove")) {
+      if (token_count < 3) {
+        snprintf(out_message, out_message_capacity, "brug 'syslog remove <tag>'");
+        return PROV_MISSING_ARGUMENT;
+      }
+      for (size_t i = 0; i < MB_SYSLOG_MAX_TARGETS; i++) {
+        if (state->syslog_targets[i].in_use && ieq(state->syslog_targets[i].tag, tokens[2])) {
+          state->syslog_targets[i] = mb_syslog_target_t{};
+          snprintf(out_message, out_message_capacity, "ok - syslog-modtager '%s' fjernet - kraever 'save'", tokens[2]);
+          return PROV_OK;
+        }
+      }
+      snprintf(out_message, out_message_capacity, "ukendt syslog-tag: %s", tokens[2]);
+      return PROV_INVALID_VALUE;
+    }
+
+    snprintf(out_message, out_message_capacity, "ukendt syslog-underkommando: %s", tokens[1]);
     return PROV_UNKNOWN_COMMAND;
   }
 
