@@ -4,6 +4,22 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.27.0 build 0036] — 2026-09-15 — FC15 (Write Multiple Coils) understøttet
+
+**Baggrund:** Jan: "har vi support for FC 15 og 16" → svaret afslørede FC16 (Write Multiple Registers) allerede var understøttet, men FC15 (Write Multiple Coils) manglede helt — en ekstern Modbus TCP-master der sendte FC15 fik en misvisende `0x0A` "Gateway Path Unavailable"-exception i stedet for enten et rigtigt svar eller et korrekt `0x01` "Illegal Function". Jan: "ja tak vi skal have FC15 og FC16 support".
+
+**`lib/modbus_pdu/`:** ny `case 0x0F` i `mb_pdu_expected_response_frame_len()` — samme mønster som FC16's `case 0x10`: `qty` 1-1968 (Modbus-spec-grænsen for FC15, forskellig fra FC16's 123), `byte_count` skal matche `ceil(qty/8)`, forventet svar-længde er adresse+fc+startadresse(2)+quantity(2)+CRC(2) (samme ekko-format som FC16).
+
+**`lib/diagnostic_modbus/`:** `POST /api/channels/{n}/write` accepterer nu `{"function_code":15,...,"values":[1,0,1,...]}` — hver værdi skal være 0 eller 1 (afvist ellers, `mb_diag_parse_write_request()`). `mb_diag_build_write_pdu()` bit-pakker værdierne til request-PDU'en (`out_pdu[6+i/8] |= 1<<(i%8)`), samme `MB_DIAG_MAX_WRITE_VALUES`=32-loft som FC16 (diagnostisk brug, ikke høj-frekvent drift). Bekræftelses-JSON'en var allerede function-code-agnostisk, ingen ændring nødvendig der.
+
+**Bevidst UDELADT:** ingen ny CLI-kommando — `test`-kommandoen (v0.24.0) forbliver KUN læsning (fc 1-4, samme lavere-risiko-begrundelse som hidtil), skrivning sker udelukkende via REST §4.2, samme arkitekturbeslutning som allerede gjaldt FC05/06/16.
+
+**Dokumentation:** `PLC_INTEGRATION_MANUAL.md` §3.2 (understøttede function codes-liste) + §4.6 (write-endpoint-eksempler), `EXPANSION_BOARD_DESIGN.md` (REST-endpoint-tabellen), `CLAUDE.md` (projektstruktur-kommentaren for `lib/modbus_pdu/`).
+
+**Filer ændret:** `lib/modbus_pdu/modbus_pdu.h/.cpp`, `lib/diagnostic_modbus/diagnostic_modbus.h/.cpp`, `src/http_server.cpp` (fejlbesked), `test/test_modbus_pdu/`, `test/test_diagnostic_modbus/`, `PLC_INTEGRATION_MANUAL.md`, `EXPANSION_BOARD_DESIGN.md`, `CLAUDE.md`, `FEATURES.md`.
+
+**Status:** 278/278 native-tests bestået (12 nye), bygger rent for esp32dev. **Live-verificeret** på fysisk hardware (kanal B, `debug modbus b level 8`): en `POST /api/channels/2/write` med `{"function_code":15,"slave_id":9,"address":0,"values":[1,0,1]}` producerede den BYTE-PERFEKTE RTU-frame `09 0F 00 00 00 03 01 05 4E F2` (slave=9, FC=0x0F, adresse=0, qty=3, byte_count=1, data=0x05 — nøjagtigt bit-mønsteret 1,0,1 — korrekt CRC) — gatewayens frame-bygning/afsendelse er dermed bekræftet korrekt. Den fysiske testslave (adr. 9) svarede ikke (`MB_TIMEOUT`, REST 502) — enheden understøtter tilsyneladende ikke FC15 (almindeligt for feltdevices der kun implementerer et delmængde af function codes), hvilket IKKE er en gateway-fejl. Fuld ende-til-ende-bekræftelse (et rigtigt FC15-svar) kræver et testudstyr der reelt understøtter funktionen.
+
 ## [0.26.1 build 0035] — 2026-09-15 — `no syslog`/`no syslog all`
 
 **Baggrund:** Jan: "har vi også no syslog som mulighed for at slette config for syslog".

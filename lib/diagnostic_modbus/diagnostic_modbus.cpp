@@ -155,7 +155,7 @@ bool mb_diag_parse_write_request(const char *json, size_t len, mb_diag_write_req
   mb_diag_write_request_t parsed{};
   uint32_t fc = 0, slave = 0, addr = 0;
   if (!parse_uint_field(json, "function_code", &fc)) return false;
-  if (fc != 5 && fc != 6 && fc != 16) return false;
+  if (fc != 5 && fc != 6 && fc != 15 && fc != 16) return false;
   if (!parse_uint_field(json, "slave_id", &slave) || slave == 0 || slave > 247) return false;
   if (!parse_uint_field(json, "address", &addr) || addr > 0xFFFF) return false;
 
@@ -167,6 +167,15 @@ bool mb_diag_parse_write_request(const char *json, size_t len, mb_diag_write_req
     uint16_t count = 0;
     if (!parse_uint_array_field(json, "values", parsed.values, MB_DIAG_MAX_WRITE_VALUES, &count) || count == 0) {
       return false;
+    }
+    parsed.value_count = count;
+  } else if (fc == 15) {
+    uint16_t count = 0;
+    if (!parse_uint_array_field(json, "values", parsed.values, MB_DIAG_MAX_WRITE_VALUES, &count) || count == 0) {
+      return false;
+    }
+    for (uint16_t i = 0; i < count; i++) {
+      if (parsed.values[i] > 1) return false;  // hver coil-værdi skal være 0 eller 1
     }
     parsed.value_count = count;
   } else if (fc == 5) {
@@ -194,6 +203,25 @@ size_t mb_diag_build_write_pdu(const mb_diag_write_request_t *req, uint8_t *out_
     out_pdu[3] = static_cast<uint8_t>(req->values[0] >> 8);
     out_pdu[4] = static_cast<uint8_t>(req->values[0] & 0xFF);
     return 5;
+  }
+
+  if (req->function_code == 15) {
+    const size_t byte_count = (static_cast<size_t>(req->value_count) + 7) / 8;
+    const size_t total = 6 + byte_count;
+    if (out_capacity < total) return 0;
+    out_pdu[0] = 15;
+    out_pdu[1] = static_cast<uint8_t>(req->address >> 8);
+    out_pdu[2] = static_cast<uint8_t>(req->address & 0xFF);
+    out_pdu[3] = static_cast<uint8_t>(req->value_count >> 8);
+    out_pdu[4] = static_cast<uint8_t>(req->value_count & 0xFF);
+    out_pdu[5] = static_cast<uint8_t>(byte_count);
+    for (size_t i = 0; i < byte_count; i++) out_pdu[6 + i] = 0;
+    for (size_t i = 0; i < req->value_count; i++) {
+      if (req->values[i] != 0) {
+        out_pdu[6 + i / 8] = static_cast<uint8_t>(out_pdu[6 + i / 8] | (1 << (i % 8)));
+      }
+    }
+    return total;
   }
 
   // FC16

@@ -83,6 +83,26 @@ void test_expected_len_fc16_write_multiple(void) {
   TEST_ASSERT_EQUAL_size_t(8, len);
 }
 
+void test_expected_len_fc15_write_multiple_coils(void) {
+  const uint8_t req[] = {0x0F, 0x00, 0x00, 0x00, 0x03, 0x01, 0x05};  // 3 coils, byte_count=1
+  size_t len = 0;
+  TEST_ASSERT_EQUAL(MB_PDU_VALID, mb_pdu_expected_response_frame_len(req, sizeof(req), &len));
+  TEST_ASSERT_EQUAL_size_t(8, len);
+}
+
+void test_expected_len_rejects_fc15_bytecount_mismatch(void) {
+  // qty=9 (skal give byte_count=2), men byte_count-feltet siger 1 — inkonsistent request
+  const uint8_t req[] = {0x0F, 0x00, 0x00, 0x00, 0x09, 0x01, 0xFF};
+  size_t len = 0;
+  TEST_ASSERT_EQUAL(MB_PDU_MALFORMED_REQUEST, mb_pdu_expected_response_frame_len(req, sizeof(req), &len));
+}
+
+void test_expected_len_rejects_fc15_quantity_over_spec_limit(void) {
+  const uint8_t req[] = {0x0F, 0x00, 0x00, 0x07, 0xB1, 246, 0x00};  // qty=1969 > 1968-grænsen
+  size_t len = 0;
+  TEST_ASSERT_EQUAL(MB_PDU_MALFORMED_REQUEST, mb_pdu_expected_response_frame_len(req, sizeof(req), &len));
+}
+
 void test_expected_len_rejects_unsupported_function(void) {
   const uint8_t req[] = {0x07, 0x00};  // FC07 er udenfor §4.1's scope (FC01-06/16)
   size_t len = 0;
@@ -204,6 +224,31 @@ void test_parse_rejects_too_short_frame(void) {
 // Python-CRC-script som spec-eksemplet ovenfor.
 // ---------------------------------------------------------------------------
 
+void test_roundtrip_fc15(void) {
+  // 3 coils fra adresse 0, mønster 101 (coil0=1, coil1=0, coil2=1) => byte 0x05.
+  // CRC-værdier verificeret med samme uafhængige Python-CRC-script som FC16-testen.
+  const uint8_t pdu[] = {0x0F, 0x00, 0x00, 0x00, 0x03, 0x01, 0x05};
+  uint8_t request_frame[MB_RTU_FRAME_MAX_LEN];
+  const size_t request_len = mb_pdu_build_rtu_request(0x01, pdu, sizeof(pdu), request_frame, sizeof(request_frame));
+
+  const uint8_t expected_request[] = {0x01, 0x0F, 0x00, 0x00, 0x00, 0x03, 0x01, 0x05, 0x4F, 0x54};
+  TEST_ASSERT_EQUAL_size_t(sizeof(expected_request), request_len);
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_request, request_frame, sizeof(expected_request));
+
+  // Simuleret slave-svar: adresse+fc+startadresse+quantity ekkoet, CRC fra Python-scriptet
+  const uint8_t response_frame[] = {0x01, 0x0F, 0x00, 0x00, 0x00, 0x03, 0x15, 0xCA};
+  uint8_t response_pdu[MB_PDU_MAX_LEN];
+  size_t response_pdu_len = 0;
+  const mb_pdu_parse_result_t result = mb_pdu_parse_rtu_response(0x01, response_frame, sizeof(response_frame),
+                                                                   response_pdu, &response_pdu_len,
+                                                                   sizeof(response_pdu));
+
+  TEST_ASSERT_EQUAL(MB_PDU_RESULT_OK, result);
+  const uint8_t expected_response_pdu[] = {0x0F, 0x00, 0x00, 0x00, 0x03};
+  TEST_ASSERT_EQUAL_size_t(sizeof(expected_response_pdu), response_pdu_len);
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_response_pdu, response_pdu, sizeof(expected_response_pdu));
+}
+
 void test_roundtrip_fc16(void) {
   const uint8_t pdu[] = {0x10, 0x00, 0x00, 0x00, 0x02, 0x04, 0x00, 0x0A, 0x01, 0x02};
   uint8_t request_frame[MB_RTU_FRAME_MAX_LEN];
@@ -246,6 +291,9 @@ int main(int argc, char **argv) {
   RUN_TEST(test_expected_len_fc01_ten_coils);
   RUN_TEST(test_expected_len_fc06_write_single);
   RUN_TEST(test_expected_len_fc16_write_multiple);
+  RUN_TEST(test_expected_len_fc15_write_multiple_coils);
+  RUN_TEST(test_expected_len_rejects_fc15_bytecount_mismatch);
+  RUN_TEST(test_expected_len_rejects_fc15_quantity_over_spec_limit);
   RUN_TEST(test_expected_len_rejects_unsupported_function);
   RUN_TEST(test_expected_len_rejects_zero_quantity);
   RUN_TEST(test_expected_len_rejects_fc03_quantity_over_spec_limit);
@@ -261,6 +309,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_parse_rejects_undersized_output_buffer);
   RUN_TEST(test_parse_rejects_too_short_frame);
 
+  RUN_TEST(test_roundtrip_fc15);
   RUN_TEST(test_roundtrip_fc16);
 
   return UNITY_END();

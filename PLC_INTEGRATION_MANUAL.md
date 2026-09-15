@@ -66,7 +66,7 @@ Dette er den vej PLC'en skal bruge til NORMAL, høj-frekvent Modbus-drift — RE
 - Standard Modbus TCP (MBAP-header): Transaction ID (ekko), Protocol ID (altid 0), Length, **Unit ID = den fysiske RTU-slaves adresse** (1-247) — IKKE en dummy-værdi. PLC'en sætter Unit ID til den slave den faktisk vil tale med på den fysiske bus bag den valgte kanal.
 - PDU'en (function code + data) passerer **uændret** igennem — ingen registerombytning, ingen indirection. Adresser/values i requestet er nøjagtigt hvad der sendes til RTU-slaven.
 - **Åbn ÉN vedvarende TCP-forbindelse pr. kanal og genbrug den** til alle transaktioner. Boardets TCP-server har ét sekventielt kø pr. kanal — mange kortvarige forbindelser (åbn/luk pr. request) er ikke understøttet godt og bør undgås (se BUGS.md v0.9.0.1 for baggrund; roden er rettet, men mange samtidige korte forbindelser er stadig ineffektivt).
-- Understøttede function codes: **FC01, FC02, FC03, FC04, FC05, FC06, FC16**. Andet giver en gateway-exception (se nedenfor).
+- Understøttede function codes: **FC01, FC02, FC03, FC04, FC05, FC06, FC15, FC16**. Andet giver en gateway-exception (se nedenfor).
 
 ### 3.3 Fejlhåndtering — to forskellige slags "fejl"
 
@@ -211,7 +211,7 @@ Svar ved en kanal-/transportfejl (HTTP `502`):
 
 ### 4.6 `POST /api/channels/{n}/write` — diagnostisk skrivning
 
-Samme princip som `/read`. `function_code`: 5 (Write Single Coil), 6 (Write Single Register) eller 16 (Write Multiple Registers).
+Samme princip som `/read`. `function_code`: 5 (Write Single Coil), 6 (Write Single Register), 15 (Write Multiple Coils, v0.27.0) eller 16 (Write Multiple Registers).
 
 FC05 (coil — boolsk):
 ```json
@@ -220,6 +220,10 @@ FC05 (coil — boolsk):
 FC06 (ét register):
 ```json
 {"function_code": 6, "slave_id": 9, "address": 10, "value": 1234}
+```
+FC15 (flere coils, maks 32 pr. kald — hver værdi 0 eller 1):
+```json
+{"function_code": 15, "slave_id": 9, "address": 0, "values": [1, 0, 1]}
 ```
 FC16 (flere registre, maks 32 pr. kald):
 ```json

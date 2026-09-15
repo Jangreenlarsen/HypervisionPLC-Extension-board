@@ -37,18 +37,19 @@ size_t mb_diag_build_read_pdu(const mb_diag_read_request_t *req, uint8_t *out_pd
 size_t mb_diag_build_read_values_json(const mb_diag_read_request_t *req, const uint8_t *response_pdu,
                                        size_t response_pdu_len, char *out, size_t out_capacity);
 
-// --- Skrivning (FC05/06/16) ---
+// --- Skrivning (FC05/06/15/16) ---
 
 struct mb_diag_write_request_t {
   uint8_t slave_id;
   uint8_t function_code;
   uint16_t address;
   uint16_t values[MB_DIAG_MAX_WRITE_VALUES];
-  uint16_t value_count;  // 1 for FC05/06, N for FC16
+  uint16_t value_count;  // 1 for FC05/06, N for FC15/16
 };
 
 // Parser POST /api/channels/{n}/write's JSON-body. FC05: "value" (bool).
-// FC06: "value" (0-65535). FC16: "values" (array af 0-65535, maks
+// FC06: "value" (0-65535). FC15: "values" (array af 0/1, maks
+// MB_DIAG_MAX_WRITE_VALUES coils). FC16: "values" (array af 0-65535, maks
 // MB_DIAG_MAX_WRITE_VALUES). function_code/slave_id/address altid påkrævet.
 bool mb_diag_parse_write_request(const char *json, size_t len, mb_diag_write_request_t *out);
 

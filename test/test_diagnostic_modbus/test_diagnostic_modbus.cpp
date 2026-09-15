@@ -122,6 +122,28 @@ void test_parse_write_request_fc16_values_array(void) {
   TEST_ASSERT_EQUAL_UINT16(3, req.values[2]);
 }
 
+void test_parse_write_request_fc15_values_array(void) {
+  const char *json = "{\"function_code\":15,\"slave_id\":9,\"address\":0,\"values\":[1,0,1]}";
+  mb_diag_write_request_t req{};
+  TEST_ASSERT_TRUE(mb_diag_parse_write_request(json, strlen(json), &req));
+  TEST_ASSERT_EQUAL_UINT16(3, req.value_count);
+  TEST_ASSERT_EQUAL_UINT16(1, req.values[0]);
+  TEST_ASSERT_EQUAL_UINT16(0, req.values[1]);
+  TEST_ASSERT_EQUAL_UINT16(1, req.values[2]);
+}
+
+void test_parse_write_request_fc15_rejects_missing_values(void) {
+  const char *json = "{\"function_code\":15,\"slave_id\":9,\"address\":0}";
+  mb_diag_write_request_t req{};
+  TEST_ASSERT_FALSE(mb_diag_parse_write_request(json, strlen(json), &req));
+}
+
+void test_parse_write_request_fc15_rejects_value_above_one(void) {
+  const char *json = "{\"function_code\":15,\"slave_id\":9,\"address\":0,\"values\":[1,2,0]}";
+  mb_diag_write_request_t req{};
+  TEST_ASSERT_FALSE(mb_diag_parse_write_request(json, strlen(json), &req));
+}
+
 void test_parse_write_request_rejects_invalid_function_code(void) {
   const char *json = "{\"function_code\":3,\"slave_id\":9,\"address\":0,\"value\":1}";
   mb_diag_write_request_t req{};
@@ -162,6 +184,36 @@ void test_build_write_pdu_fc16(void) {
   TEST_ASSERT_EQUAL_size_t(10, len);
   const uint8_t expected[] = {0x10, 0x00, 0x00, 0x00, 0x02, 0x04, 0x00, 0x01, 0x00, 0x02};
   TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, pdu, 10);
+}
+
+void test_build_write_pdu_fc15(void) {
+  // 3 coils: 1,0,1 -> byte 0x05 (bit0=1, bit1=0, bit2=1)
+  mb_diag_write_request_t req{};
+  req.function_code = 15;
+  req.address = 0x0000;
+  req.values[0] = 1;
+  req.values[1] = 0;
+  req.values[2] = 1;
+  req.value_count = 3;
+  uint8_t pdu[7];
+  const size_t len = mb_diag_build_write_pdu(&req, pdu, sizeof(pdu));
+  TEST_ASSERT_EQUAL_size_t(7, len);
+  const uint8_t expected[] = {0x0F, 0x00, 0x00, 0x00, 0x03, 0x01, 0x05};
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, pdu, 7);
+}
+
+void test_build_write_pdu_fc15_spans_multiple_bytes(void) {
+  // 9 coils, alle 1 -> byte_count=2, bytes = 0xFF, 0x01 (kun bit0 sat i 2. byte)
+  mb_diag_write_request_t req{};
+  req.function_code = 15;
+  req.address = 0x0000;
+  for (size_t i = 0; i < 9; i++) req.values[i] = 1;
+  req.value_count = 9;
+  uint8_t pdu[8];
+  const size_t len = mb_diag_build_write_pdu(&req, pdu, sizeof(pdu));
+  TEST_ASSERT_EQUAL_size_t(8, len);
+  const uint8_t expected[] = {0x0F, 0x00, 0x00, 0x00, 0x09, 0x02, 0xFF, 0x01};
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, pdu, 8);
 }
 
 void test_build_write_confirmation_json(void) {
@@ -222,11 +274,16 @@ int main(int argc, char **argv) {
   RUN_TEST(test_parse_write_request_fc05_true_maps_to_ff00);
   RUN_TEST(test_parse_write_request_fc05_false_maps_to_0000);
   RUN_TEST(test_parse_write_request_fc16_values_array);
+  RUN_TEST(test_parse_write_request_fc15_values_array);
+  RUN_TEST(test_parse_write_request_fc15_rejects_missing_values);
+  RUN_TEST(test_parse_write_request_fc15_rejects_value_above_one);
   RUN_TEST(test_parse_write_request_rejects_invalid_function_code);
   RUN_TEST(test_parse_write_request_fc16_rejects_missing_values);
 
   RUN_TEST(test_build_write_pdu_fc06);
   RUN_TEST(test_build_write_pdu_fc16);
+  RUN_TEST(test_build_write_pdu_fc15);
+  RUN_TEST(test_build_write_pdu_fc15_spans_multiple_bytes);
   RUN_TEST(test_build_write_confirmation_json);
 
   RUN_TEST(test_is_exception_detects_high_bit);

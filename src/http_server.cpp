@@ -313,7 +313,7 @@ esp_err_t channel_read_write_post_handler(httpd_req_t *req) {
     if (!mb_diag_parse_write_request(body, static_cast<size_t>(received), &write_req)) {
       send_json_error(
           req, "400 Bad Request", -1, "invalid_request",
-          "Ugyldig eller ufuldstændig write-request (kræver function_code 5/6/16, slave_id, address, value/values)");
+          "Ugyldig eller ufuldstændig write-request (kræver function_code 5/6/15/16, slave_id, address, value/values)");
       return ESP_OK;
     }
     request_pdu_len = mb_diag_build_write_pdu(&write_req, request_pdu, sizeof(request_pdu));

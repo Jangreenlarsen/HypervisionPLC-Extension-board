@@ -149,7 +149,7 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 │   ├── http_helpers.h/.cpp         # require_auth()/send_json_error(), delt mellem http_server.cpp og ota_handler.cpp — v0.12.0
 │   └── ota_handler.cpp/.h          # POST /api/ota, GET /api/ota/status, POST /api/reboot — v0.12.0, faerdig
 ├── lib/                             # hardware-uafhængig, native-testbar logik (se ARCHITECTURE.md)
-│   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (FC01-06/16) — v0.2.0, færdig
+│   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (FC01-06/15/16) — v0.2.0, færdig, FC15 tilføjet v0.27.0
 │   ├── modbus_tcp/                 # MBAP-header parsing/bygning (§4.1) — v0.9.0, faerdig
 │   ├── provisioning_cli/           # seriel CLI-kommando-parsing/validering (§3.4.1) — v0.5.0, færdig
 │   ├── board_config/               # persisteret config-schema (schema 3, inkl. pr.-kanal-config) + serialisering (§3.5) — v0.10.0, faerdig

@@ -2,6 +2,14 @@
 
 ---
 
+## v0.27.0 — 2026-09-15 — FC15 (Write Multiple Coils) understøttet
+
+Modbus function code 15 (Write Multiple Coils) er nu understøttet — både på kernen (`lib/modbus_pdu`) og i den diagnostiske REST-skrivning (`POST /api/channels/{n}/write`, `function_code: 15`). Hidtil gav en FC15-forespørgsel en misvisende "Gateway Path Unavailable"-exception. FC16 (Write Multiple Registers) var allerede understøttet fra tidligere.
+
+**Live-verificeret** på fysisk hardware: gatewayens FC15-frame-bygning er bekræftet byte-perfekt korrekt (set via `debug modbus`s rå hex-dump). Den tilsluttede testslave svarede ikke — den understøtter tilsyneladende ikke FC15 (ikke en gateway-fejl). Fuld ende-til-ende-test kræver et FC15-kapabelt testudstyr.
+
+---
+
 ## v0.26.1 — 2026-09-15 — `no syslog` rydder alle modtagere på én gang
 
 Ny `no syslog`/`no syslog all`-kommando i den serielle CLI — fjerner alle konfigurerede syslog-modtagere med ét kald, i stedet for at skulle fjerne dem én ad gangen med `syslog remove <tag>`.
