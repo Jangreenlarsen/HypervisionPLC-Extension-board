@@ -648,6 +648,38 @@ void test_show_indicates_no_syslog_targets(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "syslog.targets"));
 }
 
+void test_no_syslog_clears_all_targets(void) {
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.1 514 t1 1", msg, sizeof(msg));
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.2 514 t2 1", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no syslog", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  for (size_t i = 0; i < MB_SYSLOG_MAX_TARGETS; i++) {
+    TEST_ASSERT_FALSE(state.syslog_targets[i].in_use);
+  }
+}
+
+void test_no_syslog_all_clears_all_targets(void) {
+  mb_provisioning_apply_line(&state, "syslog add 10.1.1.1 514 t1 1", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no syslog all", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+  TEST_ASSERT_FALSE(state.syslog_targets[0].in_use);
+}
+
+void test_no_syslog_with_no_targets_is_ok(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no syslog", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_OK, r);
+}
+
+void test_no_syslog_rejects_unknown_argument(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no syslog foo", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_no_rejects_unknown_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no foo", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_UNKNOWN_COMMAND, r);
+}
+
 void test_status_action(void) {
   // "status" delegerer selve indholdet til kaldstedet (uptime/heap/WiFi er
   // runtime-data) — her verificeres kun at kommandoen genkendes korrekt.
@@ -1026,6 +1058,11 @@ int main(int argc, char **argv) {
   RUN_TEST(test_syslog_unknown_subcommand);
   RUN_TEST(test_show_includes_syslog_targets);
   RUN_TEST(test_show_indicates_no_syslog_targets);
+  RUN_TEST(test_no_syslog_clears_all_targets);
+  RUN_TEST(test_no_syslog_all_clears_all_targets);
+  RUN_TEST(test_no_syslog_with_no_targets_is_ok);
+  RUN_TEST(test_no_syslog_rejects_unknown_argument);
+  RUN_TEST(test_no_rejects_unknown_subcommand);
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);

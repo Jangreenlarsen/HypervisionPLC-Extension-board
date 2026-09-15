@@ -347,6 +347,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "no debug modbus", "slaa modbus-debug fra (begge kanaler) - synonymt med 'no debug all'");
     append_line(out_message, out_message_capacity, &pos, "syslog add <ip> <port> <tag> <level 1-8>", "tilfoej/opdater en UDP-syslog-modtager (op til 4), level=verbositets-loft");
     append_line(out_message, out_message_capacity, &pos, "syslog remove <tag>", "fjern en syslog-modtager");
+    append_line(out_message, out_message_capacity, &pos, "no syslog", "fjern ALLE syslog-modtagere paa én gang - synonymt med 'no syslog all'");
     append_line(out_message, out_message_capacity, &pos, "factory-reset confirm", "ryd WiFi/token/firewall og genstart");
     append_line(out_message, out_message_capacity, &pos, "version", "vis firmware-version+build");
     append_line(out_message, out_message_capacity, &pos, "help", "denne kommandoliste");
@@ -895,14 +896,45 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
   // deaktivering, paa BEGGE kanaler (Jan: "man skal kunne disable debug fra
   // cli også").
   if (ieq(tokens[0], "no")) {
-    if (token_count < 3 || !ieq(tokens[1], "debug") || (!ieq(tokens[2], "modbus") && !ieq(tokens[2], "all"))) {
-      snprintf(out_message, out_message_capacity, "brug 'no debug modbus' eller 'no debug all'");
+    if (token_count < 2) {
+      snprintf(out_message, out_message_capacity, "brug 'no debug modbus'/'no debug all' eller 'no syslog'/'no syslog all'");
       return PROV_MISSING_ARGUMENT;
     }
-    state->debug_target = mb_debug_target_t::kAll;
-    state->debug_level = 0;
-    snprintf(out_message, out_message_capacity, "ok - modbus-debug slaaet fra (begge kanaler)");
-    return PROV_ACTION_DEBUG_SET;
+
+    if (ieq(tokens[1], "debug")) {
+      if (token_count < 3 || (!ieq(tokens[2], "modbus") && !ieq(tokens[2], "all"))) {
+        snprintf(out_message, out_message_capacity, "brug 'no debug modbus' eller 'no debug all'");
+        return PROV_MISSING_ARGUMENT;
+      }
+      state->debug_target = mb_debug_target_t::kAll;
+      state->debug_level = 0;
+      snprintf(out_message, out_message_capacity, "ok - modbus-debug slaaet fra (begge kanaler)");
+      return PROV_ACTION_DEBUG_SET;
+    }
+
+    // v0.26.1 (Jan: "har vi også no syslog som mulighed for at slette
+    // config for syslog") — "no syslog"/"no syslog all" (synonymer, samme
+    // "all"-mønster som "no debug ...") fjerner ALLE konfigurerede
+    // modtagere på én gang, i stedet for at skulle "syslog remove <tag>"
+    // dem én ad gangen. Persisteret (ligesom "syslog add"/"syslog remove")
+    // — kræver 'save'.
+    if (ieq(tokens[1], "syslog")) {
+      if (token_count >= 3 && !ieq(tokens[2], "all")) {
+        snprintf(out_message, out_message_capacity, "brug 'no syslog' eller 'no syslog all'");
+        return PROV_INVALID_VALUE;
+      }
+      size_t cleared = 0;
+      for (size_t i = 0; i < MB_SYSLOG_MAX_TARGETS; i++) {
+        if (state->syslog_targets[i].in_use) cleared++;
+        state->syslog_targets[i] = mb_syslog_target_t{};
+      }
+      snprintf(out_message, out_message_capacity, "ok - %u syslog-modtager(e) fjernet - kraever 'save'",
+               static_cast<unsigned>(cleared));
+      return PROV_OK;
+    }
+
+    snprintf(out_message, out_message_capacity, "brug 'no debug modbus'/'no debug all' eller 'no syslog'/'no syslog all'");
+    return PROV_UNKNOWN_COMMAND;
   }
 
   snprintf(out_message, out_message_capacity, "ukendt kommando: %s (proev 'help')", tokens[0]);

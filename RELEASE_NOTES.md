@@ -2,6 +2,14 @@
 
 ---
 
+## v0.26.1 — 2026-09-15 — `no syslog` rydder alle modtagere på én gang
+
+Ny `no syslog`/`no syslog all`-kommando i den serielle CLI — fjerner alle konfigurerede syslog-modtagere med ét kald, i stedet for at skulle fjerne dem én ad gangen med `syslog remove <tag>`.
+
+**Næste skridt**: live-verifikation på fysisk hardware.
+
+---
+
 ## v0.26.0 — 2026-09-15 — Syslog-klient med op til 4 modtagere
 
 Boardet kan nu sende sine driftshændelser til op til 4 UDP-syslog-servere samtidig: `syslog add <ip> <port> <tag> <level 1-8>` i den serielle CLI. Genbruger den samme 1-8-verbositetsskala som `debug modbus`-featuren (v0.25.0), men som en uafhængig, altid-aktiv udgangskanal — en konfigureret modtager ser fuld detalje uanset om nogen kigger på den serielle konsol. Dækker Modbus-kanaltrafik/-fejl og REST-auth-afvisninger. Persisteret i NVS (modsat debug-niveauet), virker straks efter `save` — ingen reboot nødvendig.
