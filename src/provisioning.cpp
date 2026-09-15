@@ -298,6 +298,15 @@ void print_status() {
 
   print_wifi_connection_status();
   print_ethernet_status();
+
+  // v0.25.0 (Jan: "lave en debug som outputer til console") — live
+  // runtime-tilstand (IKKE persisteret, se modbus_channel_set_debug_level()),
+  // derfor vist her i 'status', ikke i 'show' (som kun viser konfigureret,
+  // persisteret data).
+  Serial.print("debug.channel_a: ");
+  Serial.println(modbus_channel_get_debug_level(ModbusChannelId::kA));
+  Serial.print("debug.channel_b: ");
+  Serial.println(modbus_channel_get_debug_level(ModbusChannelId::kB));
   // v0.21.0-fund: viste hidtil KUN rest.api naar WiFi var forbundet - et
   // rent Ethernet-board (WiFi deaktiveret/aldrig konfigureret, se BUGS.md's
   // relaterede server-start-fund) fik derfor aldrig vist URL'en, selvom
@@ -509,6 +518,18 @@ void provisioning_poll() {
           const size_t resp_len = mb_diag_build_read_values_json(&g_state.test_read, response_pdu, response_pdu_len,
                                                                    resp_body, sizeof(resp_body));
           Serial.println(resp_len > 0 ? resp_body : "FEJL: kunne ikke bygge svaret");
+        }
+      } else if (result == PROV_ACTION_DEBUG_SET) {
+        // v0.25.0 (Jan: "lave en debug som outputer til console alt hvad der
+        // forgå på kanal A og B") — ren runtime-tilstand, roerer INTET i NVS
+        // (state->debug_target/debug_level er scratch-felter, se
+        // provisioning_cli.h). "all" saetter begge kanaler til samme level
+        // (ogsaa 0, for "no debug modbus"/"no debug all").
+        if (g_state.debug_target == mb_debug_target_t::kA || g_state.debug_target == mb_debug_target_t::kAll) {
+          modbus_channel_set_debug_level(ModbusChannelId::kA, g_state.debug_level);
+        }
+        if (g_state.debug_target == mb_debug_target_t::kB || g_state.debug_target == mb_debug_target_t::kAll) {
+          modbus_channel_set_debug_level(ModbusChannelId::kB, g_state.debug_level);
         }
       } else if (result == PROV_ACTION_FACTORY_RESET) {
         Serial.println("Rydder NVS-konfiguration og genstarter.");

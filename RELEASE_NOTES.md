@@ -2,6 +2,14 @@
 
 ---
 
+## v0.25.0 — 2026-09-15 — Leveled Modbus-debug-output i den serielle CLI
+
+Ny kommando i den serielle CLI: `debug modbus <a|b|all> level <1-8>` slår detaljeret debug-output til på kanal A, B eller begge — fra en kort start/slut-linje pr. transaktion (level 1) til fuld rå hex-dump af både TX- og RX-rammerne (level 7-8). `no debug modbus`/`no debug all` slår det fra igen. Bevidst IKKE gemt i konfigurationen — nulstilles altid til fra ved genstart, så det aldrig glemmes tændt i normal drift. Vist som live-status under `status`.
+
+**Live-verificeret** på fysisk hardware mod en rigtig slave (kanal B, adr. 9): under selve verifikationen viste level 8 sig faktisk at BRYDE de transaktioner den skulle observere (et debug-print pr. modtaget byte stjal tid fra Modbus RTU'ens strikse inter-character-timing) — fundet og rettet med det samme (se BUGS.md v0.25.0), derefter bekræftet stabil (5/5 gentagne kald). Ingen stack-relaterede nedbrud.
+
+---
+
 ## v0.24.1 — 2026-09-15 — `test`-kommandoen forklarer nu sin egen ventetid
 
 `test`-kommandoen viser nu en kort besked om at den serielle CLI venter på svar/timeout, så det er tydeligt at det er CLI-terminalen (ikke boardets kanaler) der er optaget imens. Bekræftet ved en konkret måling at de to Modbus-kanaler reelt kører helt uafhængigt af hinanden — en kanal der timer ud påvirker ikke den anden kanals egen respons-tid.

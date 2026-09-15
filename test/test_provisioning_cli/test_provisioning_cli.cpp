@@ -463,6 +463,86 @@ void test_test_read_rejects_non_numeric_token(void) {
   TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
 }
 
+void test_debug_modbus_sets_channel_a(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus a level 3", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_DEBUG_SET, r);
+  TEST_ASSERT_EQUAL(mb_debug_target_t::kA, state.debug_target);
+  TEST_ASSERT_EQUAL_UINT8(3, state.debug_level);
+}
+
+void test_debug_modbus_sets_channel_b(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus b level 8", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_DEBUG_SET, r);
+  TEST_ASSERT_EQUAL(mb_debug_target_t::kB, state.debug_target);
+  TEST_ASSERT_EQUAL_UINT8(8, state.debug_level);
+}
+
+void test_debug_modbus_sets_all_channels(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus all level 1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_DEBUG_SET, r);
+  TEST_ASSERT_EQUAL(mb_debug_target_t::kAll, state.debug_target);
+  TEST_ASSERT_EQUAL_UINT8(1, state.debug_level);
+}
+
+void test_debug_modbus_is_case_insensitive(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "DEBUG MODBUS A LEVEL 5", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_DEBUG_SET, r);
+  TEST_ASSERT_EQUAL(mb_debug_target_t::kA, state.debug_target);
+  TEST_ASSERT_EQUAL_UINT8(5, state.debug_level);
+}
+
+void test_debug_modbus_rejects_invalid_channel(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus c level 3", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_debug_modbus_rejects_level_zero(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus a level 0", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_debug_modbus_rejects_level_above_max(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus a level 9", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_debug_modbus_missing_args(void) {
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, mb_provisioning_apply_line(&state, "debug modbus a", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, mb_provisioning_apply_line(&state, "debug modbus a level", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, mb_provisioning_apply_line(&state, "debug", msg, sizeof(msg)));
+}
+
+void test_debug_modbus_requires_level_keyword(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus a 3", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_no_debug_modbus_disables(void) {
+  mb_provisioning_apply_line(&state, "debug modbus a level 5", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no debug modbus", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_DEBUG_SET, r);
+  TEST_ASSERT_EQUAL(mb_debug_target_t::kAll, state.debug_target);
+  TEST_ASSERT_EQUAL_UINT8(0, state.debug_level);
+}
+
+void test_no_debug_all_disables(void) {
+  mb_provisioning_apply_line(&state, "debug modbus b level 7", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no debug all", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_DEBUG_SET, r);
+  TEST_ASSERT_EQUAL(mb_debug_target_t::kAll, state.debug_target);
+  TEST_ASSERT_EQUAL_UINT8(0, state.debug_level);
+}
+
+void test_no_debug_rejects_unknown_subcommand(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no debug foo", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_no_missing_args(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "no debug", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
 void test_status_action(void) {
   // "status" delegerer selve indholdet til kaldstedet (uptime/heap/WiFi er
   // runtime-data) — her verificeres kun at kommandoen genkendes korrekt.
@@ -814,6 +894,19 @@ int main(int argc, char **argv) {
   RUN_TEST(test_test_read_rejects_invalid_address);
   RUN_TEST(test_test_read_rejects_invalid_quantity);
   RUN_TEST(test_test_read_rejects_non_numeric_token);
+  RUN_TEST(test_debug_modbus_sets_channel_a);
+  RUN_TEST(test_debug_modbus_sets_channel_b);
+  RUN_TEST(test_debug_modbus_sets_all_channels);
+  RUN_TEST(test_debug_modbus_is_case_insensitive);
+  RUN_TEST(test_debug_modbus_rejects_invalid_channel);
+  RUN_TEST(test_debug_modbus_rejects_level_zero);
+  RUN_TEST(test_debug_modbus_rejects_level_above_max);
+  RUN_TEST(test_debug_modbus_missing_args);
+  RUN_TEST(test_debug_modbus_requires_level_keyword);
+  RUN_TEST(test_no_debug_modbus_disables);
+  RUN_TEST(test_no_debug_all_disables);
+  RUN_TEST(test_no_debug_rejects_unknown_subcommand);
+  RUN_TEST(test_no_missing_args);
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);

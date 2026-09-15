@@ -53,3 +53,13 @@ bool modbus_channel_apply_config(ModbusChannelId channel, const mb_channel_confi
 // `config_get()` allerede bruges på tværs af tasks andetsteds i projektet).
 mb_channel_config_t modbus_channel_get_config(ModbusChannelId channel);
 mb_channel_stats_t modbus_channel_get_stats(ModbusChannelId channel);
+
+// v0.25.0 (Jan: "lave en debug som outputer til console alt hvad der forgå
+// på kanal A og B") — leveled debug-output til seriel konsol, sat pr. kanal.
+// 0 = fra (default ved boot). 1-8 = stigende detaljeniveau, se
+// execute_transaction() i modbus_channel.cpp for den fulde level-definition.
+// Bevidst IKKE persisteret (§4.2 dækker kun rigtig kanal-config) — nulstilles
+// altid til 0 ved reboot, sat direkte (uden om kanalens kø, ren
+// runtime-tilstand, ingen hardware-adgang) fra den serielle CLI.
+void modbus_channel_set_debug_level(ModbusChannelId channel, uint8_t level);
+uint8_t modbus_channel_get_debug_level(ModbusChannelId channel);

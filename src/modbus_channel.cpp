@@ -93,6 +93,12 @@ struct ChannelContext {
   mb_channel_config_t config;
   mb_channel_stats_t stats;
   QueueHandle_t queue;
+  // v0.25.0 (Jan: "lave en debug som outputer til console") — 0=fra,
+  // 1-8=stigende detaljeniveau. Kun læst/skrevet som en enkelt uint8_t —
+  // ATOMISK på ESP32 (naturligt alignet, enkelt load/store-instruktion) —
+  // derfor ingen kø/lås nødvendig selvom CLI-tasken skriver den mens
+  // channel_task() samtidig læser den, jf. modbus_channel_set_debug_level().
+  volatile uint8_t debug_level;
 };
 
 HardwareSerial g_serialA(1);  // UART-periferi #1 (§2.0: udelukkende brugt her, ikke af CLI'en som ejer UART0)
@@ -120,6 +126,17 @@ const char *error_name(mb_error_code_t error) {
     case MB_CHANNEL_UNREACHABLE: return "MB_CHANNEL_UNREACHABLE";
     default: return "?";
   }
+}
+
+// v0.25.0 — rå hex-dump af en frame, byte-for-byte (§BUGS.md v0.24.0-lektion:
+// channel_task() kører på en LILLE 4096-byte FreeRTOS-stack — INGEN stor
+// lokal streng-buffer må bygges her, kun direkte Serial.printf() pr. byte).
+void debug_print_hex(const char *label, const uint8_t *data, size_t len) {
+  Serial.print(label);
+  for (size_t i = 0; i < len; i++) {
+    Serial.printf("%02X ", data[i]);
+  }
+  Serial.println();
 }
 
 // Mapper mb_channel_parity_t/stop_bits til Arduino/ESP32's SERIAL_8xx-config.
@@ -164,14 +181,28 @@ void apply_config_now(ChannelContext &ctx, const mb_channel_config_t &new_config
 // framing/CRC/svar-komplethed i stedet for at gentage den logik.
 mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const uint8_t *pdu, size_t pdu_len,
                                      uint8_t *out_pdu, size_t *out_pdu_len, size_t out_pdu_capacity) {
+  const uint8_t dbg = ctx.debug_level;
+  const uint32_t txn_start = millis();
+
+  if (dbg >= 1) {
+    Serial.printf("DEBUG %s: >> slave=%u fc=%u pdu_len=%u\n", ctx.name, slave_id, pdu_len > 0 ? pdu[0] : 0,
+                  static_cast<unsigned>(pdu_len));
+  }
+
   size_t expected_len = 0;
   if (mb_pdu_expected_response_frame_len(pdu, pdu_len, &expected_len) != MB_PDU_VALID) {
+    if (dbg >= 1) {
+      Serial.printf("DEBUG %s: << MB_INVALID_ADDRESS (ukendt/ugyldig function code eller quantity)\n", ctx.name);
+    }
     return MB_INVALID_ADDRESS;  // ukendt/ugyldig function code eller quantity — se lib/modbus_pdu
   }
 
   uint8_t frame[MB_RTU_FRAME_MAX_LEN];
   const size_t frame_len = mb_pdu_build_rtu_request(slave_id, pdu, pdu_len, frame, sizeof(frame));
   if (frame_len == 0) {
+    if (dbg >= 1) {
+      Serial.printf("DEBUG %s: << MB_INVALID_ADDRESS (kunne ikke bygge RTU-frame)\n", ctx.name);
+    }
     return MB_INVALID_ADDRESS;
   }
 
@@ -184,8 +215,13 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // permanent efter blot ét kald.
   {
     const uint32_t drain_start = millis();
+    size_t drained = 0;
     while (ctx.serial->available() && millis() - drain_start < 50) {
       ctx.serial->read();
+      drained++;
+    }
+    if (dbg >= 2 && drained > 0) {
+      Serial.printf("DEBUG %s: dræner %u støj-byte(s) fra bussen\n", ctx.name, static_cast<unsigned>(drained));
     }
   }
 
@@ -194,8 +230,11 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // deployment-tids-beslutning, ikke noget der skifter live).
   if (is_rs485) {
     digitalWrite(ctx.dir_pin, HIGH);
+    if (dbg >= 3) Serial.printf("DEBUG %s: DE/RE -> TX (dir_pin HIGH)\n", ctx.name);
     delayMicroseconds(50);
   }
+
+  if (dbg >= 7) debug_print_hex("DEBUG TX: ", frame, frame_len);
 
   ctx.serial->write(frame, frame_len);
   ctx.serial->flush();
@@ -204,6 +243,7 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     const uint32_t byte_us = (11UL * 1000000UL) / ctx.config.baudrate;
     delayMicroseconds(byte_us + 100);
     digitalWrite(ctx.dir_pin, LOW);
+    if (dbg >= 3) Serial.printf("DEBUG %s: DE/RE -> RX (dir_pin LOW)\n", ctx.name);
   }
 
   // To-fase timeout: fuld timeout til FØRSTE byte, kort inter-character-
@@ -218,6 +258,16 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // inter-character-timeouten mod den samlede transaktions starttidspunkt
   // (fast `start`) i stedet, udløber den næsten altid med det samme efter
   // FØRSTE byte, og en ægte fler-byte-respons ville aldrig kunne læses færdig.
+  // dbg>=4: RX-timing pr. byte — kun REGISTRERET her (billig, ingen I/O),
+  // aldrig printet INDE i selve løkken. §BUGS.md-klasse-lektion opdaget
+  // live under test af denne feature: et Serial.printf() pr. modtaget byte
+  // her tog længere end `interchar_ms` (helt ned til 2ms ved høje
+  // baudrates) — debug-outputtet ÆNDREDE dermed den faktiske transaktions
+  // udfald (spurious MB_TIMEOUT på en ellers gyldig, rettidig respons).
+  // Ventetiderne gemmes i stedet i en lille satureret uint8_t-array (0-255ms,
+  // rigeligt til at se et mønster) og printes SAMLET efter løkken er
+  // afsluttet, uanset udfald.
+  uint8_t rx_wait_ms[MB_RTU_FRAME_MAX_LEN];
   uint32_t last_byte_time = millis();
   bool timed_out = false;
   while (received < sizeof(response)) {
@@ -227,6 +277,8 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
       break;
     }
     if (ctx.serial->available()) {
+      const uint32_t wait_ms = millis() - last_byte_time;
+      rx_wait_ms[received] = static_cast<uint8_t>(wait_ms > 255 ? 255 : wait_ms);
       response[received++] = static_cast<uint8_t>(ctx.serial->read());
       last_byte_time = millis();
       if (mb_pdu_response_frame_complete(pdu, pdu_len, response, received)) {
@@ -237,16 +289,34 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     }
   }
 
+  if (dbg >= 4) {
+    for (size_t i = 0; i < received; i++) {
+      Serial.printf("DEBUG %s: RX byte[%u]=0x%02X (ventede %ums)\n", ctx.name, static_cast<unsigned>(i),
+                    response[i], static_cast<unsigned>(rx_wait_ms[i]));
+    }
+  }
+
   if (ctx.config.inter_frame_delay_ms > 0) {
+    if (dbg >= 5) {
+      Serial.printf("DEBUG %s: inter-frame-delay %ums\n", ctx.name, static_cast<unsigned>(ctx.config.inter_frame_delay_ms));
+    }
     delay(ctx.config.inter_frame_delay_ms);
   }
 
   if (timed_out || received == 0) {
+    if (dbg >= 1) {
+      Serial.printf("DEBUG %s: << MB_TIMEOUT (modtog %u byte(s), %ums)\n", ctx.name, static_cast<unsigned>(received),
+                    static_cast<unsigned>(millis() - txn_start));
+    }
     return MB_TIMEOUT;
   }
 
+  if (dbg >= 8) debug_print_hex("DEBUG RX: ", response, received);
+
   const mb_pdu_parse_result_t parse_result =
       mb_pdu_parse_rtu_response(slave_id, response, received, out_pdu, out_pdu_len, out_pdu_capacity);
+
+  mb_error_code_t final_result;
   switch (parse_result) {
     case MB_PDU_RESULT_OK:
     case MB_PDU_RESULT_EXCEPTION:
@@ -254,16 +324,30 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
       // gyldigt, modtaget svar (en Modbus-exception er semantisk indhold,
       // ikke en transportfejl) — out_pdu er allerede udfyldt med
       // exception-PDU'en, og TCP-laget skal blot relaye den uændret.
-      return MB_OK;
+      final_result = MB_OK;
+      break;
     case MB_PDU_RESULT_CRC_ERROR:
-      return MB_CRC_ERROR;
+      final_result = MB_CRC_ERROR;
+      break;
     case MB_PDU_RESULT_SLAVE_MISMATCH:
-      return MB_INVALID_SLAVE;
+      final_result = MB_INVALID_SLAVE;
+      break;
     case MB_PDU_RESULT_TOO_SHORT:
     case MB_PDU_RESULT_BUFFER_TOO_SMALL:
     default:
-      return MB_CHANNEL_UNREACHABLE;
+      final_result = MB_CHANNEL_UNREACHABLE;
+      break;
   }
+
+  if (dbg >= 6) {
+    Serial.printf("DEBUG %s: parse_result=%d -> final_result=%s\n", ctx.name, static_cast<int>(parse_result),
+                  error_name(final_result));
+  }
+  if (dbg >= 1) {
+    Serial.printf("DEBUG %s: << %s (modtog %u byte(s), %ums)\n", ctx.name, error_name(final_result),
+                  static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
+  }
+  return final_result;
 }
 
 void record_stats(ChannelContext &ctx, const ChannelRequest &req) {
@@ -346,6 +430,7 @@ void init_channel(ChannelContext &ctx, HardwareSerial &serial, size_t config_ind
   ctx.dir_pin = dir_pin;
   ctx.led_pin = led_pin;
   ctx.stats = mb_channel_stats_t{};
+  ctx.debug_level = 0;  // v0.25.0: altid FRA ved boot, bevidst ikke persisteret
 
   pinMode(ctx.dir_pin, OUTPUT);
   digitalWrite(ctx.dir_pin, LOW);
@@ -462,3 +547,9 @@ bool modbus_channel_apply_config(ModbusChannelId channel, const mb_channel_confi
 mb_channel_config_t modbus_channel_get_config(ModbusChannelId channel) { return context_for(channel).config; }
 
 mb_channel_stats_t modbus_channel_get_stats(ModbusChannelId channel) { return context_for(channel).stats; }
+
+void modbus_channel_set_debug_level(ModbusChannelId channel, uint8_t level) {
+  context_for(channel).debug_level = level;
+}
+
+uint8_t modbus_channel_get_debug_level(ModbusChannelId channel) { return context_for(channel).debug_level; }

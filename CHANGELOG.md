@@ -4,6 +4,24 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.25.0 build 0032] — 2026-09-15 — Leveled Modbus-debug-output i den serielle CLI
+
+**Baggrund:** Jan: "lave en debug som outputer til console alt hvad der forgå på kanal A og B", med egen Cisco-inspireret syntaks: "debug modbus a-b-all level 1-8 for on mode og no debug modbus eller no debug all for off mode, lave level af debug med level 1-8 hvor level 8 er rå hex dump af driver på en kanal", fulgt op af "man skal kunne disable debug fra cli også".
+
+**`src/modbus_channel.h`/`.cpp`:** ny `volatile uint8_t debug_level`-felt pr. kanal (`ChannelContext`, default 0/fra ved boot), nye `modbus_channel_set_debug_level()`/`modbus_channel_get_debug_level()`. `execute_transaction()` instrumenteret med leveled, ADDITIVE debug-output (ingen ændring af eksisterende timing/kontrolflow): level 1 = transaktions-start/slut-resumé (slave/fc/resultat/varighed), 2 = støj-dræning, 3 = DE/RE-retningsskift, 4 = RX-byte-timing, 5 = inter-frame-delay, 6 = rå `parse_result` før mapping til `mb_error_code_t`, 7 = TX rå hex-dump, 8 = RX rå hex-dump. Multiple-return-switch'en refaktoreret til én `final_result`-variabel + ét debug-print-punkt. **BUGS.md v0.24.0-lektionen anvendt bevidst:** `channel_task()` kører på en LILLE 4096-byte FreeRTOS-stack — al hex-dump-output skrives byte-for-byte direkte via `Serial.printf()` i en løkke (`debug_print_hex()`), ALDRIG samlet i en stor lokal buffer først.
+
+**`lib/provisioning_cli/`:** ny `mb_debug_target_t`-enum (kA/kB/kAll) + scratch-felter `debug_target`/`debug_level` i `mb_provisioning_state_t` (IKKE en del af den persisterede config, samme mønster som v0.24.0's `test_channel_number`/`test_read`). Ny kommando `debug modbus <a|b|all> level <1-8>` samt `no debug modbus`/`no debug all` (begge synonymer for fuld deaktivering på begge kanaler) — begge udløser ny `PROV_ACTION_DEBUG_SET`. 14 nye native-tests.
+
+**`src/provisioning.cpp`:** ny `PROV_ACTION_DEBUG_SET`-håndtering, kalder `modbus_channel_set_debug_level()` for den/de valgte kanal(er) — ren runtime-tilstand, rører intet i NVS. `status` viser nu `debug.channel_a`/`debug.channel_b` (live værdi, ikke `show` — det er ikke persisteret config).
+
+**Bevidst IKKE persisteret** — nulstilles altid til FRA ved reboot (Jan bekræftet), så det aldrig utilsigtet efterlades kørende og fylder konsollen/påvirker performance i normal drift.
+
+**Filer ændret:** `src/modbus_channel.h/.cpp`, `lib/provisioning_cli/provisioning_cli.h/.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`, `FEATURES.md`, `BUGS.md`.
+
+**Live-verificeret bug fundet OG rettet under selve verifikationen (se BUGS.md v0.25.0):** den første live-test (level 8 mod den rigtige slave på kanal B) afslørede at et `Serial.printf()` pr. RX-byte INDE i den timing-kritiske modtageløkke faktisk fik ellers gyldige, rettidige transaktioner til at fejle med `MB_TIMEOUT` (4 af 5 gentagne kald). Rettet ved at udskyde al print til EFTER løkken er færdig (registreres undervejs i en billig lokal array, ingen I/O midt i løkken) — 5/5 gentagne level-8-kald lykkedes efter rettelsen.
+
+**Status:** 238/238 native-tests bestået (14 nye), bygger rent for esp32dev. **Live-verificeret** på fysisk hardware (kanal B mod slave adr. 9): level 1 (start/slut-resumé), level 8 (fuld TX+RX hex-dump, 5/5 gentagne kald efter rettelsen ovenfor), `no debug modbus`/`no debug all` (begge slår faktisk output fra), samt uafhængige debug-niveauer pr. kanal samtidig (kanal A level 2, kanal B level 8, på samme tid). Ingen stack-relaterede nedbrud observeret under nogen af testene.
+
 ## [0.24.1 build 0031] — 2026-09-15 — `test` viser nu en "CLI'en venter"-afklaringsbesked
 
 **Baggrund:** Jan: "det se ud til at hvis en kanal ikke svar og skal timer ud så bliver der ikke udført noget aktivitet på den anden kanal i det tids rum hvor der er timer out". Undersøgt konkret via et REST-baseret parallelitetstest: sendte et kald til kanal A (ingen slave, timer ud) og SAMTIDIG (100ms senere) et kald til kanal B (rigtig, svarende slave) — kanal B svarede på 140ms, LÆNGE FØR kanal A's 762ms-timeout var færdig. Dette beviser at de to kanalers FreeRTOS-tasks (`mb_ch_a`/`mb_ch_b`, `mb_tcp_a`/`mb_tcp_b`) kører fuldstændig uafhængigt — INGEN reel blokering mellem kanalerne. Jan bekræftede at observationen kom fra `test`-kommandoen (v0.24.0) i den serielle CLI, som er BEVIDST synkron/blokerende (samme princip som `connect` ved WiFi) — det er CLI-terminalens egen ventetid, ikke boardets kanaler, der "blokerer".
