@@ -22,6 +22,16 @@ constexpr int kChannelBTx = 18;
 constexpr int kChannelBRx = 19;
 constexpr int kChannelBDir = 25;
 
+// Aktivitets-LED, én pr. kanal (EXPANSION_BOARD_DESIGN.md §2.0.1/§2.2,
+// "valgfri diagnostik-LED") — v0.23.1 (Jan: "aktivitet LED for de to kanal
+// hvordan opføre de sig"): reserveret siden v0.13.0, men ALDRIG faktisk
+// drevet af nogen kode før nu. Tændt for den PRÆCISE varighed af en RTU-
+// transaktion (se channel_task() nedenfor), uanset udfald (succes ELLER
+// fejl/timeout) — samme "der sker noget her lige nu"-filosofi som en
+// almindelig RS485/RS232-adapters TX/RX-LED.
+constexpr int kChannelALedPin = 26;
+constexpr int kChannelBLedPin = 33;
+
 // Hardware-revision 2026-09-14 (Jan, bekræftet): MODE_SEL er ÉN delt GPIO
 // for HELE boardet, ikke længere én pr. kanal — kanal A og B kan derfor
 // ALDRIG have forskellig RS232/RS485-mode, kun ét fast valg for hele
@@ -79,6 +89,7 @@ struct ChannelContext {
   int tx_pin;
   int rx_pin;
   int dir_pin;
+  int led_pin;
   mb_channel_config_t config;
   mb_channel_stats_t stats;
   QueueHandle_t queue;
@@ -301,10 +312,12 @@ void channel_task(void *param) {
     }
 
     if (!ctx->config.enabled) {
-      req->result = MB_NOT_ENABLED;
+      req->result = MB_NOT_ENABLED;  // ingen reel bus-aktivitet — LED'en blinker bevidst IKKE for dette
     } else {
+      digitalWrite(ctx->led_pin, HIGH);
       req->result = execute_transaction(*ctx, req->slave_id, req->pdu, req->pdu_len, req->out_pdu, req->out_pdu_len,
                                          req->out_pdu_capacity);
+      digitalWrite(ctx->led_pin, LOW);
     }
 
     record_stats(*ctx, *req);
@@ -324,17 +337,21 @@ void channel_task(void *param) {
 }
 
 void init_channel(ChannelContext &ctx, HardwareSerial &serial, size_t config_index, int tx_pin, int rx_pin,
-                   int dir_pin, const char *task_name, const mb_channel_config_t &initial_config) {
+                   int dir_pin, int led_pin, const char *task_name, const mb_channel_config_t &initial_config) {
   ctx.name = task_name;
   ctx.config_index = config_index;
   ctx.serial = &serial;
   ctx.tx_pin = tx_pin;
   ctx.rx_pin = rx_pin;
   ctx.dir_pin = dir_pin;
+  ctx.led_pin = led_pin;
   ctx.stats = mb_channel_stats_t{};
 
   pinMode(ctx.dir_pin, OUTPUT);
   digitalWrite(ctx.dir_pin, LOW);
+
+  pinMode(ctx.led_pin, OUTPUT);
+  digitalWrite(ctx.led_pin, LOW);
 
   apply_config_now(ctx, initial_config);
 
@@ -359,8 +376,8 @@ void modbus_channel_init_all() {
   config_a.mode = g_hardware_mode;
   config_b.mode = g_hardware_mode;
 
-  init_channel(g_channelA, g_serialA, 0, kChannelATx, kChannelARx, kChannelADir, "mb_ch_a", config_a);
-  init_channel(g_channelB, g_serialB, 1, kChannelBTx, kChannelBRx, kChannelBDir, "mb_ch_b", config_b);
+  init_channel(g_channelA, g_serialA, 0, kChannelATx, kChannelARx, kChannelADir, kChannelALedPin, "mb_ch_a", config_a);
+  init_channel(g_channelB, g_serialB, 1, kChannelBTx, kChannelBRx, kChannelBDir, kChannelBLedPin, "mb_ch_b", config_b);
 }
 
 mb_error_code_t modbus_channel_submit(ModbusChannelId channel, uint8_t slave_id, const uint8_t *pdu, size_t pdu_len,

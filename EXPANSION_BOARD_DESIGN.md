@@ -171,7 +171,7 @@ Pr. kanal kræves 3 kanal-specifikke signaler (TX/RX/DIR) + 1 boardfælles signa
 | UART TX | GPIO17 | GPIO18 | Fodrer BEGGE transceiveres driver-input (§2.2.1's princip, uændret for Variant A) |
 | UART RX | GPIO16 | GPIO19 | Fra den 2:1-mux der kombinerer begge transceiveres modtager-output |
 | DIR (DE/RE, RS485-retning) | GPIO27 | GPIO25 | Dynamisk — toggles af kanal-tasken omkring hver sending, KUN relevant når MODE_SEL=RS485 |
-| Aktivitets-LED (valgfri) | GPIO26 | GPIO33 | §2.2's anbefalede diagnostik-LED, én pr. kanal |
+| Aktivitets-LED | GPIO26 | GPIO33 | §2.2's anbefalede diagnostik-LED, én pr. kanal — **v0.23.1**: tændt for den præcise varighed af en RTU-transaktion (succes ELLER fejl/timeout), se `channel_task()`, `src/modbus_channel.cpp`. Blinker IKKE for en deaktiveret kanal (ingen reel bus-aktivitet) |
 
 | Signal | GPIO | Formål |
 |---|---|---|

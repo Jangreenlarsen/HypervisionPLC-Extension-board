@@ -2,7 +2,7 @@
 
 Samlet, hurtigt-opslags-reference for alle GPIO'er brugt på det fysiske board: et **30-pin ESP32-WROOM-32 DevKit** (IKKE WROVER/PSRAM). Fuld begrundelse for hvert valg står i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) §2.0.1 — denne fil er et rent opslagsværk, ikke den autoritative kilde ved uoverensstemmelse.
 
-**Seneste ændring:** 2026-09-14 — MODE_SEL er nu en fabriks-INPUT (fysisk jumper/strap, sat ved fremstilling), ikke længere et firmware-/REST-styret output. Samlet tidligere samme dag til én delt GPIO for hele boardet (var én pr. kanal); den frigjorte GPIO23 bruges til W5500's RST-pin.
+**Seneste ændring:** 2026-09-15 — Aktivitets-LED'erne (GPIO26/33) er nu faktisk drevet af firmwaren (tændt under en RTU-transaktion), ikke længere blot reserveret/urørt. Tidligere (2026-09-14): MODE_SEL er nu en fabriks-INPUT (fysisk jumper/strap, sat ved fremstilling), ikke længere et firmware-/REST-styret output. Samlet tidligere samme dag til én delt GPIO for hele boardet (var én pr. kanal); den frigjorte GPIO23 bruges til W5500's RST-pin.
 
 | GPIO | Funktion | Formål |
 |---|---|---|
@@ -25,10 +25,10 @@ Samlet, hurtigt-opslags-reference for alle GPIO'er brugt på det fysiske board: 
 | 22 | *(fri)* | Reserveret til fremtidig I2C (SCL) |
 | 23 | W5500 — RST | Software-styret nulstilling |
 | 25 | Kanal B — DIR | DE/RE-retning (dynamisk, kun relevant ved RS485) |
-| 26 | Kanal A — aktivitets-LED *(valgfri)* | Diagnostik |
+| 26 | Kanal A — aktivitets-LED | Tændt under en RTU-transaktion (v0.23.1) |
 | 27 | Kanal A — DIR | DE/RE-retning (dynamisk, kun relevant ved RS485) |
 | 32 | W5500 — CS | SPI chip select |
-| 33 | Kanal B — aktivitets-LED *(valgfri)* | Diagnostik |
+| 33 | Kanal B — aktivitets-LED | Tændt under en RTU-transaktion (v0.23.1) |
 | 34 | *(fri, input-only)* | Reserveret, fx fabriksnulstillings-knap |
 | 35 | W5500 — MISO | SPI (input-only) |
 | 36 | *(fri, input-only)* | Reserveret |
@@ -47,9 +47,9 @@ Boardet er et **30-pin ESP32-WROOM-32 DevKit**. GPIO-nummeret er det autoritativ
 | 34 | *(fri, fx fabriksnulstil-knap)* |
 | 35 | W5500 — MISO |
 | 32 | W5500 — CS |
-| 33 | Kanal B — aktivitets-LED *(valgfri)* |
+| 33 | Kanal B — aktivitets-LED |
 | 25 | Kanal B — DIR |
-| 26 | Kanal A — aktivitets-LED *(valgfri)* |
+| 26 | Kanal A — aktivitets-LED |
 | 27 | Kanal A — DIR |
 | 14 | W5500 — SCK |
 | 12 | *(undgås — boot-strapping)* |
@@ -83,7 +83,8 @@ Boardet er et **30-pin ESP32-WROOM-32 DevKit**. GPIO-nummeret er det autoritativ
 - **MODE_SEL (GPIO4) gælder BEGGE kanaler samtidig** — RS232 og RS485 kan ikke blandes mellem kanal A og B. Det er en fysisk INPUT (jumper/strap til 3.3V=RS485 eller GND=RS232), sat ÉN gang ved fremstilling — IKKE et felt der kan sættes via REST-API'et; `PUT /api/channels/{n}/config` ignorerer et evt. `mode`-felt, og `mode` optræder kun som en læseværdi i `GET`-svar.
 - **DIR (GPIO25/27)** er dynamisk — toggles af firmwaren omkring hver RS485-sending, rørt slet ikke i RS232-mode.
 - **W5500 har ingen strapping-pin-konflikt** — alle dens GPIO'er (13, 14, 23, 32, 35, 39) er valgt bevidst udenom ESP32'ens boot-strapping-pins.
-- GPIO21/22 og GPIO26/33 er bevidst friholdt/reserveret, ikke i brug endnu.
+- **Aktivitets-LED (GPIO26/33)** tændes af `channel_task()` (`src/modbus_channel.cpp`) for den præcise varighed af en RTU-transaktion — succes ELLER fejl/timeout blinker ens; en deaktiveret kanal (`enabled:false`) blinker IKKE, da der ikke sker nogen reel bus-aktivitet.
+- GPIO21/22 er bevidst friholdt/reserveret (fremtidig I2C), ikke i brug endnu.
 
 ## Se også
 
