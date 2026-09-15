@@ -123,13 +123,16 @@ void test_parse_write_request_fc16_values_array(void) {
 }
 
 void test_parse_write_request_fc15_values_array(void) {
-  const char *json = "{\"function_code\":15,\"slave_id\":9,\"address\":0,\"values\":[1,0,1]}";
+  // v0.27.1: "values" er BOOLEANS (matcher PLC-teamets foreslåede kontrakt
+  // OG FC05's egen bool-konvention), ikke 0/1-tal som FC16.
+  const char *json = "{\"function_code\":15,\"slave_id\":9,\"address\":0,\"values\":[true,false,true,true]}";
   mb_diag_write_request_t req{};
   TEST_ASSERT_TRUE(mb_diag_parse_write_request(json, strlen(json), &req));
-  TEST_ASSERT_EQUAL_UINT16(3, req.value_count);
+  TEST_ASSERT_EQUAL_UINT16(4, req.value_count);
   TEST_ASSERT_EQUAL_UINT16(1, req.values[0]);
   TEST_ASSERT_EQUAL_UINT16(0, req.values[1]);
   TEST_ASSERT_EQUAL_UINT16(1, req.values[2]);
+  TEST_ASSERT_EQUAL_UINT16(1, req.values[3]);
 }
 
 void test_parse_write_request_fc15_rejects_missing_values(void) {
@@ -138,8 +141,10 @@ void test_parse_write_request_fc15_rejects_missing_values(void) {
   TEST_ASSERT_FALSE(mb_diag_parse_write_request(json, strlen(json), &req));
 }
 
-void test_parse_write_request_fc15_rejects_value_above_one(void) {
-  const char *json = "{\"function_code\":15,\"slave_id\":9,\"address\":0,\"values\":[1,2,0]}";
+void test_parse_write_request_fc15_rejects_numeric_values(void) {
+  // v0.27.1: FC16-stil tal-array skal bevidst AFVISES for FC15 - kontrakten
+  // kræver booleans, ikke 0/1-tal (samme skarpe skelnen som FC05's "value").
+  const char *json = "{\"function_code\":15,\"slave_id\":9,\"address\":0,\"values\":[1,0,1]}";
   mb_diag_write_request_t req{};
   TEST_ASSERT_FALSE(mb_diag_parse_write_request(json, strlen(json), &req));
 }
@@ -276,7 +281,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_parse_write_request_fc16_values_array);
   RUN_TEST(test_parse_write_request_fc15_values_array);
   RUN_TEST(test_parse_write_request_fc15_rejects_missing_values);
-  RUN_TEST(test_parse_write_request_fc15_rejects_value_above_one);
+  RUN_TEST(test_parse_write_request_fc15_rejects_numeric_values);
   RUN_TEST(test_parse_write_request_rejects_invalid_function_code);
   RUN_TEST(test_parse_write_request_fc16_rejects_missing_values);
 

@@ -48,9 +48,11 @@ struct mb_diag_write_request_t {
 };
 
 // Parser POST /api/channels/{n}/write's JSON-body. FC05: "value" (bool).
-// FC06: "value" (0-65535). FC15: "values" (array af 0/1, maks
-// MB_DIAG_MAX_WRITE_VALUES coils). FC16: "values" (array af 0-65535, maks
-// MB_DIAG_MAX_WRITE_VALUES). function_code/slave_id/address altid påkrævet.
+// FC06: "value" (0-65535). FC15: "values" (array af BOOLEANS, fx
+// [true,false,true], maks MB_DIAG_MAX_WRITE_VALUES coils — matcher FC05's
+// bool-konvention, IKKE FC16's talformat). FC16: "values" (array af
+// 0-65535, maks MB_DIAG_MAX_WRITE_VALUES). function_code/slave_id/address
+// altid påkrævet.
 bool mb_diag_parse_write_request(const char *json, size_t len, mb_diag_write_request_t *out);
 
 // Bygger request-PDU'en til at sende via modbus_channel_submit(). Returnerer

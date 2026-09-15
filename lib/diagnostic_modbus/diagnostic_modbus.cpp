@@ -46,6 +46,51 @@ bool parse_uint_field(const char *json, const char *key, uint32_t *out) {
   return true;
 }
 
+// v0.27.1 — FC15's "values" er et array af BOOLEANS ([true,false,...]), IKKE
+// tal — matcher PLC-udviklingsteamets forslag til kontrakten OG denne fils
+// egen eksisterende konvention for coils (FC05's "value" er allerede en
+// bool, se parse_bool_field()/FC05-grenen nedenfor). En tidligere udgave
+// genbrugte parse_uint_array_field() (0/1-tal) for FC15 — inkonsistent med
+// FC05 og ville have fejlet mod PLC-siden, hvis den implementerede sin egen
+// foreslåede kontrakt.
+bool parse_bool_array_field(const char *json, const char *key, uint16_t *out_values, uint16_t max_count,
+                             uint16_t *out_count) {
+  const char *v = find_value_start(json, key);
+  if (v == nullptr || *v != '[') return false;
+  v++;
+
+  uint16_t count = 0;
+  for (;;) {
+    while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') v++;
+    if (*v == ']') {
+      v++;
+      break;
+    }
+    if (count >= max_count) return false;
+    if (strncmp(v, "true", 4) == 0) {
+      out_values[count++] = 1;
+      v += 4;
+    } else if (strncmp(v, "false", 5) == 0) {
+      out_values[count++] = 0;
+      v += 5;
+    } else {
+      return false;  // hverken "true" eller "false" — ikke et gyldigt boolsk element
+    }
+    while (*v == ' ' || *v == '\t' || *v == '\n' || *v == '\r') v++;
+    if (*v == ',') {
+      v++;
+      continue;
+    }
+    if (*v == ']') {
+      v++;
+      break;
+    }
+    return false;  // uventet tegn — hverken "," eller "]"
+  }
+  *out_count = count;
+  return true;
+}
+
 bool parse_uint_array_field(const char *json, const char *key, uint16_t *out_values, uint16_t max_count,
                              uint16_t *out_count) {
   const char *v = find_value_start(json, key);
@@ -171,11 +216,8 @@ bool mb_diag_parse_write_request(const char *json, size_t len, mb_diag_write_req
     parsed.value_count = count;
   } else if (fc == 15) {
     uint16_t count = 0;
-    if (!parse_uint_array_field(json, "values", parsed.values, MB_DIAG_MAX_WRITE_VALUES, &count) || count == 0) {
+    if (!parse_bool_array_field(json, "values", parsed.values, MB_DIAG_MAX_WRITE_VALUES, &count) || count == 0) {
       return false;
-    }
-    for (uint16_t i = 0; i < count; i++) {
-      if (parsed.values[i] > 1) return false;  // hver coil-værdi skal være 0 eller 1
     }
     parsed.value_count = count;
   } else if (fc == 5) {
