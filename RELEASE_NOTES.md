@@ -2,6 +2,14 @@
 
 ---
 
+## v0.24.1 — 2026-09-15 — `test`-kommandoen forklarer nu sin egen ventetid
+
+`test`-kommandoen viser nu en kort besked om at den serielle CLI venter på svar/timeout, så det er tydeligt at det er CLI-terminalen (ikke boardets kanaler) der er optaget imens. Bekræftet ved en konkret måling at de to Modbus-kanaler reelt kører helt uafhængigt af hinanden — en kanal der timer ud påvirker ikke den anden kanals egen respons-tid.
+
+**Næste skridt**: ingen — ren afklaring, live-verifikation følger som vanligt.
+
+---
+
 ## v0.24.0 — 2026-09-15 — Diagnostisk Modbus-test direkte fra CLI'en
 
 Den serielle CLI kan nu udføre en diagnostisk Modbus-læsning uden curl/REST: `test <kanal 1|2> <slave_id> <function_code 1-4> <adresse> <antal>`. Samme kapabilitet som REST-API'ets `POST /api/channels/{n}/read`, men direkte i terminalen — praktisk til hurtig test af en tilsluttet slave-enhed eller aktivitets-LED'en, uden at skulle åbne et separat værktøj. Kun læsning — ingen skrivning fra CLI'en.

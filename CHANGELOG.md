@@ -4,6 +4,16 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.24.1 build 0031] — 2026-09-15 — `test` viser nu en "CLI'en venter"-afklaringsbesked
+
+**Baggrund:** Jan: "det se ud til at hvis en kanal ikke svar og skal timer ud så bliver der ikke udført noget aktivitet på den anden kanal i det tids rum hvor der er timer out". Undersøgt konkret via et REST-baseret parallelitetstest: sendte et kald til kanal A (ingen slave, timer ud) og SAMTIDIG (100ms senere) et kald til kanal B (rigtig, svarende slave) — kanal B svarede på 140ms, LÆNGE FØR kanal A's 762ms-timeout var færdig. Dette beviser at de to kanalers FreeRTOS-tasks (`mb_ch_a`/`mb_ch_b`, `mb_tcp_a`/`mb_tcp_b`) kører fuldstændig uafhængigt — INGEN reel blokering mellem kanalerne. Jan bekræftede at observationen kom fra `test`-kommandoen (v0.24.0) i den serielle CLI, som er BEVIDST synkron/blokerende (samme princip som `connect` ved WiFi) — det er CLI-terminalens egen ventetid, ikke boardets kanaler, der "blokerer".
+
+**`src/provisioning.cpp`:** `PROV_ACTION_TEST_READ`-håndteringen printer nu `(CLI'en venter nu op til Xms paa svar/timeout - den ANDEN kanal koerer uforstyrret videre i baggrunden)` FØR selve ventetiden (henter kanalens faktiske `timeout_ms` via `modbus_channel_get_config()`). Ren afklaring — ingen adfærdsændring.
+
+**Filer ændret:** `src/provisioning.cpp`.
+
+**Status:** 225/225 native-tests upåvirket, bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.24.0 build 0030] — 2026-09-15 — `test <kanal> <slave_id> <fc> <adresse> <antal>` i den serielle CLI
 
 **Baggrund:** Jan: "kan vi lave test fra cli" — hidtil krævede diagnostisk Modbus-testning enten curl/Postman (§4.2's `POST /api/channels/{n}/read`) eller en rigtig Modbus TCP-klient. Ingen måde at teste direkte fra den serielle CLI.
