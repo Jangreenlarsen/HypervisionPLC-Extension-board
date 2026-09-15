@@ -2,6 +2,7 @@
 
 #include <cstddef>
 
+#include "diagnostic_modbus.h"
 #include "rest_auth.h"
 
 // Grænser hentet fra spec, ikke gættet: 802.11 SSID max 32 bytes; WPA2-PSK
@@ -100,6 +101,17 @@ struct mb_provisioning_state_t {
   // persisterede MAC, IKKE en zero-value her).
   char hostname[MB_PROV_HOSTNAME_MAX_LEN + 1];
   bool has_hostname;
+
+  // v0.24.0 (Jan: "kan vi lave test fra cli") — SCRATCH-felter, IKKE en del
+  // af den persisterede config (mb_config_apply_provisioning_state()/
+  // mb_config_to_provisioning_state() rører dem aldrig): bærer blot
+  // parametrene for det ENE, netop udførte "test ..."-kald videre fra
+  // parseren (mb_provisioning_apply_line()) til udførelsen (kaldstedet,
+  // src/provisioning.cpp — den eneste der reelt kan tale Modbus).
+  // `test_channel_number` er 1-baseret (1=kanal A, 2=kanal B), samme
+  // konvention som REST-API'ets `PUT/GET /api/channels/{n}`.
+  uint8_t test_channel_number;
+  mb_diag_read_request_t test_read;
 };
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state);
@@ -127,6 +139,14 @@ enum mb_provisioning_result_t {
   // generere+persistere et helt nyt token (hardware-RNG, ikke en del af
   // denne hardware-uafhængige lib) og vise det.
   PROV_ACTION_TOKEN_REGENERATE,
+  // v0.24.0 (Jan: "kan vi lave test fra cli") — "test <n> <slave_id> <fc>
+  // <adresse> <antal>", CLI-udgaven af §4.2's diagnostiske
+  // `POST /api/channels/{n}/read` (samme lib/diagnostic_modbus-parametre/
+  // -grænser). KUN læsning (FC01/02/03/04) — ingen skrivning fra CLI'en,
+  // bevidst lavere risiko end en fuld read/write-parallel. Udløser en
+  // RIGTIG Modbus-transaktion (og dermed kanalens aktivitets-LED, v0.23.1)
+  // — kaldstedet skal bruge `state->test_channel_number`/`state->test_read`.
+  PROV_ACTION_TEST_READ,
   PROV_EMPTY_LINE,             // tomt/whitespace-only input — kaldstedet kan ignorere stille
   PROV_UNKNOWN_COMMAND,
   PROV_MISSING_ARGUMENT,       // out_message forklarer hvilket felt der mangler

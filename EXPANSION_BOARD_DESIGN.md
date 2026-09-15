@@ -386,6 +386,7 @@ Dette er den ENESTE brugerflade boardet nogensinde selv viser (§0) — over USB
 | `connect` | Anvender de indtastede felter, forsøger en rigtig forbindelse, og genstarter boardet ved succes. Afvises med en forklarende fejl (hvilke(t) felt(er) mangler) hvis påkrævede felter ikke er sat — ingen generisk "noget gik galt" |
 | `reboot` (v0.19.0) | Blødt, IKKE-destruktivt genstart — rydder INTET i NVS (modsat `factory-reset`). Samme funktion som REST-API'ets `POST /api/reboot` (v0.12.0), fra den serielle CLI |
 | `factory-reset confirm` | Samme effekt som en fysisk fabriksnulstillings-knap (§3.4 punkt 6) — kræver det eksplicitte `confirm`-argument for at undgå et utilsigtet tryk/enter |
+| `test <kanal 1\|2> <slave_id> <fc 1-4> <adresse> <antal>` (v0.24.0) | Diagnostisk Modbus-læsning, CLI-udgave af §4.2's `POST /api/channels/{n}/read` — samme grænser, KUN læsning (fc 1-4). Udløser en rigtig transaktion (og dermed kanalens aktivitets-LED) |
 | `version` | Firmware-version+build (samme data som `show`/`status`s `firmware`-linje) |
 | `help` | Kommando-oversigt |
 

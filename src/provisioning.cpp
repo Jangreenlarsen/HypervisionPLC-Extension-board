@@ -7,6 +7,7 @@
 #include <strings.h>
 
 #include "config.h"
+#include "diagnostic_modbus.h"
 #include "eth_driver.h"
 #include "modbus_channel.h"
 #include "provisioning_cli.h"
@@ -158,6 +159,23 @@ void print_ethernet_status() {
   uint8_t mac[6];
   eth_driver_get_mac(mac);
   Serial.printf("eth.mac: %02X:%02X:%02X:%02X:%02X:%02X\r\n", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+// v0.24.0 ("test ...") — samme mb_error_code_t-værdier som
+// modbus_channel.cpp's (interne, ikke-eksporterede) error_name(), men egen
+// lille kopi her — samme "hold moduler begrebsmæssigt adskilte fremfor at
+// dele triviel formateringslogik"-princip som fx rest_status.cpp's
+// mode_to_string().
+const char *test_error_text(mb_error_code_t error) {
+  switch (error) {
+    case MB_TIMEOUT: return "timeout - intet svar fra slaven";
+    case MB_CRC_ERROR: return "CRC-fejl i svaret";
+    case MB_NOT_ENABLED: return "kanalen er deaktiveret (enabled:false)";
+    case MB_INVALID_SLAVE: return "svar fra forkert slave-ID";
+    case MB_BUS_BUSY: return "kanalen er optaget (koen var fuld)";
+    case MB_CHANNEL_UNREACHABLE: return "ufuldstaendigt/ulaeseligt svar";
+    default: return "ukendt fejl";
+  }
 }
 
 void print_board_mode() {
@@ -438,6 +456,46 @@ void provisioning_poll() {
         Serial.println("Nyt management-API-token:");
         Serial.println(new_token);
         Serial.println("ADVARSEL: det GAMLE token virker IKKE laengere - opdater det med det samme i PLC'ens System-side under 'Modbus Expansion Boards'.");
+      } else if (result == PROV_ACTION_TEST_READ) {
+        // v0.24.0 (Jan: "kan vi lave test fra cli") — CLI-udgaven af §4.2's
+        // diagnostiske POST /api/channels/{n}/read, samme
+        // lib/diagnostic_modbus-byggeklodser som REST-handleren
+        // (src/http_server.cpp) bruger. Udløser en RIGTIG transaktion —
+        // tænder derfor ogsaa kanalens aktivitets-LED (v0.23.1).
+        const ModbusChannelId test_id =
+            (g_state.test_channel_number == 1) ? ModbusChannelId::kA : ModbusChannelId::kB;
+
+        uint8_t request_pdu[8];
+        const size_t request_pdu_len = mb_diag_build_read_pdu(&g_state.test_read, request_pdu, sizeof(request_pdu));
+
+        // BUGS.md v0.24.0: `static` her (og for err_body/resp_body nedenfor)
+        // er IKKE stilistisk — response_pdu (253 bytes) + resp_body (op til
+        // 4608 bytes) som stak-lokale variable i denne funktion (der ALLEREDE
+        // har en 2048-byte `message`-buffer i samme scope, se ovenfor)
+        // overskred faktisk Arduino-kernens loopTask-stak (8192 bytes) og gav
+        // et rigtigt, live-observeret stack-overflow-nedbrud. `provisioning_poll()`
+        // kører udelukkende sekventielt på ÉN task (aldrig genindtrædende), så
+        // `static` her introducerer ingen samtidigheds-risiko.
+        static uint8_t response_pdu[MB_PDU_MAX_LEN];
+        size_t response_pdu_len = 0;
+        const mb_error_code_t test_result =
+            modbus_channel_submit(test_id, g_state.test_read.slave_id, request_pdu, request_pdu_len, response_pdu,
+                                   &response_pdu_len, sizeof(response_pdu));
+
+        if (test_result != MB_OK) {
+          Serial.print("FEJL: ");
+          Serial.println(test_error_text(test_result));
+        } else if (mb_diag_is_exception(response_pdu, response_pdu_len)) {
+          static char err_body[192];
+          const size_t err_len = mb_diag_build_exception_json(g_state.test_read.slave_id, response_pdu,
+                                                                response_pdu_len, err_body, sizeof(err_body));
+          Serial.println(err_len > 0 ? err_body : "FEJL: kunne ikke bygge exception-svaret");
+        } else {
+          static char resp_body[4608];
+          const size_t resp_len = mb_diag_build_read_values_json(&g_state.test_read, response_pdu, response_pdu_len,
+                                                                   resp_body, sizeof(resp_body));
+          Serial.println(resp_len > 0 ? resp_body : "FEJL: kunne ikke bygge svaret");
+        }
       } else if (result == PROV_ACTION_FACTORY_RESET) {
         Serial.println("Rydder NVS-konfiguration og genstarter.");
         config_factory_reset();
