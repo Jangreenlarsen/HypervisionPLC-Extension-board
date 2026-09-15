@@ -380,6 +380,21 @@ void record_stats(ChannelContext &ctx, const ChannelRequest &req) {
   ctx.stats.last_error_at_uptime_s = millis() / 1000;
 }
 
+// v0.25.1 (Jan: "hvis [debug] er aktiv skal alt andet console output
+// undertrykkes og ikke som nu hvor man få blandet alt muligt ind i debug
+// output også") — den generiske MODBUS-FEJL-linje nedenfor fyrer for HVER
+// fejlende transaktion på BEGGE kanaler, uanset debug-niveau. I praksis
+// druknede den den ellers rene debug-visning af én kanal i støj fra den
+// ANDEN (uafhængige) kanals helt normale, uafhængige trafik (fx en
+// tredjeparts Modbus TCP-master der periodisk poller en kanal uden noget
+// tilsluttet). Så snart mindst ÉN kanal har debug slået til, undertrykkes
+// denne linje derfor for BEGGE kanaler — debug-outputtet (level ≥1) viser
+// allerede slave/fc/resultat for den/de kanal(er) man rent faktisk kigger
+// på, så intet reelt går tabt for DEM; for en ikke-debugget kanal er det en
+// bevidst, midlertidig afvejning Jan selv har bedt om for at få et rent
+// debug-vindue.
+bool any_channel_debug_active() { return g_channelA.debug_level > 0 || g_channelB.debug_level > 0; }
+
 void channel_task(void *param) {
   ChannelContext *ctx = static_cast<ChannelContext *>(param);
   for (;;) {
@@ -406,7 +421,7 @@ void channel_task(void *param) {
 
     record_stats(*ctx, *req);
 
-    if (req->result != MB_OK) {
+    if (req->result != MB_OK && !any_channel_debug_active()) {
       Serial.print("MODBUS-FEJL kanal ");
       Serial.print(ctx->name);
       Serial.print(": slave=");

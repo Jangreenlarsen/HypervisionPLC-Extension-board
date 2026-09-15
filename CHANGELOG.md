@@ -4,6 +4,16 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.25.1 build 0033] — 2026-09-15 — Debug-output undertrykker nu resten af konsol-støjen mens det er aktivt
+
+**Baggrund:** Jan, efter at have brugt v0.25.0's `debug modbus`-feature: "hvis den er aktiv skal alt andet console output undertrykkes og ikke som nu hvor man få blandet alt muligt ind i debug output også". Konkret problem: `channel_task()`s generiske `MODBUS-FEJL kanal ...`-linje (`src/modbus_channel.cpp`) er upåvirket af debug-niveau og fyrer for HVER fejlende transaktion på BEGGE kanaler — så et forsøg på at kigge rent på kanal B's debug-output blev oversvømmet af kanal A's helt uafhængige, normale fejl-trafik (fx en anden Modbus TCP-master der periodisk poller en kanal uden noget tilsluttet).
+
+**`src/modbus_channel.cpp`:** ny `any_channel_debug_active()`-hjælper — så snart MINDST ÉN kanal har debug slået til, undertrykkes den generiske `MODBUS-FEJL`-linje for BEGGE kanaler. Debug-outputtet (level ≥1) viser allerede slave/fc/resultat for den/de kanal(er) man rent faktisk debugger, så intet reelt går tabt DÉR — for en ikke-debugget kanal er det en bevidst, midlertidig afvejning under aktiv fejlsøgning.
+
+**Filer ændret:** `src/modbus_channel.cpp`, `FEATURES.md`.
+
+**Status:** 238/238 native-tests upåvirket (ingen native-testbar logik ændret — rent `src/`-lag), bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.25.0 build 0032] — 2026-09-15 — Leveled Modbus-debug-output i den serielle CLI
 
 **Baggrund:** Jan: "lave en debug som outputer til console alt hvad der forgå på kanal A og B", med egen Cisco-inspireret syntaks: "debug modbus a-b-all level 1-8 for on mode og no debug modbus eller no debug all for off mode, lave level af debug med level 1-8 hvor level 8 er rå hex dump af driver på en kanal", fulgt op af "man skal kunne disable debug fra cli også".

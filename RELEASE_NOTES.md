@@ -2,6 +2,14 @@
 
 ---
 
+## v0.25.1 — 2026-09-15 — Debug-output er nu støjfrit
+
+`debug modbus`-featuren blandede sig hidtil med den generiske fejl-log fra BEGGE kanaler, uanset hvilken man rent faktisk debuggede — en kanal med et helt uafhængigt problem (fx ingen slave tilsluttet) kunne oversvømme den kanal man forsøgte at kigge rent på. Den generiske fejl-linje undertrykkes nu helt, så snart mindst én kanal har debug slået til — debug-outputtet selv viser stadig alt relevant for den/de kanaler man debugger.
+
+**Næste skridt**: live-verifikation på fysisk hardware.
+
+---
+
 ## v0.25.0 — 2026-09-15 — Leveled Modbus-debug-output i den serielle CLI
 
 Ny kommando i den serielle CLI: `debug modbus <a|b|all> level <1-8>` slår detaljeret debug-output til på kanal A, B eller begge — fra en kort start/slut-linje pr. transaktion (level 1) til fuld rå hex-dump af både TX- og RX-rammerne (level 7-8). `no debug modbus`/`no debug all` slår det fra igen. Bevidst IKKE gemt i konfigurationen — nulstilles altid til fra ved genstart, så det aldrig glemmes tændt i normal drift. Vist som live-status under `status`.
