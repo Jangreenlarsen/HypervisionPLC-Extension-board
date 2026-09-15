@@ -43,7 +43,7 @@ enum mb_pdu_validation_t {
 
 // Beregner hvor mange bytes en komplet, IKKE-exception RTU-svar-frame vil
 // være (adresse + svar-pdu + CRC) for en given forespørgsels-PDU. Kun
-// FC01/02/03/04/05/06/16 genkendes (§4.1) — alt andet giver
+// FC01/02/03/04/05/06/15/16 genkendes (§4.1) — alt andet giver
 // MB_PDU_UNSUPPORTED_FUNCTION, som kalderen bør afvise FØR transmission
 // (jf. Modbus exception 0x01 "illegal function", ikke en transportfejl).
 mb_pdu_validation_t mb_pdu_expected_response_frame_len(const uint8_t *request_pdu, size_t request_pdu_len,

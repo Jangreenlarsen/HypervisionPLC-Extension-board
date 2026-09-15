@@ -72,6 +72,18 @@ mb_pdu_validation_t mb_pdu_expected_response_frame_len(const uint8_t *request_pd
       *out_expected_len = 1 + 5 + 2;  // svaret ekkoer requestets PDU 1:1
       return MB_PDU_VALID;
     }
+    case 0x0F: {  // Write Multiple Coils (FC15)
+      if (request_pdu_len < 6) return MB_PDU_MALFORMED_REQUEST;
+      const uint16_t qty = (static_cast<uint16_t>(request_pdu[3]) << 8) | request_pdu[4];
+      const uint8_t byte_count = request_pdu[5];
+      const uint8_t expected_byte_count = static_cast<uint8_t>((qty + 7) / 8);
+      if (qty == 0 || qty > 1968 || byte_count != expected_byte_count ||  // Modbus-spec-grænse for FC15
+          request_pdu_len != static_cast<size_t>(6 + byte_count)) {
+        return MB_PDU_MALFORMED_REQUEST;
+      }
+      *out_expected_len = 1 + 1 + 2 + 2 + 2;  // svar = adresse+fc+startadresse(2)+quantity(2)+CRC(2)
+      return MB_PDU_VALID;
+    }
     case 0x10: {  // Write Multiple Registers (FC16)
       if (request_pdu_len < 6) return MB_PDU_MALFORMED_REQUEST;
       const uint16_t qty = (static_cast<uint16_t>(request_pdu[3]) << 8) | request_pdu[4];
