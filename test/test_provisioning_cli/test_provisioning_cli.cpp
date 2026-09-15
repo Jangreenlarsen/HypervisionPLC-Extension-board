@@ -412,6 +412,57 @@ void test_token_unknown_subcommand(void) {
   TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
 }
 
+// ---------------------------------------------------------------------------
+// "test ..." (v0.24.0) — diagnostisk Modbus-laesning fra CLI'en
+// ---------------------------------------------------------------------------
+
+void test_test_read_action(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "test 2 9 3 0 1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_TEST_READ, r);
+  TEST_ASSERT_EQUAL_UINT8(2, state.test_channel_number);
+  TEST_ASSERT_EQUAL_UINT8(9, state.test_read.slave_id);
+  TEST_ASSERT_EQUAL_UINT8(3, state.test_read.function_code);
+  TEST_ASSERT_EQUAL_UINT16(0, state.test_read.address);
+  TEST_ASSERT_EQUAL_UINT16(1, state.test_read.quantity);
+}
+
+void test_test_read_missing_args(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "test 1 9 3 0", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
+}
+
+void test_test_read_rejects_invalid_channel(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "test 3 9 3 0 1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_test_read_rejects_invalid_slave_id(void) {
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 1 0 3 0 1", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 1 248 3 0 1", msg, sizeof(msg)));
+}
+
+void test_test_read_rejects_invalid_function_code(void) {
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 1 9 0 0 1", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 1 9 5 0 1", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL_MESSAGE(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 1 9 16 0 1", msg, sizeof(msg)),
+                             "fc 16 (write) skal afvises - 'test' er kun laesning");
+}
+
+void test_test_read_rejects_invalid_address(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "test 1 9 3 65536 1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_test_read_rejects_invalid_quantity(void) {
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 1 9 3 0 0", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 1 9 3 0 2001", msg, sizeof(msg)));
+}
+
+void test_test_read_rejects_non_numeric_token(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "test a 9 3 0 1", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
 void test_status_action(void) {
   // "status" delegerer selve indholdet til kaldstedet (uptime/heap/WiFi er
   // runtime-data) — her verificeres kun at kommandoen genkendes korrekt.
@@ -574,6 +625,7 @@ void test_help_action(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "connect"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "reboot"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "token regenerate"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "test <kanal>"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "factory-reset confirm"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest user"));
   TEST_ASSERT_NOT_NULL(strstr(msg, "rest pass"));
@@ -754,6 +806,14 @@ int main(int argc, char **argv) {
   RUN_TEST(test_token_regenerate_action);
   RUN_TEST(test_token_missing_subcommand);
   RUN_TEST(test_token_unknown_subcommand);
+  RUN_TEST(test_test_read_action);
+  RUN_TEST(test_test_read_missing_args);
+  RUN_TEST(test_test_read_rejects_invalid_channel);
+  RUN_TEST(test_test_read_rejects_invalid_slave_id);
+  RUN_TEST(test_test_read_rejects_invalid_function_code);
+  RUN_TEST(test_test_read_rejects_invalid_address);
+  RUN_TEST(test_test_read_rejects_invalid_quantity);
+  RUN_TEST(test_test_read_rejects_non_numeric_token);
   RUN_TEST(test_status_action);
   RUN_TEST(test_wifi_missing_subcommand);
   RUN_TEST(test_wifi_unknown_subcommand);

@@ -4,6 +4,18 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.24.0 build 0030] — 2026-09-15 — `test <kanal> <slave_id> <fc> <adresse> <antal>` i den serielle CLI
+
+**Baggrund:** Jan: "kan vi lave test fra cli" — hidtil krævede diagnostisk Modbus-testning enten curl/Postman (§4.2's `POST /api/channels/{n}/read`) eller en rigtig Modbus TCP-klient. Ingen måde at teste direkte fra den serielle CLI.
+
+**`lib/provisioning_cli/`:** ny `test <kanal 1|2> <slave_id> <fc 1-4> <adresse> <antal>`-kommando. Ny `parse_uint_token()`-hjælper (heltalsparsing af CLI-tokens, adskilt fra `lib/channel_config`s JSON-feltparsing). Samme grænser som REST-udgaven (`mb_diag_parse_read_request()`): fc 1-4, slave_id 1-247, adresse 0-65535, antal 1-2000. **KUN læsning** — bevidst ingen `test write` (lavere risiko: en CLI-tastefejl kan ikke skrive forkert til et tilsluttet felt-device). Nye scratch-felter `test_channel_number`/`test_read` i `mb_provisioning_state_t` (IKKE en del af den persisterede config — bærer blot parametrene fra parseren til udførelsen). Tokenizer-bufferen hævet fra 4 til 6 tokens for at rumme kommandoens fem argumenter.
+
+**`src/provisioning.cpp`:** ny `PROV_ACTION_TEST_READ`-håndtering — genbruger `lib/diagnostic_modbus`s eksisterende `mb_diag_build_read_pdu()`/`mb_diag_is_exception()`/`mb_diag_build_exception_json()`/`mb_diag_build_read_values_json()` (SAMME byggeklodser som `src/http_server.cpp`s REST-handler, ingen duplikeret formaterings-/PDU-logik), kalder `modbus_channel_submit()` direkte. Udløser en RIGTIG transaktion — tænder derfor kanalens aktivitets-LED (v0.23.1), praktisk til selv at kunne teste/bekræfte den fra CLI'en uden eksterne værktøjer.
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.h/.cpp`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`.
+
+**Status:** 225/225 native-tests bestået (8 nye), bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.23.1 build 0029] — 2026-09-15 — Aktivitets-LED'erne (GPIO26/33) driver nu faktisk noget
 
 **Baggrund:** Jan: "aktivitet LED for de to kanal hvordan opføre de sig" — GPIO26/33 har været reserveret til "valgfri diagnostik-LED" siden v0.13.0 (§2.2), men ingen kode nogensinde skrev til dem — rent elektrisk udefinerede.

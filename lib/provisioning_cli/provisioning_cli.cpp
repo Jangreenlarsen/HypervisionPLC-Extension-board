@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state) {
@@ -125,6 +126,18 @@ static bool ieq(const char *a, const char *b) {
 static void set_ipv4_field(char *target, const char *value) {
   strncpy(target, value, MB_PROV_IPV4_MAX_LEN);
   target[MB_PROV_IPV4_MAX_LEN] = '\0';
+}
+
+// v0.24.0: parser ét CLI-token som et heltal (afviser tomme/ikke-numeriske
+// tokens og forkortede kald som "5abc" — HELE tokenet skal være cifre,
+// ikke kun et præfiks af det, modsat en rå strtoul()). Bruges af "test ...".
+static bool parse_uint_token(const char *token, uint32_t *out) {
+  if (token == nullptr || *token == '\0') return false;
+  char *end = nullptr;
+  const unsigned long value = strtoul(token, &end, 10);
+  if (end == token || *end != '\0') return false;
+  *out = static_cast<uint32_t>(value);
+  return true;
 }
 
 // Lille hjælper til multi-linje-output: tilføjer "<label>: <value>\r\n" til
@@ -265,8 +278,10 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     buf[--line_len] = '\0';
   }
 
-  char *tokens[4] = {nullptr, nullptr, nullptr, nullptr};
-  const size_t token_count = tokenize(buf, tokens, 4);
+  // v0.24.0: hævet 4->6 for at rumme "test <n> <slave_id> <fc> <adresse>
+  // <antal>" (6 tokens i alt, inkl. selve "test"-ordet).
+  char *tokens[6] = {nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+  const size_t token_count = tokenize(buf, tokens, 6);
 
   if (token_count == 0) {
     return PROV_EMPTY_LINE;
@@ -296,6 +311,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(out_message, out_message_capacity, &pos, "connect", "anvend felterne og forsoeg WiFi-forbindelse");
     append_line(out_message, out_message_capacity, &pos, "reboot", "blødt genstart - rydder INTET (modsat factory-reset)");
     append_line(out_message, out_message_capacity, &pos, "token regenerate", "nyt management-API-token - roerer INTET andet (husk at opdatere PLC'en)");
+    append_line(out_message, out_message_capacity, &pos, "test <kanal> <slave_id> <fc> <adresse> <antal>", "diagnostisk Modbus-laesning (kanal 1|2, fc 1-4)");
     append_line(out_message, out_message_capacity, &pos, "factory-reset confirm", "ryd WiFi/token/firewall og genstart");
     append_line(out_message, out_message_capacity, &pos, "version", "vis firmware-version+build");
     append_line(out_message, out_message_capacity, &pos, "help", "denne kommandoliste");
@@ -665,6 +681,49 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
 
     snprintf(out_message, out_message_capacity, "ukendt eth-underkommando: %s", tokens[1]);
     return PROV_UNKNOWN_COMMAND;
+  }
+
+  // v0.24.0 (Jan: "kan vi lave test fra cli") — "test <n> <slave_id> <fc>
+  // <adresse> <antal>", CLI-udgaven af §4.2's diagnostiske
+  // POST /api/channels/{n}/read. Samme grænser som lib/diagnostic_modbus's
+  // JSON-udgave (mb_diag_parse_read_request()): fc 1-4, slave_id 1-247,
+  // adresse 0-65535, antal 1-2000. KUN læsning - ingen "test write".
+  if (ieq(tokens[0], "test")) {
+    if (token_count < 6) {
+      snprintf(out_message, out_message_capacity, "brug 'test <kanal 1|2> <slave_id> <fc 1-4> <adresse> <antal>'");
+      return PROV_MISSING_ARGUMENT;
+    }
+
+    uint32_t n = 0, slave = 0, fc = 0, addr = 0, qty = 0;
+    if (!parse_uint_token(tokens[1], &n) || (n != 1 && n != 2)) {
+      snprintf(out_message, out_message_capacity, "ugyldig kanal '%s' - brug 1 (kanal A) eller 2 (kanal B)", tokens[1]);
+      return PROV_INVALID_VALUE;
+    }
+    if (!parse_uint_token(tokens[2], &slave) || slave == 0 || slave > 247) {
+      snprintf(out_message, out_message_capacity, "ugyldigt slave_id '%s' - skal vaere 1-247", tokens[2]);
+      return PROV_INVALID_VALUE;
+    }
+    if (!parse_uint_token(tokens[3], &fc) || fc < 1 || fc > 4) {
+      snprintf(out_message, out_message_capacity, "ugyldig function code '%s' - skal vaere 1-4 (kun laesning)", tokens[3]);
+      return PROV_INVALID_VALUE;
+    }
+    if (!parse_uint_token(tokens[4], &addr) || addr > 0xFFFF) {
+      snprintf(out_message, out_message_capacity, "ugyldig adresse '%s' - skal vaere 0-65535", tokens[4]);
+      return PROV_INVALID_VALUE;
+    }
+    if (!parse_uint_token(tokens[5], &qty) || qty == 0 || qty > 2000) {
+      snprintf(out_message, out_message_capacity, "ugyldigt antal '%s' - skal vaere 1-2000", tokens[5]);
+      return PROV_INVALID_VALUE;
+    }
+
+    state->test_channel_number = static_cast<uint8_t>(n);
+    state->test_read.function_code = static_cast<uint8_t>(fc);
+    state->test_read.slave_id = static_cast<uint8_t>(slave);
+    state->test_read.address = static_cast<uint16_t>(addr);
+    state->test_read.quantity = static_cast<uint16_t>(qty);
+    snprintf(out_message, out_message_capacity, "ok - udfoerer diagnostisk laesning paa kanal %u...",
+             static_cast<unsigned>(n));
+    return PROV_ACTION_TEST_READ;
   }
 
   snprintf(out_message, out_message_capacity, "ukendt kommando: %s (proev 'help')", tokens[0]);

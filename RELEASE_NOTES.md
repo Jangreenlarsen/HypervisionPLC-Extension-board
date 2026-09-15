@@ -2,6 +2,14 @@
 
 ---
 
+## v0.24.0 — 2026-09-15 — Diagnostisk Modbus-test direkte fra CLI'en
+
+Den serielle CLI kan nu udføre en diagnostisk Modbus-læsning uden curl/REST: `test <kanal 1|2> <slave_id> <function_code 1-4> <adresse> <antal>`. Samme kapabilitet som REST-API'ets `POST /api/channels/{n}/read`, men direkte i terminalen — praktisk til hurtig test af en tilsluttet slave-enhed eller aktivitets-LED'en, uden at skulle åbne et separat værktøj. Kun læsning — ingen skrivning fra CLI'en.
+
+**Næste skridt**: live-verifikation på fysisk hardware mod den rigtige slave på kanal B.
+
+---
+
 ## v0.23.1 — 2026-09-15 — Aktivitets-LED'erne virker nu
 
 De to kanalers aktivitets-LED'er (reserveret på boardet siden v0.13.0, men aldrig faktisk brugt) tændes nu under en RTU-transaktion og slukkes igen bagefter — samme "der sker noget her"-blink som en almindelig RS485/RS232-adapter. Gælder både succesfulde og fejlende transaktioner; en deaktiveret kanal blinker ikke.
