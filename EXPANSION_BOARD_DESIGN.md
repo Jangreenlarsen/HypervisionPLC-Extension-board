@@ -385,8 +385,11 @@ Dette er den ENESTE brugerflade boardet nogensinde selv viser (§0) — over USB
 | `save` | Gemmer de aktuelle felter til NVS UDEN at forsøge en WiFi-forbindelse — til fx REST-credential-ændringer der ikke kræver en (gen)forbindelse |
 | `connect` | Anvender de indtastede felter, forsøger en rigtig forbindelse, og genstarter boardet ved succes. Afvises med en forklarende fejl (hvilke(t) felt(er) mangler) hvis påkrævede felter ikke er sat — ingen generisk "noget gik galt" |
 | `reboot` (v0.19.0) | Blødt, IKKE-destruktivt genstart — rydder INTET i NVS (modsat `factory-reset`). Samme funktion som REST-API'ets `POST /api/reboot` (v0.12.0), fra den serielle CLI |
+| `token regenerate` (v0.23.0) | Genererer og persisterer et helt NYT management-API-token øjeblikkeligt (samme hardware-RNG som ved første `connect`), viser det i klartekst — ingen `confirm` krævet (rører KUN tokenet, ikke WiFi/firewall/øvrig config, modsat `factory-reset`). Den GAMLE token holder øjeblikkeligt op med at virke — PLC'ens System-side skal opdateres med det samme |
 | `factory-reset confirm` | Samme effekt som en fysisk fabriksnulstillings-knap (§3.4 punkt 6) — kræver det eksplicitte `confirm`-argument for at undgå et utilsigtet tryk/enter |
 | `test <kanal 1\|2> <slave_id> <fc 1-4> <adresse> <antal>` (v0.24.0) | Diagnostisk Modbus-læsning, CLI-udgave af §4.2's `POST /api/channels/{n}/read` — samme grænser, KUN læsning (fc 1-4). Udløser en rigtig transaktion (og dermed kanalens aktivitets-LED) |
+| `debug modbus <a\|b\|all> level <1-8>` (v0.25.0) | Leveled debug-output til konsollen pr. kanal — level 1 = kort start/slut-resumé pr. transaktion, stigende detaljegrad (støj-dræning, DE/RE-retningsskift, RX-byte-timing, inter-frame-delay, rå parse-resultat), level 7-8 = rå TX/RX hex-dump. Bevidst IKKE persisteret — nulstilles altid til fra ved `reboot`. Vist i `status` (live værdi, ikke `show`) |
+| `no debug modbus` / `no debug all` (v0.25.0) | Slår modbus-debug fra igen på BEGGE kanaler — de to former er synonymer |
 | `version` | Firmware-version+build (samme data som `show`/`status`s `firmware`-linje) |
 | `help` | Kommando-oversigt |
 
