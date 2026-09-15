@@ -12,13 +12,13 @@
 // testet på rigtig hardware, behold tallet og marker feltet
 // "reserveret, ubrugt" i stedet for at sænke det.
 //
-// Schema 6 (denne version): tilføjede persisteret `hostname`/`has_hostname`
-// (`hostname <navn>`/`hostname auto`, v0.22.0) — se felterne nedenfor.
-// `mb_board_config_v5_t`/`v4_t`/`v3_t`/`v2_t`/`v1_t` nedenfor er FROSSNE
-// kopier af ældre schema-layouts, udelukkende til migration af allerede-
-// gemte blobs — ÆNDR DEM ALDRIG, de skal blive ved med at matche hvad der
-// faktisk blev udgivet.
-constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 6;
+// Schema 7 (denne version): tilføjede persisteret `syslog_targets[]`
+// (`syslog add <ip> <port> <tag> <level>`/`syslog remove <tag>`, v0.26.0) —
+// se feltet nedenfor. `mb_board_config_v6_t`/`v5_t`/`v4_t`/`v3_t`/`v2_t`/
+// `v1_t` nedenfor er FROSSNE kopier af ældre schema-layouts, udelukkende til
+// migration af allerede-gemte blobs — ÆNDR DEM ALDRIG, de skal blive ved
+// med at matche hvad der faktisk blev udgivet.
+constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 7;
 
 // §4.2: RS485/RS232-modevalg pr. kanal (§2.2.1) — styrer både
 // MODE_SEL-GPIO'en og om kanal-tasken toggler DE/RE (kun RS485).
@@ -234,7 +234,51 @@ struct mb_board_config_v5_t {
 // migration, se mb_config_load_from_blob().
 uint16_t mb_config_calc_checksum_v5(const mb_board_config_v5_t *config);
 
-// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 6. Rent
+// FROSSEN — schema 6's nøjagtige layout (identisk med `mb_board_config_t`
+// FØR schema 7 tilføjede `syslog_targets[]`), kun til migration af allerede-
+// gemte v6-blobs. Ret ALDRIG denne struct.
+#pragma pack(push, 1)
+struct mb_board_config_v6_t {
+  uint16_t schema_version;
+  bool provisioned;
+  bool wifi_enabled;
+  char wifi_ssid[MB_PROV_SSID_MAX_LEN + 1];
+  bool wifi_has_ssid;
+  char wifi_password[MB_PROV_PASSWORD_MAX_LEN + 1];
+  bool wifi_has_password;
+  bool wifi_open_network;
+  bool wifi_static_ip;
+  char wifi_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  char plc_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  bool has_plc_ip;
+  char mgmt_token[MB_MGMT_TOKEN_LEN + 1];
+  bool has_mgmt_token;
+  char rest_user[MB_PROV_REST_USER_MAX_LEN + 1];
+  bool has_rest_user;
+  char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
+  bool has_rest_pass;
+  mb_rest_auth_mode_t rest_auth_mode;
+  mb_channel_config_t channel[MB_CHANNEL_COUNT];
+  bool eth_enabled;
+  bool eth_static_ip;
+  char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  uint8_t eth_mac[6];
+  bool has_eth_mac;
+  char hostname[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool has_hostname;
+  uint16_t checksum;
+};
+#pragma pack(pop)
+
+// CRC16 over v6-structen — bruges KUN til at verificere en v6-blob under
+// migration, se mb_config_load_from_blob().
+uint16_t mb_config_calc_checksum_v6(const mb_board_config_v6_t *config);
+
+// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 7. Rent
 // data — ingen hardware-afhængighed, se board_config.cpp for hvorfor det kan
 // native-testes. `schema_version` er bevidst FØRSTE felt (kan altid læses
 // uanset hvordan resten af structen ændrer sig i en senere schema-version),
@@ -321,6 +365,14 @@ struct mb_board_config_t {
   // hostname, det er blot enten brugervalgt eller auto-genereret).
   char hostname[MB_PROV_HOSTNAME_MAX_LEN + 1];
   bool has_hostname;
+
+  // Schema 7 (nyt felt, v0.26.0, Jan: "kan vi lave en syslog funktion som
+  // vi kan sætte et target på som modtager af syslog") — op til
+  // MB_SYSLOG_MAX_TARGETS UDP-syslog-modtagere, sat via "syslog add <ip>
+  // <port> <tag> <level>"/"syslog remove <tag>". Ingen konfigureret
+  // (`in_use=false` for alle) matcher hidtidig adfærd (intet syslog-output
+  // overhovedet) — se lib/syslog_client/ for selve pakke-formateringen.
+  mb_syslog_target_t syslog_targets[MB_SYSLOG_MAX_TARGETS];
 
   uint16_t checksum;
 };

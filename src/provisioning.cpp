@@ -11,6 +11,7 @@
 #include "eth_driver.h"
 #include "modbus_channel.h"
 #include "provisioning_cli.h"
+#include "syslog_sender.h"
 
 namespace {
 
@@ -255,6 +256,7 @@ bool attempt_connect() {
   // via 'status'.
   const bool had_token_already = config_get().has_mgmt_token;
   config_apply_and_save(&g_state);
+  syslog_sender_refresh();  // v0.26.0: en evt. "syslog add ..." skal virke straks, ikke foerst efter reboot
   config_mark_provisioned();
 
   char token[MB_MGMT_TOKEN_LEN + 1];
@@ -540,6 +542,7 @@ void provisioning_poll() {
         print_status();
       } else if (result == PROV_ACTION_SAVE) {
         config_apply_and_save(&g_state);
+        syslog_sender_refresh();  // v0.26.0: en evt. "syslog add/remove ..." skal virke straks
         Serial.println("Gemt til NVS (WiFi-forbindelse IKKE forsoegt).");
       } else if (result == PROV_ACTION_SHOW) {
         // "show" (lib/provisioning_cli) kender hverken live

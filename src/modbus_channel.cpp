@@ -7,6 +7,7 @@
 #include <freertos/task.h>
 
 #include "config.h"
+#include "syslog_sender.h"
 
 namespace {
 
@@ -139,6 +140,23 @@ void debug_print_hex(const char *label, const uint8_t *data, size_t len) {
   Serial.println();
 }
 
+// v0.26.0 (Jan: syslog-funktion) — samme hex-dump, men som ÉT samlet
+// syslog-UDP-linje i stedet for byte-for-byte (en pakke pr. byte ville
+// oversvømme netværket/modtageren for enhver ikke-triviel respons). Bruger
+// to begrænsede LOKALE buffere (ikke store, se syslog_sender.h's egen
+// kommentar om samme stak-forsigtighed) — en meget lang frame afkortes
+// stille; den FULDE frame er stadig synlig via CLI'ens byte-for-byte-output
+// på samme niveau, hvis det er nødvendigt.
+void syslog_hex_dump(mb_syslog_facility_t facility, uint8_t level, const char *label, const char *chan_name,
+                      const uint8_t *data, size_t len) {
+  char hex[220];
+  size_t pos = 0;
+  for (size_t i = 0; i < len && pos + 3 < sizeof(hex); i++) {
+    pos += static_cast<size_t>(snprintf(hex + pos, sizeof(hex) - pos, "%02X ", data[i]));
+  }
+  syslog_logf(facility, level, "%s: %s %s", chan_name, label, hex);
+}
+
 // Mapper mb_channel_parity_t/stop_bits til Arduino/ESP32's SERIAL_8xx-config.
 // Altid 8 databits — hverken §4.2 eller Modbus RTU-praksis eksponerer andet.
 uint32_t serial_config_for(mb_channel_parity_t parity, uint8_t stop_bits) {
@@ -188,12 +206,22 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     Serial.printf("DEBUG %s: >> slave=%u fc=%u pdu_len=%u\n", ctx.name, slave_id, pdu_len > 0 ? pdu[0] : 0,
                   static_cast<unsigned>(pdu_len));
   }
+  // v0.26.0: syslog er en UAFHÆNGIG udgangskanal fra CLI'ens "debug modbus"
+  // (Jan: "vi skal kunne sætte hvad for output der skal sendet") — en
+  // konfigureret syslog-modtager med et højt `max_level` skal kunne se
+  // fuld detalje, UANSET om nogen samtidig kigger på den serielle konsol.
+  // syslog_logf() er selv billig at kalde når ingen modtager vil have
+  // niveauet (se syslog_sender.cpp's "any_target"-hurtig-exit).
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: TX slave=%u fc=%u pdu_len=%u", ctx.name, slave_id,
+              pdu_len > 0 ? pdu[0] : 0, static_cast<unsigned>(pdu_len));
 
   size_t expected_len = 0;
   if (mb_pdu_expected_response_frame_len(pdu, pdu_len, &expected_len) != MB_PDU_VALID) {
     if (dbg >= 1) {
       Serial.printf("DEBUG %s: << MB_INVALID_ADDRESS (ukendt/ugyldig function code eller quantity)\n", ctx.name);
     }
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_INVALID_ADDRESS (ukendt/ugyldig function code eller quantity)",
+                ctx.name);
     return MB_INVALID_ADDRESS;  // ukendt/ugyldig function code eller quantity — se lib/modbus_pdu
   }
 
@@ -203,6 +231,7 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     if (dbg >= 1) {
       Serial.printf("DEBUG %s: << MB_INVALID_ADDRESS (kunne ikke bygge RTU-frame)\n", ctx.name);
     }
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_INVALID_ADDRESS (kunne ikke bygge RTU-frame)", ctx.name);
     return MB_INVALID_ADDRESS;
   }
 
@@ -220,8 +249,12 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
       ctx.serial->read();
       drained++;
     }
-    if (dbg >= 2 && drained > 0) {
-      Serial.printf("DEBUG %s: dræner %u støj-byte(s) fra bussen\n", ctx.name, static_cast<unsigned>(drained));
+    if (drained > 0) {
+      if (dbg >= 2) {
+        Serial.printf("DEBUG %s: dræner %u støj-byte(s) fra bussen\n", ctx.name, static_cast<unsigned>(drained));
+      }
+      syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 2, "%s: draining %u noise byte(s) from bus", ctx.name,
+                  static_cast<unsigned>(drained));
     }
   }
 
@@ -231,10 +264,12 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   if (is_rs485) {
     digitalWrite(ctx.dir_pin, HIGH);
     if (dbg >= 3) Serial.printf("DEBUG %s: DE/RE -> TX (dir_pin HIGH)\n", ctx.name);
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 3, "%s: DE/RE -> TX (dir_pin HIGH)", ctx.name);
     delayMicroseconds(50);
   }
 
   if (dbg >= 7) debug_print_hex("DEBUG TX: ", frame, frame_len);
+  syslog_hex_dump(MB_SYSLOG_FACILITY_MODBUS, 7, "TX", ctx.name, frame, frame_len);
 
   ctx.serial->write(frame, frame_len);
   ctx.serial->flush();
@@ -244,6 +279,7 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     delayMicroseconds(byte_us + 100);
     digitalWrite(ctx.dir_pin, LOW);
     if (dbg >= 3) Serial.printf("DEBUG %s: DE/RE -> RX (dir_pin LOW)\n", ctx.name);
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 3, "%s: DE/RE -> RX (dir_pin LOW)", ctx.name);
   }
 
   // To-fase timeout: fuld timeout til FØRSTE byte, kort inter-character-
@@ -295,11 +331,20 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
                     response[i], static_cast<unsigned>(rx_wait_ms[i]));
     }
   }
+  // v0.26.0: ÉN samlet syslog-linje i stedet for op til 256 enkelt-byte-
+  // pakker (samme "flood ikke netværket"-hensyn som syslog_hex_dump()) —
+  // den fulde pr.-byte-timing forbliver et CLI/seriel-only-detaljeniveau.
+  if (received > 0) {
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 4, "%s: RX %u byte(s), foerste byte ventede %ums", ctx.name,
+                static_cast<unsigned>(received), static_cast<unsigned>(rx_wait_ms[0]));
+  }
 
   if (ctx.config.inter_frame_delay_ms > 0) {
     if (dbg >= 5) {
       Serial.printf("DEBUG %s: inter-frame-delay %ums\n", ctx.name, static_cast<unsigned>(ctx.config.inter_frame_delay_ms));
     }
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 5, "%s: inter-frame-delay %ums", ctx.name,
+                static_cast<unsigned>(ctx.config.inter_frame_delay_ms));
     delay(ctx.config.inter_frame_delay_ms);
   }
 
@@ -308,10 +353,13 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
       Serial.printf("DEBUG %s: << MB_TIMEOUT (modtog %u byte(s), %ums)\n", ctx.name, static_cast<unsigned>(received),
                     static_cast<unsigned>(millis() - txn_start));
     }
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_TIMEOUT (modtog %u byte(s), %ums)", ctx.name,
+                static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
     return MB_TIMEOUT;
   }
 
   if (dbg >= 8) debug_print_hex("DEBUG RX: ", response, received);
+  syslog_hex_dump(MB_SYSLOG_FACILITY_MODBUS, 8, "RX", ctx.name, response, received);
 
   const mb_pdu_parse_result_t parse_result =
       mb_pdu_parse_rtu_response(slave_id, response, received, out_pdu, out_pdu_len, out_pdu_capacity);
@@ -343,10 +391,14 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     Serial.printf("DEBUG %s: parse_result=%d -> final_result=%s\n", ctx.name, static_cast<int>(parse_result),
                   error_name(final_result));
   }
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 6, "%s: parse_result=%d -> final_result=%s", ctx.name,
+              static_cast<int>(parse_result), error_name(final_result));
   if (dbg >= 1) {
     Serial.printf("DEBUG %s: << %s (modtog %u byte(s), %ums)\n", ctx.name, error_name(final_result),
                   static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
   }
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX %s (modtog %u byte(s), %ums)", ctx.name, error_name(final_result),
+              static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
   return final_result;
 }
 
@@ -412,6 +464,10 @@ void channel_task(void *param) {
 
     if (!ctx->config.enabled) {
       req->result = MB_NOT_ENABLED;  // ingen reel bus-aktivitet — LED'en blinker bevidst IKKE for dette
+      // v0.26.0: eneste udfald execute_transaction() ALDRIG selv rapporterer
+      // til syslog (den kaldes slet ikke her) — tilføjes derfor eksplicit her.
+      syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_NOT_ENABLED (kanalen er deaktiveret, slave=%u fc=%u)",
+                  ctx->name, req->slave_id, req->pdu_len > 0 ? req->pdu[0] : 0);
     } else {
       digitalWrite(ctx->led_pin, HIGH);
       req->result = execute_transaction(*ctx, req->slave_id, req->pdu, req->pdu_len, req->out_pdu, req->out_pdu_len,

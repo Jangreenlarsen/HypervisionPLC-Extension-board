@@ -3,6 +3,7 @@
 #include "config.h"
 #include "rest_auth.h"
 #include "rest_status.h"
+#include "syslog_sender.h"
 
 void send_json_error(httpd_req_t *req, const char *http_status, int error_code, const char *error,
                       const char *message) {
@@ -35,6 +36,10 @@ bool require_auth(httpd_req_t *req) {
   const char *message = (auth_result == MB_REST_AUTH_METHOD_DISABLED)
                             ? "Denne auth-metode er slaaet fra (se 'rest auth' i den serielle CLI)"
                             : "Manglende eller ugyldig Authorization-header";
+  // v0.26.0 (CLAUDE.md regel 11: "auth-afvisninger" skal logges struktureret)
+  // — nu ogsaa til syslog, ikke kun seriel konsol (som denne funktion
+  // faktisk aldrig loggede til overhovedet foer syslog-featuren).
+  syslog_logf(MB_SYSLOG_FACILITY_REST, 1, "401 unauthorized: %s (%s)", req->uri, message);
   send_json_error(req, "401 Unauthorized", -1, "unauthorized", message);
   return false;
 }

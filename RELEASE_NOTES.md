@@ -2,6 +2,14 @@
 
 ---
 
+## v0.26.0 — 2026-09-15 — Syslog-klient med op til 4 modtagere
+
+Boardet kan nu sende sine driftshændelser til op til 4 UDP-syslog-servere samtidig: `syslog add <ip> <port> <tag> <level 1-8>` i den serielle CLI. Genbruger den samme 1-8-verbositetsskala som `debug modbus`-featuren (v0.25.0), men som en uafhængig, altid-aktiv udgangskanal — en konfigureret modtager ser fuld detalje uanset om nogen kigger på den serielle konsol. Dækker Modbus-kanaltrafik/-fejl og REST-auth-afvisninger. Persisteret i NVS (modsat debug-niveauet), virker straks efter `save` — ingen reboot nødvendig.
+
+**Live-verificeret** på fysisk hardware: en rigtig UDP-modtager modtog alle forventede pakker med korrekt facility/severity/hostname/tag under en rigtig Modbus-transaktion og et REST-401-forsøg, og en konfigureret modtager overlevede en rigtig genstart.
+
+---
+
 ## v0.25.1 — 2026-09-15 — Debug-output er nu støjfrit
 
 `debug modbus`-featuren blandede sig hidtil med den generiske fejl-log fra BEGGE kanaler, uanset hvilken man rent faktisk debuggede — en kanal med et helt uafhængigt problem (fx ingen slave tilsluttet) kunne oversvømme den kanal man forsøgte at kigge rent på. Den generiske fejl-linje undertrykkes nu helt, så snart mindst én kanal har debug slået til — debug-outputtet selv viser stadig alt relevant for den/de kanaler man debugger.

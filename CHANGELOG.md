@@ -4,6 +4,24 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.26.0 build 0034] — 2026-09-15 — Syslog-klient (RFC 3164, UDP) med op til 4 modtagere
+
+**Baggrund:** Jan: "kan vi lave en syslog funktion som vi kan sætte et target på som modtager af syslog" → "en eller flere target" → "vi skal have lave en level 1-8 samt local0-7 for syslog og vi skal kunne sætte hvad for output der skal sendet så det er også et sp om at vi nu skal have instruduceret syslog output fra de forskellige operationer i expansions board".
+
+**`lib/syslog_client/` (nyt modul):** hardware-uafhængig RFC 3164-pakkeformatering (`mb_syslog_build_packet()`), native-testet (9 nye tests). Genbruger v0.25.0's 1-8-verbositetsskala som severity-akse for ALLE syslog-beskeder: `severity = level - 1` (level 1→severity 0/Emergency...level 8→severity 7/Debug), bijektiv, ingen oversættelsestabel. Facility (`local0`-`local7`) er fast pr. delsystem i firmwaren (Modbus=local0, netværk=local1, REST=local2, system=local3), ikke brugerkonfigurerbart.
+
+**`src/syslog_sender.cpp` (nyt):** ESP32 UDP-afsendelse (`WiFiUDP`, interface-agnostisk — virker over både WiFi og Ethernet). Mutex-beskyttet fælles `static` sende-buffer (flere FreeRTOS-tasks — begge kanal-tasks, REST-httpd — kan logge samtidig, modsat `provisioning_poll()`s `static`-brug i BUGS.md v0.24.0, som er sikker netop fordi DEN kun kører på én task). Kort mutex-timeout + en billig "ingen modtager vil have dette niveau"-hurtig-exit FØR noget bygges/sendes — "fire and forget", en util-tilgængelig syslog-server kan ALDRIG blokere/forsinke boardets egentlige drift.
+
+**`lib/provisioning_cli/` + `lib/board_config/`:** ny `syslog add <ip> <port> <tag> <level 1-8>` / `syslog remove <tag>` (op til `MB_SYSLOG_MAX_TARGETS`=4 modtagere, genbrug af et eksisterende tag OPDATERER i stedet for at duplikere). **Persisteret i NVS** (Jan bekræftet — modsat v0.25.0's runtime-only debug-niveau, en syslog-modtager er driftskonfiguration). NVS-skema bumpet 6→7 (`syslog_targets[]`), fuld migrationskæde + frossen v6-struct, jf. §3.5. Vist i `show`. 15 nye native-tests (CLI-parsing + persistering + migration).
+
+**Instrumentering (Jan: "introducere syslog output fra de forskellige operationer i expansions board"):** `src/modbus_channel.cpp`s `execute_transaction()` — samme 8 debug-niveauer som CLI'ens `debug modbus ...` (v0.25.0), men en UAFHÆNGIG udgangskanal (en syslog-modtager med højt `max_level` ser fuld detalje uanset CLI-debug-tilstand), samt `MB_NOT_ENABLED` (som CLI-debuggen aldrig selv rapporterer). `src/http_helpers.cpp`s `require_auth()` — 401-afvisninger (CLAUDE.md regel 11's "auth-afvisninger"). RX-byte-timing og hex-dumps sendes som ÉN samlet syslog-linje (ikke op til 256 enkelt-byte-pakker) — bevidst afvejning mod netværks-flooding.
+
+**`src/main.cpp`/`src/provisioning.cpp`:** `syslog_sender_begin()` ved boot (efter `config_begin()`), `syslog_sender_refresh()` efter hvert `save`/`connect` der kan røre syslog-config — ændringer virker STRAKS, ingen reboot nødvendig.
+
+**Filer ændret:** `lib/syslog_client/` (nyt), `src/syslog_sender.h/.cpp` (nyt), `lib/provisioning_cli/provisioning_cli.h/.cpp`, `lib/board_config/board_config.h/.cpp`, `src/modbus_channel.cpp`, `src/http_helpers.cpp`, `src/main.cpp`, `src/provisioning.cpp`, `test/test_syslog_client/` (nyt), `test/test_provisioning_cli/`, `test/test_board_config/`, `FEATURES.md`.
+
+**Status:** 264/264 native-tests bestået (24 nye), bygger rent for esp32dev. **Live-verificeret** på fysisk hardware: opsatte en rigtig UDP-syslog-modtager (`syslog add 10.1.1.75 5140 devtest 8` + `save`), kørte en rigtig Modbus-transaktion (kanal B, slave 9) og et REST-401-forsøg — modtog alle 9 forventede pakker med korrekt PRI (facility*8+severity), rigtigt hostname/tag, og læselige beskeder (se BUGS.md-fri live-log). Verificerede desuden at en syslog-modtager overlever en RIGTIG `reboot` (NVS-skema 7 round-trip på ægte hardware, ikke kun i native-tests). Ingen stack- eller timing-relaterede problemer observeret.
+
 ## [0.25.1 build 0033] — 2026-09-15 — Debug-output undertrykker nu resten af konsol-støjen mens det er aktivt
 
 **Baggrund:** Jan, efter at have brugt v0.25.0's `debug modbus`-feature: "hvis den er aktiv skal alt andet console output undertrykkes og ikke som nu hvor man få blandet alt muligt ind i debug output også". Konkret problem: `channel_task()`s generiske `MODBUS-FEJL kanal ...`-linje (`src/modbus_channel.cpp`) er upåvirket af debug-niveau og fyrer for HVER fejlende transaktion på BEGGE kanaler — så et forsøg på at kigge rent på kanal B's debug-output blev oversvømmet af kanal A's helt uafhængige, normale fejl-trafik (fx en anden Modbus TCP-master der periodisk poller en kanal uden noget tilsluttet).

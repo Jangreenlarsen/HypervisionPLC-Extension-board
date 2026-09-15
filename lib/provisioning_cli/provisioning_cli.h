@@ -43,6 +43,35 @@ enum class mb_debug_target_t : uint8_t { kA, kB, kAll };
 
 constexpr uint8_t MB_PROV_DEBUG_LEVEL_MAX = 8;
 
+// v0.26.0 (Jan: "kan vi lave en syslog funktion som vi kan sætte et target
+// på som modtager af syslog" / "en eller flere target" / "vi skal have lave
+// en level 1-8 samt local0-7 for syslog") — op til MB_SYSLOG_MAX_TARGETS
+// samtidige UDP-syslog-modtagere (RFC 3164), hver med sin egen IP/port/tag/
+// verbositets-loft. `tag` er RFC 3164's TAG/APP-NAME-felt — bevidst
+// PR.-MODTAGER (ikke ét globalt tag for hele boardet), så en installatør kan
+// give boardet forskellig identitet på forskellige syslog-servere. `level`
+// GENBRUGER den allerede etablerede 1-8-skala fra `debug modbus ...`
+// (v0.25.0) som en pr.-modtager verbositets-tærskel: kun beskeder med
+// niveau <= denne værdi sendes til DEN modtager — mappes til RFC 3164-
+// severity som `severity = level - 1` (niveau 1 = severity 0/mest
+// kritisk/altid med, niveau 8 = severity 7/Debug), se lib/syslog_client.
+// Facility (`local0`-`local7`) er IKKE en del af modtager-configuren — den
+// er fast pr. delsystem i selve firmwaren (se mb_syslog_facility_t), så en
+// syslog-server kan filtrere/route efter oprindelse uden brugerkonfiguration.
+constexpr size_t MB_SYSLOG_MAX_TARGETS = 4;
+constexpr size_t MB_SYSLOG_TAG_MAX_LEN = 24;
+constexpr uint16_t MB_SYSLOG_DEFAULT_PORT = 514;
+
+#pragma pack(push, 1)
+struct mb_syslog_target_t {
+  bool in_use;
+  char ip[MB_PROV_IPV4_MAX_LEN + 1];
+  uint16_t port;
+  char tag[MB_SYSLOG_TAG_MAX_LEN + 1];
+  uint8_t max_level;  // 1-8, se MB_PROV_DEBUG_LEVEL_MAX ovenfor
+};
+#pragma pack(pop)
+
 // Tilstanden CLI-kommandoerne bygger op, indtil "connect" eller
 // "factory-reset confirm" udløser en handling i src/provisioning.cpp
 // (EXPANSION_BOARD_DESIGN.md §3.4.1). Rent data — ingen hardware-afhængighed.
@@ -130,6 +159,13 @@ struct mb_provisioning_state_t {
   // Jan: "man skal kunne disable debug fra cli også").
   mb_debug_target_t debug_target;
   uint8_t debug_level;
+
+  // v0.26.0 (Jan: syslog-funktion med "en eller flere target") — IKKE et
+  // scratch-felt (modsat debug_target/debug_level ovenfor) — dette ER den
+  // persisterede config (mirroring wifi/eth/hostname-mønsteret), overført
+  // til/fra mb_board_config_t via mb_config_apply_provisioning_state()/
+  // mb_config_to_provisioning_state() og skrevet til NVS ved "save".
+  mb_syslog_target_t syslog_targets[MB_SYSLOG_MAX_TARGETS];
 };
 
 void mb_provisioning_state_init(mb_provisioning_state_t *state);
@@ -194,3 +230,7 @@ bool mb_provisioning_validate_ipv4(const char *ip);
 // [A-Za-z0-9-], må ikke starte eller slutte med '-' (DHCP-/DNS-servere
 // afviser eller mistolker ellers navnet).
 bool mb_provisioning_validate_hostname(const char *hostname);
+
+// RFC 3164 TAG-felt: 1-MB_SYSLOG_TAG_MAX_LEN tegn, kun [A-Za-z0-9_-] (ingen
+// mellemrum/kolon — kolonet er selve feltets afgrænser i RFC 3164-formatet).
+bool mb_provisioning_validate_syslog_tag(const char *tag);

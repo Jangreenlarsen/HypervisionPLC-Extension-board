@@ -389,6 +389,55 @@ void test_load_rejects_corrupt_v5_blob(void) {
   TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
 }
 
+void test_load_migrates_v6_blob_without_data_loss(void) {
+  // v0.26.0: schema 7 tilfoejede syslog_targets[] - et board der naaede at
+  // opgradere til schema 6 (v0.22.0, hostname) foer dette maa ikke tabe sin
+  // eksisterende config under migrationen.
+  mb_board_config_v6_t v6{};
+  v6.schema_version = 6;
+  v6.provisioned = true;
+  v6.wifi_enabled = false;
+  strncpy(v6.wifi_ssid, "V6Network", sizeof(v6.wifi_ssid) - 1);
+  v6.wifi_has_ssid = true;
+  v6.has_hostname = true;
+  strncpy(v6.hostname, "v6-board", sizeof(v6.hostname) - 1);
+  const uint8_t existing_mac[6] = {0x02, 0x66, 0x22, 0x33, 0x44, 0x55};
+  memcpy(v6.eth_mac, existing_mac, sizeof(v6.eth_mac));
+  v6.has_eth_mac = true;
+  v6.checksum = mb_config_calc_checksum_v6(&v6);
+
+  mb_board_config_t migrated;
+  mb_config_load_from_blob(reinterpret_cast<const uint8_t *>(&v6), sizeof(v6), &migrated);
+
+  TEST_ASSERT_EQUAL_MESSAGE(MB_CONFIG_SCHEMA_VERSION, migrated.schema_version,
+                             "migreret config skal have den AKTUELLE schema-version, ikke 6");
+  TEST_ASSERT_TRUE(migrated.provisioned);
+  TEST_ASSERT_FALSE_MESSAGE(migrated.wifi_enabled, "eksisterende v6-felt maa ikke tabes/overskrives under migration");
+  TEST_ASSERT_EQUAL_STRING("V6Network", migrated.wifi_ssid);
+  TEST_ASSERT_TRUE(migrated.has_hostname);
+  TEST_ASSERT_EQUAL_STRING("v6-board", migrated.hostname);
+  TEST_ASSERT_EQUAL_UINT8_ARRAY(existing_mac, migrated.eth_mac, 6);
+  TEST_ASSERT_FALSE_MESSAGE(migrated.syslog_targets[0].in_use,
+                             "nyt schema-7-felt skal faa default 'ingen konfigureret' (in_use=false)");
+}
+
+void test_load_rejects_corrupt_v6_blob(void) {
+  mb_board_config_v6_t v6{};
+  v6.schema_version = 6;
+  v6.provisioned = true;
+  strncpy(v6.wifi_ssid, "V6Network", sizeof(v6.wifi_ssid) - 1);
+  v6.checksum = mb_config_calc_checksum_v6(&v6);
+
+  uint8_t blob[sizeof(v6)];
+  memcpy(blob, &v6, sizeof(blob));
+  blob[10] ^= 0xFF;
+
+  mb_board_config_t loaded;
+  mb_config_load_from_blob(blob, sizeof(blob), &loaded);
+  TEST_ASSERT_FALSE_MESSAGE(loaded.provisioned, "korrupt v6-blob blev fejlagtigt migreret");
+  TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, loaded.schema_version);
+}
+
 void test_load_rejects_corrupt_v3_blob(void) {
   mb_board_config_v3_t v3{};
   v3.schema_version = 3;
@@ -593,6 +642,39 @@ void test_to_provisioning_state_roundtrips_eth_fields(void) {
   TEST_ASSERT_EQUAL_STRING("custom-name", state.hostname);
 }
 
+void test_syslog_targets_roundtrip_through_config(void) {
+  // v0.26.0: syslog_targets[] skal overleve baade apply (CLI -> persisteret
+  // config) og to_provisioning_state (persisteret config -> CLI-state ved
+  // boot), ellers ville en gemt syslog-modtager "forsvinde" ved reboot.
+  mb_provisioning_state_t state;
+  mb_provisioning_state_init(&state);
+  state.syslog_targets[0].in_use = true;
+  strncpy(state.syslog_targets[0].ip, "10.1.1.50", sizeof(state.syslog_targets[0].ip) - 1);
+  state.syslog_targets[0].port = 514;
+  strncpy(state.syslog_targets[0].tag, "board1", sizeof(state.syslog_targets[0].tag) - 1);
+  state.syslog_targets[0].max_level = 5;
+
+  mb_board_config_t config;
+  mb_config_set_defaults(&config);
+  mb_config_apply_provisioning_state(&config, &state);
+
+  TEST_ASSERT_TRUE(config.syslog_targets[0].in_use);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.50", config.syslog_targets[0].ip);
+  TEST_ASSERT_EQUAL_UINT16(514, config.syslog_targets[0].port);
+  TEST_ASSERT_EQUAL_STRING("board1", config.syslog_targets[0].tag);
+  TEST_ASSERT_EQUAL_UINT8(5, config.syslog_targets[0].max_level);
+  TEST_ASSERT_FALSE_MESSAGE(config.syslog_targets[1].in_use, "kun slot 0 blev sat - slot 1 skal forblive ubrugt");
+
+  mb_provisioning_state_t reloaded;
+  mb_config_to_provisioning_state(&config, &reloaded);
+
+  TEST_ASSERT_TRUE(reloaded.syslog_targets[0].in_use);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.50", reloaded.syslog_targets[0].ip);
+  TEST_ASSERT_EQUAL_UINT16(514, reloaded.syslog_targets[0].port);
+  TEST_ASSERT_EQUAL_STRING("board1", reloaded.syslog_targets[0].tag);
+  TEST_ASSERT_EQUAL_UINT8(5, reloaded.syslog_targets[0].max_level);
+}
+
 void test_apply_provisioning_state_never_touches_mgmt_token(void) {
   mb_provisioning_state_t state;
   mb_provisioning_state_init(&state);
@@ -637,6 +719,8 @@ int main(int argc, char **argv) {
   RUN_TEST(test_load_rejects_corrupt_v4_blob);
   RUN_TEST(test_load_migrates_v5_blob_without_data_loss);
   RUN_TEST(test_load_rejects_corrupt_v5_blob);
+  RUN_TEST(test_load_migrates_v6_blob_without_data_loss);
+  RUN_TEST(test_load_rejects_corrupt_v6_blob);
   RUN_TEST(test_load_rejects_future_schema_version);
 
   RUN_TEST(test_token_from_random_bytes);
@@ -649,6 +733,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_apply_provisioning_state_transfers_fields);
   RUN_TEST(test_apply_provisioning_state_never_touches_mgmt_token);
   RUN_TEST(test_to_provisioning_state_roundtrips_eth_fields);
+  RUN_TEST(test_syslog_targets_roundtrip_through_config);
 
   return UNITY_END();
 }
