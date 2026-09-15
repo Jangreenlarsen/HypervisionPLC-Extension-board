@@ -4,6 +4,16 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.23.1 build 0029] — 2026-09-15 — Aktivitets-LED'erne (GPIO26/33) driver nu faktisk noget
+
+**Baggrund:** Jan: "aktivitet LED for de to kanal hvordan opføre de sig" — GPIO26/33 har været reserveret til "valgfri diagnostik-LED" siden v0.13.0 (§2.2), men ingen kode nogensinde skrev til dem — rent elektrisk udefinerede.
+
+**`src/modbus_channel.cpp`:** nye `kChannelALedPin = 26`/`kChannelBLedPin = 33`, nyt `led_pin`-felt i `ChannelContext`, initialiseret som `OUTPUT`/`LOW` i `init_channel()` (samme mønster som `dir_pin`). `channel_task()` tænder kanalens LED lige før `execute_transaction()`-kaldet og slukker den lige efter — dækker succes OG fejl/timeout ens. Bevidst placeret omkring det ENE kaldested i `channel_task()`, ikke inde i `execute_transaction()` selv (som har flere `return`-stier) — undgår risikoen for at LED'en utilsigtet blev efterladt tændt på en glemt return-vej. En deaktiveret kanal (`enabled:false`) blinker bevidst IKKE (ingen reel bus-aktivitet).
+
+**Filer ændret:** `src/modbus_channel.cpp`, `GPIO_MAPPING.md`, `EXPANSION_BOARD_DESIGN.md`.
+
+**Status:** 217/217 native-tests upåvirket (ren ESP32/Arduino-specifik GPIO-logik, ikke native-testbar), bygger rent for esp32dev. Live-verifikation følger — **den fysiske LED-blinken kan ikke bekræftes visuelt herfra**, kun at koden bygger/kører korrekt og at kanal B's rigtige Modbus-transaktioner (som udløser blinket) fortsat virker.
+
 ## [0.23.0 build 0028] — 2026-09-14 — `token regenerate` i den serielle CLI
 
 **Baggrund:** Jan: "hvordan generare vi ny token" — management-API'ets Bearer-token blev hidtil kun genereret ÉN gang nogensinde (ved første vellykkede `connect`, `config_ensure_mgmt_token()`, som kun genererer hvis der IKKE allerede er ét). Eneste vej til et NYT token var `factory-reset confirm`, som også rydder WiFi/firewall/al anden config.

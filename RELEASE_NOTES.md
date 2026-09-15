@@ -2,6 +2,14 @@
 
 ---
 
+## v0.23.1 — 2026-09-15 — Aktivitets-LED'erne virker nu
+
+De to kanalers aktivitets-LED'er (reserveret på boardet siden v0.13.0, men aldrig faktisk brugt) tændes nu under en RTU-transaktion og slukkes igen bagefter — samme "der sker noget her"-blink som en almindelig RS485/RS232-adapter. Gælder både succesfulde og fejlende transaktioner; en deaktiveret kanal blinker ikke.
+
+**Næste skridt**: fysisk bekræftelse af at LED'erne rent faktisk blinker på boardet — ikke verificerbart herfra.
+
+---
+
 ## v0.23.0 — 2026-09-14 — Ny `token regenerate`-kommando
 
 Den serielle CLI kan nu generere et helt nyt management-API-token (`token regenerate`) uden at røre noget andet — ingen grund til at bruge en fuld `factory-reset` bare for at rotere tokenet. Det gamle token holder øjeblikkeligt op med at virke, så husk at opdatere det i PLC'ens System-side under "Modbus Expansion Boards" bagefter.
