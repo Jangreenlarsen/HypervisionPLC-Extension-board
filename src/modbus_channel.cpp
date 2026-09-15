@@ -125,6 +125,7 @@ const char *error_name(mb_error_code_t error) {
     case MB_INVALID_ADDRESS: return "MB_INVALID_ADDRESS";
     case MB_BUS_BUSY: return "MB_BUS_BUSY";
     case MB_CHANNEL_UNREACHABLE: return "MB_CHANNEL_UNREACHABLE";
+    case MB_UNSUPPORTED_FUNCTION: return "MB_UNSUPPORTED_FUNCTION";
     default: return "?";
   }
 }
@@ -216,13 +217,22 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
               pdu_len > 0 ? pdu[0] : 0, static_cast<unsigned>(pdu_len));
 
   size_t expected_len = 0;
-  if (mb_pdu_expected_response_frame_len(pdu, pdu_len, &expected_len) != MB_PDU_VALID) {
+  const mb_pdu_validation_t validation = mb_pdu_expected_response_frame_len(pdu, pdu_len, &expected_len);
+  if (validation != MB_PDU_VALID) {
+    // v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §2) — et
+    // GENKENDT function code med en ugyldig quantity/PDU-længde
+    // (MB_PDU_MALFORMED_REQUEST) er en anden situation end en HELT UKENDT
+    // function code (MB_PDU_UNSUPPORTED_FUNCTION) — adskilt her, så
+    // REST-diagnostikken og Modbus TCP-gateway-exceptionen (§4.1) kan skelne
+    // "boardet forstod ikke denne FC" fra "ugyldig adresse i en ellers
+    // kendt FC", i stedet for at begge dele fremstår som MB_INVALID_ADDRESS.
+    const mb_error_code_t err = (validation == MB_PDU_UNSUPPORTED_FUNCTION) ? MB_UNSUPPORTED_FUNCTION : MB_INVALID_ADDRESS;
     if (dbg >= 1) {
-      Serial.printf("DEBUG %s: << MB_INVALID_ADDRESS (ukendt/ugyldig function code eller quantity)\n", ctx.name);
+      Serial.printf("DEBUG %s: << %s (ukendt/ugyldig function code eller quantity)\n", ctx.name, error_name(err));
     }
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_INVALID_ADDRESS (ukendt/ugyldig function code eller quantity)",
-                ctx.name);
-    return MB_INVALID_ADDRESS;  // ukendt/ugyldig function code eller quantity — se lib/modbus_pdu
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX %s (ukendt/ugyldig function code eller quantity)", ctx.name,
+                error_name(err));
+    return err;
   }
 
   uint8_t frame[MB_RTU_FRAME_MAX_LEN];

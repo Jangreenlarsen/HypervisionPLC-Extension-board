@@ -60,3 +60,31 @@ size_t mb_status_build_json(const mb_status_data_t *data, char *out, size_t out_
 // stedet for at tvinge en mb_error_code_t-værdi der ikke passer.
 size_t mb_status_build_error_json(int error_code, const char *error, const char *message, char *out,
                                    size_t out_capacity);
+
+// v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §1) — rene
+// værdier `GET /api/capabilities` skal rapportere. To SEPARATE FC-lister
+// (modbus_tcp vs. rest_diagnostic), bevidst — de kan i princippet divergere
+// (designdokumentets egen begrundelse: netop den slags "de to lag drifter
+// fra hinanden"-fejl har allerede ramt PLC-siden én gang for FC15/16).
+// Begge peger i dag på samme underliggende liste (lib/modbus_pdu's
+// MB_PDU_SUPPORTED_FUNCTIONS) fra kaldstedet (src/http_server.cpp), men
+// JSON-strukturen holder dem uafhængige.
+struct mb_capabilities_data_t {
+  const char *fw_version;
+
+  const uint8_t *modbus_tcp_fcs;
+  size_t modbus_tcp_fc_count;
+  uint16_t modbus_tcp_max_read_quantity;
+  uint16_t modbus_tcp_max_write_quantity;
+
+  const uint8_t *rest_diagnostic_fcs;
+  size_t rest_diagnostic_fc_count;
+  uint16_t rest_diagnostic_max_read_quantity;
+  uint16_t rest_diagnostic_max_write_quantity;
+};
+
+// Bygger `GET /api/capabilities`-JSON'en (se DESIGN_GUIDE_MODBUS_EXPANSION_
+// FC_CAPABILITIES.md §1 for det fulde skema/eksempel). Rent deklarativt —
+// INGEN bus-trafik, INGEN sideeffekter, svarer identisk uanset om nogen
+// slave er tilsluttet/online. Returnerer 0 hvis `out_capacity` er for lille.
+size_t mb_status_build_capabilities_json(const mb_capabilities_data_t *data, char *out, size_t out_capacity);

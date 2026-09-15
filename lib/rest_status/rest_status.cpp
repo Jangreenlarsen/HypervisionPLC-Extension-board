@@ -72,6 +72,58 @@ size_t mb_status_build_json(const mb_status_data_t *data, char *out, size_t out_
   return offset;
 }
 
+namespace {
+
+// Skriver "[1,2,3]" for de givne function codes — delt af begge
+// FC-lister i mb_status_build_capabilities_json() nedenfor.
+int append_fc_array(char *out, size_t out_capacity, const uint8_t *fcs, size_t count) {
+  size_t pos = 0;
+  if (out_capacity == 0) return -1;
+  out[pos++] = '[';
+  for (size_t i = 0; i < count; i++) {
+    const int written = snprintf(out + pos, out_capacity - pos, "%s%u", i > 0 ? "," : "", static_cast<unsigned>(fcs[i]));
+    if (written <= 0 || static_cast<size_t>(written) >= out_capacity - pos) return -1;
+    pos += static_cast<size_t>(written);
+  }
+  if (pos + 1 >= out_capacity) return -1;
+  out[pos++] = ']';
+  return static_cast<int>(pos);
+}
+
+}  // namespace
+
+size_t mb_status_build_capabilities_json(const mb_capabilities_data_t *data, char *out, size_t out_capacity) {
+  const int header_written =
+      snprintf(out, out_capacity, "{\"api_version\":%u,\"fw_version\":\"%s\",\"modbus_tcp\":{\"supported_function_codes\":",
+               static_cast<unsigned>(MB_REST_API_VERSION), data->fw_version);
+  if (header_written <= 0 || static_cast<size_t>(header_written) >= out_capacity) return 0;
+  size_t offset = static_cast<size_t>(header_written);
+
+  int written = append_fc_array(out + offset, out_capacity - offset, data->modbus_tcp_fcs, data->modbus_tcp_fc_count);
+  if (written < 0) return 0;
+  offset += static_cast<size_t>(written);
+
+  written = snprintf(out + offset, out_capacity - offset,
+                      ",\"max_read_quantity\":%u,\"max_write_quantity\":%u},"
+                      "\"rest_diagnostic\":{\"supported_function_codes\":",
+                      static_cast<unsigned>(data->modbus_tcp_max_read_quantity),
+                      static_cast<unsigned>(data->modbus_tcp_max_write_quantity));
+  if (written <= 0 || static_cast<size_t>(written) >= out_capacity - offset) return 0;
+  offset += static_cast<size_t>(written);
+
+  written = append_fc_array(out + offset, out_capacity - offset, data->rest_diagnostic_fcs, data->rest_diagnostic_fc_count);
+  if (written < 0) return 0;
+  offset += static_cast<size_t>(written);
+
+  written = snprintf(out + offset, out_capacity - offset, ",\"max_read_quantity\":%u,\"max_write_quantity\":%u}}",
+                      static_cast<unsigned>(data->rest_diagnostic_max_read_quantity),
+                      static_cast<unsigned>(data->rest_diagnostic_max_write_quantity));
+  if (written <= 0 || static_cast<size_t>(written) >= out_capacity - offset) return 0;
+  offset += static_cast<size_t>(written);
+
+  return offset;
+}
+
 size_t mb_status_build_error_json(int error_code, const char *error, const char *message, char *out,
                                    size_t out_capacity) {
   int written;

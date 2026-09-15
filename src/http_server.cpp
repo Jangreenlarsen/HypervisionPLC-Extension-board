@@ -112,6 +112,46 @@ bool parse_channel_number_with_suffix(const char *uri, const char *expected_suff
 // require_auth()/send_json_error() er flyttet til src/http_helpers.h/.cpp —
 // delt med src/ota_handler.cpp, så selve AUTH-TJEKKET kun findes ét sted.
 
+// v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §1) — rent
+// DEKLARATIVT, ingen bus-trafik/sideeffekter. `modbus_tcp` og
+// `rest_diagnostic` peger i dag på SAMME underliggende FC-liste
+// (lib/modbus_pdu's MB_PDU_SUPPORTED_FUNCTIONS — begge lag understøtter
+// faktisk identiske FC'er lige nu), men rapporteres som to separate JSON-
+// lister (designdokumentets egen begrundelse: de KAN divergere, en fælles
+// liste ville skjule det, jf. den lignende FC15/16-drift PLC-siden allerede
+// oplevede).
+esp_err_t capabilities_handler(httpd_req_t *req) {
+  if (!require_auth(req)) return ESP_OK;
+
+  const uint16_t modbus_tcp_max_read =
+      MB_PDU_MAX_READ_BIT_QUANTITY > MB_PDU_MAX_READ_REGISTER_QUANTITY ? MB_PDU_MAX_READ_BIT_QUANTITY
+                                                                        : MB_PDU_MAX_READ_REGISTER_QUANTITY;
+  const uint16_t modbus_tcp_max_write =
+      MB_PDU_MAX_WRITE_COIL_QUANTITY > MB_PDU_MAX_WRITE_REGISTER_QUANTITY ? MB_PDU_MAX_WRITE_COIL_QUANTITY
+                                                                           : MB_PDU_MAX_WRITE_REGISTER_QUANTITY;
+
+  const mb_capabilities_data_t data = {
+#ifdef FW_VERSION
+      FW_VERSION,
+#else
+      "ukendt",
+#endif
+      MB_PDU_SUPPORTED_FUNCTIONS, MB_PDU_SUPPORTED_FUNCTION_COUNT, modbus_tcp_max_read, modbus_tcp_max_write,
+      MB_PDU_SUPPORTED_FUNCTIONS, MB_PDU_SUPPORTED_FUNCTION_COUNT, MB_DIAG_MAX_READ_QUANTITY, MB_DIAG_MAX_WRITE_VALUES,
+  };
+
+  char body[384];
+  const size_t body_len = mb_status_build_capabilities_json(&data, body, sizeof(body));
+  if (body_len == 0) {
+    send_json_error(req, "500 Internal Server Error", -1, "internal_error", "Kunne ikke bygge capabilities-JSON'en");
+    return ESP_OK;
+  }
+
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, body, body_len);
+  return ESP_OK;
+}
+
 esp_err_t status_handler(httpd_req_t *req) {
   if (!require_auth(req)) return ESP_OK;
 
@@ -330,6 +370,17 @@ esp_err_t channel_read_write_post_handler(httpd_req_t *req) {
   const mb_error_code_t result = modbus_channel_submit(id, slave_id, request_pdu, request_pdu_len, response_pdu,
                                                          &response_pdu_len, sizeof(response_pdu));
 
+  if (result == MB_UNSUPPORTED_FUNCTION) {
+    // v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §2) —
+    // specifik besked for netop denne situation, i stedet for den generiske
+    // "se error_code" nedenfor. `request_pdu[0]` er selve function code-
+    // byten (samme uanset read/write-gren ovenfor).
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Function code %u ikke understøttet af dette board", request_pdu[0]);
+    send_json_error(req, "502 Bad Gateway", static_cast<int>(result), "channel_error", msg);
+    return ESP_OK;
+  }
+
   if (result != MB_OK) {
     // Kanal-niveau-fejl (timeout/deaktiveret/CRC osv., §4) — IKKE en
     // Modbus-exception fra slaven selv (den håndteres nedenfor). Samme
@@ -394,6 +445,14 @@ void http_server_begin() {
   };
   httpd_register_uri_handler(g_server, &status_uri);
 
+  const httpd_uri_t capabilities_uri = {
+      .uri = "/api/capabilities",
+      .method = HTTP_GET,
+      .handler = capabilities_handler,
+      .user_ctx = nullptr,
+  };
+  httpd_register_uri_handler(g_server, &capabilities_uri);
+
   const httpd_uri_t channels_get_uri = {
       .uri = "/api/channels*",
       .method = HTTP_GET,
@@ -420,5 +479,5 @@ void http_server_begin() {
 
   ota_handler_register(g_server);
 
-  Serial.println("REST management-API startet paa port 8080 (status/channels/diagnostic read-write/ota).");
+  Serial.println("REST management-API startet paa port 8080 (status/capabilities/channels/diagnostic read-write/ota).");
 }

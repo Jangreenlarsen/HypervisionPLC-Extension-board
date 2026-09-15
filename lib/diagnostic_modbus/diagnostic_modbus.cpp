@@ -135,7 +135,7 @@ bool mb_diag_parse_read_request(const char *json, size_t len, mb_diag_read_reque
   if (fc != 1 && fc != 2 && fc != 3 && fc != 4) return false;
   if (!parse_uint_field(json, "slave_id", &slave) || slave == 0 || slave > 247) return false;
   if (!parse_uint_field(json, "address", &addr) || addr > 0xFFFF) return false;
-  if (!parse_uint_field(json, "quantity", &qty) || qty == 0 || qty > 2000) return false;
+  if (!parse_uint_field(json, "quantity", &qty) || qty == 0 || qty > MB_DIAG_MAX_READ_QUANTITY) return false;
 
   out->function_code = static_cast<uint8_t>(fc);
   out->slave_id = static_cast<uint8_t>(slave);

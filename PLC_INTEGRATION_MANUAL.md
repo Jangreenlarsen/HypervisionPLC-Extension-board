@@ -11,7 +11,7 @@ Denne manual dokumenterer expansion-boardets **fulde, faktisk implementerede** g
 1. [Arkitektur i korte træk](#1-arkitektur-i-korte-træk)
 2. [Første opsætning (provisionering)](#2-første-opsætning-provisionering)
 3. [Modbus TCP — data-planet (høj-frekvent drift)](#3-modbus-tcp--data-planet-høj-frekvent-drift)
-4. [REST management-API (port 8080)](#4-rest-management-api-port-8080)
+4. [REST management-API (port 8080)](#4-rest-management-api-port-8080) (inkl. 4.8 `GET /api/capabilities`)
 5. [Fejlkoder-reference](#5-fejlkoder-reference)
 6. [Anbefalet PLC-side-integrationsflow](#6-anbefalet-plc-side-integrationsflow)
 7. [Kendte begrænsninger lige nu](#7-kendte-begrænsninger-lige-nu)
@@ -248,6 +248,33 @@ Exception-/fejl-svar: samme form som `/read` (afsnit 4.5).
 - **`POST /api/reboot`** — **påkrævet efter en vellykket `/api/ota`** for reelt at aktivere den nye firmware. Et vellykket OTA-upload sætter KUN den nye firmware som boot-partition — boardet fortsætter uforstyrret på den gamle, kørende firmware indtil denne genstart eksplicit kaldes. Svarer `{"ok": true, "message": "Genstarter..."}` og genstarter ca. 500 ms senere.
 - Kun ÉT OTA-upload ad gangen — et samtidigt forsøg giver `409 Conflict`.
 
+### 4.8 `GET /api/capabilities` (v0.28.0)
+
+Rent DEKLARATIVT — ingen bus-trafik, ingen sideeffekter, svarer øjeblikkeligt uanset om nogen slave er tilsluttet/online. Samme auth-regel som `/api/status`. Implementerer `DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md`s §1 (fundet i dette repos rod — PLC-udviklingsteamets eget forslag).
+
+```json
+{
+  "api_version": 1,
+  "fw_version": "0.28.0",
+  "modbus_tcp": {
+    "supported_function_codes": [1, 2, 3, 4, 5, 6, 15, 16],
+    "max_read_quantity": 2000,
+    "max_write_quantity": 1968
+  },
+  "rest_diagnostic": {
+    "supported_function_codes": [1, 2, 3, 4, 5, 6, 15, 16],
+    "max_read_quantity": 2000,
+    "max_write_quantity": 32
+  }
+}
+```
+
+**To separate lister** (`modbus_tcp` vs. `rest_diagnostic`) — de kan i princippet divergere (samme lektion som FC15/16-uoverensstemmelsen mellem lagene, se v0.27.1 i `CHANGELOG.md`). I dag understøtter begge lag identiske function codes, men rapporteres uafhængigt, så en fremtidig divergens ikke skjules bag én fælles liste.
+
+**`max_read_quantity`/`max_write_quantity`:** for `modbus_tcp` er dette den BREDESTE Modbus-spec-grænse på tværs af de understøttede læse-/skrive-FC'er (fx læsning: FC01/02 tillader op til 2000, FC03/04 kun 125 — feltet rapporterer den bredeste, 2000; en klient der vil kende den PRÆCISE grænse for en given FC skal stadig kende Modbus-spec'en selv, dette felt er en overordnet deklaration, ikke en pr.-FC-tabel). For `rest_diagnostic` er tallene derimod REST-lagets egne, flade, håndhævede lofter (§4.5/§4.6) — ens for alle FC'er på det lag.
+
+Se afsnit 6 punkt 2 nedenfor for hvordan dette anbefales brugt sammen med den periodiske `/api/status`-healthcheck.
+
 ---
 
 ## 5. Fejlkoder-reference
@@ -263,27 +290,28 @@ Exception-/fejl-svar: samme form som `/read` (afsnit 4.5).
 | 4 | `MB_MAX_REQUESTS_EXCEEDED` | (reserveret, ikke i brug endnu) |
 | 5 | `MB_NOT_ENABLED` | Kanalen er deaktiveret (`enabled:false`) |
 | 6 | `MB_INVALID_SLAVE` | Svarets adresse-byte matchede ikke den forespurgte slave |
-| 7 | `MB_INVALID_ADDRESS` | Ugyldig/ukendt function code eller PDU-længde i selve requestet |
+| 7 | `MB_INVALID_ADDRESS` | Ugyldig adresse/quantity/PDU-længde for en ELLERS kendt function code (v0.28.0: dækker IKKE længere "ukendt FC helt", se værdi 10) |
 | 8 | `MB_BUS_BUSY` | Kanalens interne kø var fuld (en anden transaktion optog den) |
 | 9 | `MB_CHANNEL_UNREACHABLE` | Generisk intern fejl (buffer for lille, e.l.) |
+| 10 | `MB_UNSUPPORTED_FUNCTION` (v0.28.0) | Function code er HELT UKENDT af boardets gateway — se `GET /api/capabilities` (afsnit 4.8) for at forespørge dette PROAKTIVT, uden at skulle ramme denne fejl live først |
 
 Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsnit 3.3):
 
 | Kode | Navn |
 |---|---|
-| 0x01 | Illegal Function |
+| 0x01 | Illegal Function — fra slaven selv, ELLER fra boardets egen gateway (v0.28.0) specifikt når function code er ukendt (`MB_UNSUPPORTED_FUNCTION`) |
 | 0x02 | Illegal Data Address |
 | 0x03 | Illegal Data Value |
 | 0x04 | Slave Device Failure |
-| 0x0A | Gateway Path Unavailable (KUN fra boardets egen gateway) |
+| 0x0A | Gateway Path Unavailable (KUN fra boardets egen gateway — deaktiveret/util-gaengelig kanal, IKKE længere "ukendt FC", se 0x01 ovenfor) |
 | 0x0B | Gateway Target Device Failed to Respond (KUN fra boardets egen gateway) |
 
 ---
 
 ## 6. Anbefalet PLC-side-integrationsflow
 
-1. **Registrering/opsætning** (én gang pr. board, af installatøren): provisionér boardet (afsnit 2), notér IP + management-token, indtast begge i PLC'ens System-side ("Modbus Expansion Boards"-kortet, §5.2).
-2. **Sundhedstjek** (periodisk, lav frekvens — fx hvert 30.-60. sekund): `GET /api/status`. Timeout/forbindelsesfejl → markér boardet "unreachable" i UI'en. Tjek `api_version` matcher forventet.
+1. **Registrering/opsætning** (én gang pr. board, af installatøren): provisionér boardet (afsnit 2), notér IP + management-token, indtast begge i PLC'ens System-side ("Modbus Expansion Boards"-kortet, §5.2). Kald samtidig `GET /api/capabilities` (afsnit 4.8) én gang og cache resultatet sammen med boardets `id` — ingen bus-trafik/sideeffekter, kan gøres proaktivt uden at "brænde" et rigtigt skriv til udstyret bag boardet.
+2. **Sundhedstjek** (periodisk, lav frekvens — fx hvert 30.-60. sekund): `GET /api/status`. Timeout/forbindelsesfejl → markér boardet "unreachable" i UI'en. Tjek `api_version` matcher forventet. Sammenlign også `fw_version` mod den cachede capabilities-snapshots `fw_version` — ved mismatch (boardet er opdateret siden sidst) genforespørges `GET /api/capabilities`.
 3. **Kanal-config-synk ved (gen)opstart af boardet** (opdaget via `GET /api/status`s manglende svar → fornyet svar, ELLER PLC'ens egen opstart): genskriv ALLE kanalers config via `PUT /api/channels/{n}/config` fra PLC'ens egen, gemte "sandhed" — boardet husker sin PERSISTEREDE config (den overlever reboot), men PLC-siden bør stadig eksplicit synkronisere efter enhver mistanke om boardets egen genstart, i tilfælde af at en administrator har ændret noget direkte på boardet (§4.2's designdokument-note).
 4. **Normal drift (høj-frekvent):** Modbus TCP direkte (afsnit 3) — ÉN vedvarende forbindelse pr. kanal, genbrugt for alle transaktioner. IKKE REST-`/read`/`/write`.
 5. **Ad-hoc diagnose/test fra UI'en** (fx en "test-forbindelse"-knap i PLC'ens web-UI): REST-`/read`/`/write` (afsnit 4.5/4.6) — lav frekvens, menneske-initieret.

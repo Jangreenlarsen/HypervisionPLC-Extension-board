@@ -479,6 +479,7 @@ Expansion-boardets kanal-task modtager PDU'en + det udpakkede `Unit ID` (→ RTU
 | Metode | Sti | Beskrivelse |
 |---|---|---|
 | GET | `/api/status` | Board-status: `api_version` (se nedenfor), `fw_version`, `uptime_s`, `heap_free_kb`, `active_channels` (**hardware-detekteret ved boot, §2.2.2 — 1-8, Variant A: altid 2, §2.0**), per-kanal fejl-bitmap |
+| GET | `/api/capabilities` (v0.28.0) | **Rent deklarativt** — ingen bus-trafik/sideeffekter. Understøttede function codes (separat for Modbus TCP vs. REST-diagnostik, kan divergere) + deres quantity-grænser, se `PLC_INTEGRATION_MANUAL.md` §4.8 og `DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md` (PLC-udviklingsteamets designforslag, implementeret i sin helhed) |
 | GET | `/api/channels` | Liste af de faktisk tilstedeværende kanalers config+statistik (JSON-array, længde = `active_channels`) |
 | GET | `/api/channels/{n}` | Én kanals config+statistik (n=1..`active_channels`) — `n > active_channels` svarer `404` |
 | PUT | `/api/channels/{n}/config` | Sæt kanalens fulde konfiguration **atomisk** (RS232/RS485-mode, baudrate, parity, stop-bits, timeout, §2.2.1) — hele objektet skal med i ét kald (samme "aldrig felt-for-felt"-princip som tidligere, nu håndhævet ved at endpointet kræver alle felter, ikke PATCH-semantik) |

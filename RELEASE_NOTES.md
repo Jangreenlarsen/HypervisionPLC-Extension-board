@@ -2,6 +2,14 @@
 
 ---
 
+## v0.28.0 — 2026-09-15 — `GET /api/capabilities` + korrekt "ukendt function code"-fejl
+
+Implementerer PLC-udviklingsteamets eget designforslag (`DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md`): et nyt, rent deklarativt `GET /api/capabilities`-endpoint der viser hvilke function codes boardet understøtter (separat for Modbus TCP-data-planet og REST-diagnostikken) uden at skulle sende en rigtig test-transaktion. Desuden en ny, dedikeret fejlkode for "boardet kender slet ikke denne function code" (`MB_UNSUPPORTED_FUNCTION`, REST `error_code:10`, Modbus TCP-exception `0x01` "Illegal Function") — adskilt fra den hidtidige, bredere `MB_INVALID_ADDRESS`/`0x0A`, som nu kun betyder "ugyldig adresse for en ellers kendt function code" eller "kanal util-gaengelig".
+
+**Live-verificeret** på fysisk hardware: `GET /api/capabilities` svarede byte-for-byte som forventet, og et rå Modbus TCP-kald med en helt ukendt function code (0x07) fik nu korrekt exception `0x01` "Illegal Function" i stedet for det tidligere `0x0A`. Fund undervejs: den nye fejlkode kan pt. kun nås via Modbus TCP-data-planet, ikke REST-diagnostikken — REST'ens egen parser filtrerer allerede ukendte function codes fra tidligere i kæden.
+
+---
+
 ## v0.27.1 — 2026-09-15 — FC15's REST-kontrakt rettet til booleans
 
 Efter et krydstjek mod PLC-udviklingsteamets egen spec viste det sig at v0.27.0's FC15-understøttelse i REST-diagnostikken (`POST /api/channels/{n}/write`) forventede et tal-array (`[1,0,1]`), mens både PLC-teamets forslag OG denne kodebases egen FC05-konvention bruger booleans (`[true,false,true]`). Rettet — boardets Modbus TCP-data-plan (port 502/503) var allerede fuldt ud i overensstemmelse med deres spec og krævede ingen ændring.

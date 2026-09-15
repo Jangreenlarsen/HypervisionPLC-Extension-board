@@ -126,6 +126,73 @@ void test_error_json_without_error_code(void) {
   TEST_ASSERT_NOT_NULL(strstr(out, "\"error\":\"unauthorized\""));
 }
 
+// ---------------------------------------------------------------------------
+// mb_status_build_capabilities_json (v0.28.0, GET /api/capabilities)
+// ---------------------------------------------------------------------------
+
+void test_capabilities_json_full_shape(void) {
+  const uint8_t fcs[] = {1, 2, 3, 4, 5, 6, 15, 16};
+  const mb_capabilities_data_t data = {
+      "0.28.0", fcs, sizeof(fcs), 2000, 1968, fcs, sizeof(fcs), 2000, 32,
+  };
+  char out[512];
+  const size_t len = mb_status_build_capabilities_json(&data, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_size_t(strlen(out), len);
+
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"api_version\":1"));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"fw_version\":\"0.28.0\""));
+  TEST_ASSERT_NOT_NULL(
+      strstr(out, "\"modbus_tcp\":{\"supported_function_codes\":[1,2,3,4,5,6,15,16],\"max_read_quantity\":2000,"
+                  "\"max_write_quantity\":1968}"));
+  TEST_ASSERT_NOT_NULL(
+      strstr(out, "\"rest_diagnostic\":{\"supported_function_codes\":[1,2,3,4,5,6,15,16],\"max_read_quantity\":2000,"
+                  "\"max_write_quantity\":32}"));
+}
+
+void test_capabilities_json_lists_can_differ(void) {
+  // Designdokumentets pointe: de to lister skal kunne divergere uden at
+  // skjule det bag én fælles liste.
+  const uint8_t tcp_fcs[] = {1, 2, 3, 4, 5, 6, 16};  // FC15 mangler her
+  const uint8_t rest_fcs[] = {1, 2, 3, 4, 5, 6, 15, 16};
+  const mb_capabilities_data_t data = {
+      "0.27.0", tcp_fcs, sizeof(tcp_fcs), 2000, 123, rest_fcs, sizeof(rest_fcs), 2000, 32,
+  };
+  char out[512];
+  const size_t len = mb_status_build_capabilities_json(&data, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"modbus_tcp\":{\"supported_function_codes\":[1,2,3,4,5,6,16]"));
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"rest_diagnostic\":{\"supported_function_codes\":[1,2,3,4,5,6,15,16]"));
+}
+
+void test_capabilities_json_is_balanced_braces(void) {
+  const uint8_t fcs[] = {1, 2, 3, 4, 5, 6, 15, 16};
+  const mb_capabilities_data_t data = {
+      "0.28.0", fcs, sizeof(fcs), 2000, 1968, fcs, sizeof(fcs), 2000, 32,
+  };
+  char out[512];
+  const size_t len = mb_status_build_capabilities_json(&data, out, sizeof(out));
+  TEST_ASSERT_TRUE_MESSAGE(len > 0, "mb_status_build_capabilities_json fejlede - resten af testen er meningsløs");
+
+  int depth = 0;
+  for (const char *p = out; *p != '\0'; p++) {
+    if (*p == '{') depth++;
+    if (*p == '}') depth--;
+    TEST_ASSERT_TRUE_MESSAGE(depth >= 0, "ubalanceret '}' fundet foer matchende '{'");
+  }
+  TEST_ASSERT_EQUAL_MESSAGE(0, depth, "ubalancerede krøllede parenteser i JSON-output");
+}
+
+void test_capabilities_json_rejects_undersized_buffer(void) {
+  const uint8_t fcs[] = {1, 2, 3, 4, 5, 6, 15, 16};
+  const mb_capabilities_data_t data = {
+      "0.28.0", fcs, sizeof(fcs), 2000, 1968, fcs, sizeof(fcs), 2000, 32,
+  };
+  char out[8];
+  const size_t len = mb_status_build_capabilities_json(&data, out, sizeof(out));
+  TEST_ASSERT_EQUAL_size_t(0, len);
+}
+
 int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -141,6 +208,11 @@ int main(int argc, char **argv) {
   RUN_TEST(test_status_json_is_balanced_braces);
   RUN_TEST(test_error_json_with_error_code);
   RUN_TEST(test_error_json_without_error_code);
+
+  RUN_TEST(test_capabilities_json_full_shape);
+  RUN_TEST(test_capabilities_json_lists_can_differ);
+  RUN_TEST(test_capabilities_json_is_balanced_braces);
+  RUN_TEST(test_capabilities_json_rejects_undersized_buffer);
 
   return UNITY_END();
 }
