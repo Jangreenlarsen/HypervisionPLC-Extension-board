@@ -98,6 +98,8 @@ HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og ha
     - `pio run` — verificér at firmwaren bygger for target-boardet (miljønavn fastlægges når `platformio.ini` oprettes i Fase 1)
     - Adfærd der kun kan verificeres MED fysisk hardware (SPI-timing, RS485/RS232-transceiver-skift, kanal-auto-detektion, OTA-partitionsskift) kan ikke automatiseres her — følg i stedet fase-testplanen og acceptance-kriterierne i [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) §9-§10, og sig eksplicit i afrapporteringen hvilke af disse der IKKE er verificeret på rigtig hardware endnu.
 
+14. **CLI-kommandoer skal altid have en enable/disable-modpart (Jan, v0.26.1)**: enhver ny seriel CLI-kommando (§3.4.1) der TÆNDER/aktiverer/tilføjer noget skal have en tilsvarende `no <kommando>`-variant der slukker/rydder det igen — samme Cisco-inspirerede mønster som allerede etableret: `debug modbus ...` / `no debug modbus` (v0.25.0), `syslog add ...` / `no syslog` (v0.26.0/v0.26.1). Gælder fremadrettet for ALLE nye kommandoer af denne art, ikke kun disse to — design `no <kommando>` ind FRA START, ikke som en efterfølgende tilføjelse Jan skal bede om separat.
+
 ---
 
 ## Workflow for enhver opgave
