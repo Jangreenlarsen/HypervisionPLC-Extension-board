@@ -465,6 +465,20 @@ void provisioning_poll() {
         const ModbusChannelId test_id =
             (g_state.test_channel_number == 1) ? ModbusChannelId::kA : ModbusChannelId::kB;
 
+        // Jan (afklaret efter at have oplevet dette som "kanal B goer ingenting"
+        // under et "test"-kald mod kanal A, som timede ud): "test" er BEVIDST
+        // synkron/blokerende — den serielle CLI (ÉN tekst-terminal, ÉN
+        // kommando ad gangen) venter selv på svaret/timeout, ligesom "connect"
+        // allerede gør ved WiFi. De to kanalers FreeRTOS-tasks kører uændret
+        // fuldstændig uafhængigt af hinanden i baggrunden (konkret målt: et
+        // REST-kald til kanal B svarede på 140ms, MENS et samtidigt kald til
+        // kanal A stadig ventede på sin 762ms-timeout) — det er kun CLI'ens
+        // EGEN prompt der er optaget, ikke kanalerne. Denne besked gør det
+        // tydeligt FØR ventetiden, i stedet for at det ligner et hængende board.
+        Serial.print("(CLI'en venter nu op til ");
+        Serial.print(modbus_channel_get_config(test_id).timeout_ms);
+        Serial.println("ms paa svar/timeout - den ANDEN kanal koerer uforstyrret videre i baggrunden)");
+
         uint8_t request_pdu[8];
         const size_t request_pdu_len = mb_diag_build_read_pdu(&g_state.test_read, request_pdu, sizeof(request_pdu));
 
