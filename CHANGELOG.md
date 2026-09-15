@@ -4,6 +4,21 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.27.1 build 0037] — 2026-09-15 — FC15's REST-kontrakt rettet til booleans
+
+**Baggrund:** Jan bad om at krydstjekke v0.27.0's FC15/16-implementering mod PLC-udviklingsteamets egen spec for boardets Modbus TCP-data-plan og REST-diagnostik. Data-plan-delen (port 502/503, `lib/modbus_pdu`) stemte allerede fuldstændigt overens — `modbus_tcp_server.cpp` relayer PDU'en helt function-code-agnostisk, så tilføjelsen af `0x0F` til `mb_pdu_expected_response_frame_len()`s whitelist i v0.27.0 var alt der krævedes for at løse deres beskrevne problem ("MBX_WRITE_COILS fra ST Logic får en gateway-exception"). REST-diagnostik-delen (`POST /api/channels/{n}/write`) havde derimod en reel uoverensstemmelse: deres "Foreslået syntaks" for FC15 er `"values": [true, false, true, true]` (booleans), men v0.27.0's implementering genbrugte fejlagtigt FC16's tal-parser og forventede `[1, 0, 1]`.
+
+**`lib/diagnostic_modbus/`:** ny `parse_bool_array_field()` — parser et JSON-array af `true`/`false`-literaler (ikke tal), brugt for FC15's `"values"`. Matcher IKKE kun PLC-teamets forslag, men også denne fils EGEN eksisterende konvention (FC05's `"value"` er allerede en bool, `parse_bool_field()`) — v0.27.0's tal-baserede udgave var inkonsistent med kodebasens egen etablerede stil. Et FC16-stil tal-array (`[1,0,1]`) for FC15 afvises nu bevidst med 400 Bad Request, i stedet for at blive stille fejlfortolket eller accepteret forkert.
+
+**Bemærk (ikke rettet her, udenfor scope):** PLC-teamet fandt undervejs at PLC-repoets egen REST-test-panel-dispatcher (`api_handlers.cpp:5778`, `Modbus_server_slave_ESP32`-repoet) kun har en array-gren for `function_code==16` — vælges FC15 der i dag, sendes en forkert payload. Dette er en PLC-side-fejl i et andet repo, udenfor dette repos scope (CLAUDE.md's projektgrænse) — kræver koordinering med den, der vedligeholder det repo.
+
+**Filer ændret:** `lib/diagnostic_modbus/diagnostic_modbus.h/.cpp`, `test/test_diagnostic_modbus/test_diagnostic_modbus.cpp`, `PLC_INTEGRATION_MANUAL.md`, `FEATURES.md`.
+
+**Status:** 278/278 native-tests bestået (opdateret til boolsk syntaks, 1 ny afvisnings-test), bygger rent for esp32dev. **Live-verificeret** på fysisk hardware, alle 3 scenarier fra PLC-teamets spec:
+1. REST med NY boolsk kontrakt (`values: [true,false,true,true]`) — accepteret, producerede TX-framen `09 0F 00 00 00 04 01 0D FE F5`, BYTE-IDENTISK med PLC-teamets eget eksempel-PDU (`0F 00 00 00 04 01 0D`, korrekt CRC tilføjet).
+2. REST med GAMMEL tal-kontrakt (`values: [1,0,1]`) — korrekt AFVIST med 400 Bad Request.
+3. Rå Modbus TCP data-plan (port 503, PLC-teamets eksakte MBAP+PDU-eksempel) — gatewayen forsøger nu FC15-transaktionen (ikke længere whitelist-blokeret) og svarer korrekt med exception `0x0B` ("Target Device Failed to Respond") da den fysiske testslave ikke svarede — IKKE `0x0A` ("Path Unavailable"), som PLC-teamet beskrev som den daværende (nu rettede) adfærd.
+
 ## [0.27.0 build 0036] — 2026-09-15 — FC15 (Write Multiple Coils) understøttet
 
 **Baggrund:** Jan: "har vi support for FC 15 og 16" → svaret afslørede FC16 (Write Multiple Registers) allerede var understøttet, men FC15 (Write Multiple Coils) manglede helt — en ekstern Modbus TCP-master der sendte FC15 fik en misvisende `0x0A` "Gateway Path Unavailable"-exception i stedet for enten et rigtigt svar eller et korrekt `0x01` "Illegal Function". Jan: "ja tak vi skal have FC15 og FC16 support".

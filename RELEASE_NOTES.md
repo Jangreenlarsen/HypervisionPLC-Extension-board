@@ -2,6 +2,14 @@
 
 ---
 
+## v0.27.1 — 2026-09-15 — FC15's REST-kontrakt rettet til booleans
+
+Efter et krydstjek mod PLC-udviklingsteamets egen spec viste det sig at v0.27.0's FC15-understøttelse i REST-diagnostikken (`POST /api/channels/{n}/write`) forventede et tal-array (`[1,0,1]`), mens både PLC-teamets forslag OG denne kodebases egen FC05-konvention bruger booleans (`[true,false,true]`). Rettet — boardets Modbus TCP-data-plan (port 502/503) var allerede fuldt ud i overensstemmelse med deres spec og krævede ingen ændring.
+
+**Live-verificeret** på fysisk hardware mod alle 3 scenarier i PLC-teamets spec: REST med den nye boolske kontrakt producerede en byte-identisk RTU-frame til deres eget eksempel, den gamle tal-kontrakt afvises nu korrekt, og et rå Modbus TCP FC15-kald (port 503) fik nu korrekt `0x0B` ("Target Device Failed to Respond") i stedet for det tidligere `0x0A` ("Path Unavailable") — whitelist-fixet fra v0.27.0 virker som forventet.
+
+---
+
 ## v0.27.0 — 2026-09-15 — FC15 (Write Multiple Coils) understøttet
 
 Modbus function code 15 (Write Multiple Coils) er nu understøttet — både på kernen (`lib/modbus_pdu`) og i den diagnostiske REST-skrivning (`POST /api/channels/{n}/write`, `function_code: 15`). Hidtil gav en FC15-forespørgsel en misvisende "Gateway Path Unavailable"-exception. FC16 (Write Multiple Registers) var allerede understøttet fra tidligere.

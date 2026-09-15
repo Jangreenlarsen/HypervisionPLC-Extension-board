@@ -221,9 +221,9 @@ FC06 (ét register):
 ```json
 {"function_code": 6, "slave_id": 9, "address": 10, "value": 1234}
 ```
-FC15 (flere coils, maks 32 pr. kald — hver værdi 0 eller 1):
+FC15 (flere coils, maks 32 pr. kald — `values` er BOOLEANS, ikke tal, samme konvention som FC05's `value`):
 ```json
-{"function_code": 15, "slave_id": 9, "address": 0, "values": [1, 0, 1]}
+{"function_code": 15, "slave_id": 9, "address": 0, "values": [true, false, true, true]}
 ```
 FC16 (flere registre, maks 32 pr. kald):
 ```json
