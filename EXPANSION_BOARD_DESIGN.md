@@ -392,6 +392,7 @@ Dette er den ENESTE brugerflade boardet nogensinde selv viser (§0) — over USB
 | `no debug modbus` / `no debug all` (v0.25.0) | Slår modbus-debug fra igen på BEGGE kanaler — de to former er synonymer |
 | `syslog add <ip> <port> <tag> <level 1-8>` (v0.26.0) | Tilføjer/opdaterer en UDP-syslog-modtager (op til 4 samtidige, `lib/syslog_client/`) — `level` er en pr.-modtager verbositets-tærskel, genbruger `debug modbus`s 1-8-skala. Facility (`local0`-`local7`) er fast pr. delsystem, ikke konfigurerbar. **Persisteret** (modsat `debug modbus`) — kræver `save`, virker straks uden reboot |
 | `syslog remove <tag>` (v0.26.0) | Fjerner en syslog-modtager |
+| `no syslog` / `no syslog all` (v0.26.1) | Fjerner ALLE syslog-modtagere på én gang — de to former er synonymer |
 | `version` | Firmware-version+build (samme data som `show`/`status`s `firmware`-linje) |
 | `help` | Kommando-oversigt |
 

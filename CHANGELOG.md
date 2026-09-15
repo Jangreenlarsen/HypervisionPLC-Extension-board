@@ -4,6 +4,16 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.26.1 build 0035] — 2026-09-15 — `no syslog`/`no syslog all`
+
+**Baggrund:** Jan: "har vi også no syslog som mulighed for at slette config for syslog".
+
+**`lib/provisioning_cli/`:** ny `no syslog`/`no syslog all` (synonymer, samme mønster som v0.25.0's `no debug modbus`/`no debug all`) — fjerner ALLE konfigurerede syslog-modtagere i ét kald, i stedet for `syslog remove <tag>` én ad gangen. Persisteret (kræver `save`, ligesom `syslog add`/`remove`). `no`-kommandoen omstruktureret til at understøtte flere underkommandoer (`debug`/`syslog`) i stedet for kun `debug`.
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`, `FEATURES.md`.
+
+**Status:** 269/269 native-tests bestået (6 nye), bygger rent for esp32dev. Live-verifikation følger.
+
 ## [0.26.0 build 0034] — 2026-09-15 — Syslog-klient (RFC 3164, UDP) med op til 4 modtagere
 
 **Baggrund:** Jan: "kan vi lave en syslog funktion som vi kan sætte et target på som modtager af syslog" → "en eller flere target" → "vi skal have lave en level 1-8 samt local0-7 for syslog og vi skal kunne sætte hvad for output der skal sendet så det er også et sp om at vi nu skal have instruduceret syslog output fra de forskellige operationer i expansions board".
