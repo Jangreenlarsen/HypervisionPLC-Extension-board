@@ -16,7 +16,13 @@ enum mb_error_code_t {
   MB_INVALID_SLAVE = 6,
   MB_INVALID_ADDRESS = 7,
   MB_BUS_BUSY = 8,
-  MB_CHANNEL_UNREACHABLE = 9
+  MB_CHANNEL_UNREACHABLE = 9,
+  // v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §2, PLC-
+  // udviklingsteamets forslag) — dedikeret til "function code ikke
+  // implementeret af boardets gateway", adskilt fra MB_INVALID_ADDRESS
+  // (som nu KUN dækker "ugyldig adresse/quantity for en ELLERS kendt FC").
+  // Værdien 10 er eksplicit foreslået i designdokumentet.
+  MB_UNSUPPORTED_FUNCTION = 10
 };
 
 constexpr size_t MB_PDU_MAX_LEN = 253;                          // Modbus-spec: FC + op til 252 databytes
@@ -37,9 +43,29 @@ size_t mb_pdu_build_rtu_request(uint8_t slave_id, const uint8_t *pdu, size_t pdu
 
 enum mb_pdu_validation_t {
   MB_PDU_VALID = 0,
-  MB_PDU_UNSUPPORTED_FUNCTION = 1,  // function code udenfor FC01-06/16 (§4.1's scope)
+  MB_PDU_UNSUPPORTED_FUNCTION = 1,  // function code udenfor FC01-06/15/16 (§4.1's scope)
   MB_PDU_MALFORMED_REQUEST = 2      // forkert længde, eller quantity/byte_count udenfor Modbus-spec-grænser
 };
+
+// v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §1) — den ENESTE
+// kilde til "hvilke function codes understøtter boardet", brugt af
+// `GET /api/capabilities` (lib/rest_status). SKAL holdes i sync med
+// switch-casene i mb_pdu_expected_response_frame_len()s implementering
+// (modbus_pdu.cpp) — ingen automatisk afledning (kun 8 værdier, lav
+// ændringsfrekvens gør denne manuelle disciplin acceptabel fremfor en
+// tungere refleksions-mekanisme). test_modbus_pdu.cpp har en test der
+// krydstjekker de to holder sig i sync.
+extern const uint8_t MB_PDU_SUPPORTED_FUNCTIONS[8];
+constexpr size_t MB_PDU_SUPPORTED_FUNCTION_COUNT = 8;
+
+// Modbus-spec'ens egne pr.-FC quantity-grænser (håndhævet i
+// mb_pdu_expected_response_frame_len()'s switch, modbus_pdu.cpp) — navngivet
+// her så `GET /api/capabilities` kan rapportere dem uden at duplikere
+// magic numbers et andet sted (samme "én kilde"-princip som FC-listen ovenfor).
+constexpr uint16_t MB_PDU_MAX_READ_BIT_QUANTITY = 2000;       // FC01/02
+constexpr uint16_t MB_PDU_MAX_READ_REGISTER_QUANTITY = 125;   // FC03/04
+constexpr uint16_t MB_PDU_MAX_WRITE_COIL_QUANTITY = 1968;     // FC15
+constexpr uint16_t MB_PDU_MAX_WRITE_REGISTER_QUANTITY = 123;  // FC16
 
 // Beregner hvor mange bytes en komplet, IKKE-exception RTU-svar-frame vil
 // være (adresse + svar-pdu + CRC) for en given forespørgsels-PDU. Kun

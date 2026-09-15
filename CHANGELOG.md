@@ -4,6 +4,31 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.28.0 build 0038] — 2026-09-15 — `GET /api/capabilities` + dedikeret "unsupported function code"-fejlkode
+
+**Baggrund:** Jan: "vi skal have lavet en udvidelse til test se efter i projekt folde efter en fil 'DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md' hvor det er beskrivet" — et designforslag fra PLC-udviklingsteamet (allerede i repoets rod), skrevet efter PLC-siden fik et empirisk "Funktions-test"-panel og indså at der ingen live-forespørgelig capabilities-API fandtes. Implementeret i sin helhed (§1 anbefalede løsning + §2's supplerende fejlkode-oprydning, begge valgt via AskUserQuestion).
+
+**`lib/modbus_pdu/`:** ny `MB_UNSUPPORTED_FUNCTION=10` i `mb_error_code_t` (adskilt fra `MB_INVALID_ADDRESS=7`, som nu KUN dækker "ugyldig adresse/quantity for en ELLERS kendt FC"). Ny `MB_PDU_SUPPORTED_FUNCTIONS[8]`/`MB_PDU_SUPPORTED_FUNCTION_COUNT` — ÉN kilde til "hvilke FC'er understøtter boardet", brugt af det nye endpoint. Modbus-spec'ens pr.-FC quantity-grænser navngivet (`MB_PDU_MAX_READ_BIT_QUANTITY` m.fl.) i stedet for spredte magic numbers. Ny meta-test (`test_supported_functions_array_matches_switch`) krydstjekker FC-listen mod selve switch-logikken for ALLE 256 mulige byte-værdier — forhindrer eksplicit den "to lag drifter fra hinanden"-fejlklasse designdokumentet advarer om (den ramte allerede PLC-siden én gang for FC15/16, se v0.27.1).
+
+**`lib/diagnostic_modbus/`:** ny navngivet `MB_DIAG_MAX_READ_QUANTITY=2000` (erstatter et magic number i `mb_diag_parse_read_request()`), brugt af det nye endpoint.
+
+**`lib/rest_status/`:** ny `mb_status_build_capabilities_json()` — bygger `GET /api/capabilities`s JSON (separate `modbus_tcp`/`rest_diagnostic`-lister, bevidst, jf. designdokumentets §1 begrundelse: de KAN divergere). 4 nye native-tests.
+
+**`src/http_server.cpp`:** nyt, autentificeret `GET /api/capabilities`-endpoint (samme auth-regel som `/api/status`) — rent deklarativt, ingen bus-trafik/sideeffekter. Diagnostik-skrivnings-/læsnings-handleren giver nu en specifik besked ("Function code X ikke understøttet af dette board") for `MB_UNSUPPORTED_FUNCTION`, i stedet for den generiske "se error_code".
+
+**`src/modbus_channel.cpp`:** `execute_transaction()` skelner nu `MB_PDU_UNSUPPORTED_FUNCTION` fra `MB_PDU_MALFORMED_REQUEST` (tidligere begge → `MB_INVALID_ADDRESS`).
+
+**`src/modbus_tcp_server.cpp`:** ny `kIllegalFunction=0x01`-konstant — `gateway_exception_for()` mapper nu `MB_UNSUPPORTED_FUNCTION` til Modbus-STANDARDENS `0x01` "Illegal Function" (i stedet for det hidtil overbelastede `0x0A` "Gateway Path Unavailable", som fremover KUN dækker deaktiveret/util-gaengelig kanal) — matcher hvad en standard Modbus TCP-master allerede ved hvordan den skal fortolke.
+
+**Dokumentation:** `PLC_INTEGRATION_MANUAL.md` §4.8 (nyt endpoint, fuldt skema), §5 (opdateret fejlkode-/exception-tabel), §6 (integrationsflow nævner nu capabilities-cache); `EXPANSION_BOARD_DESIGN.md` (endpoint-tabel); `DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md`s egen status-linje markeret implementeret.
+
+**Filer ændret:** `lib/modbus_pdu/modbus_pdu.h/.cpp`, `lib/diagnostic_modbus/diagnostic_modbus.h/.cpp`, `lib/rest_status/rest_status.h/.cpp`, `src/http_server.cpp`, `src/modbus_channel.cpp`, `src/modbus_tcp_server.cpp`, `test/test_modbus_pdu/`, `test/test_rest_status/`, `PLC_INTEGRATION_MANUAL.md`, `EXPANSION_BOARD_DESIGN.md`, `DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md`, `FEATURES.md`.
+
+**Status:** 283/283 native-tests bestået (12 nye), bygger rent for esp32dev. **Live-verificeret** på fysisk hardware:
+1. `GET /api/capabilities` — svarede byte-for-byte som forventet: `{"api_version":1,"fw_version":"0.28.0","modbus_tcp":{"supported_function_codes":[1,2,3,4,5,6,15,16],"max_read_quantity":2000,"max_write_quantity":1968},"rest_diagnostic":{...,"max_write_quantity":32}}`.
+2. Rå Modbus TCP-kald med en HELT ukendt FC (0x07, port 503) — gatewayen svarede nu korrekt med exception `0x01` "Illegal Function" (bekræftet via seriel log: `MODBUS-FEJL kanal mb_ch_b: slave=9 fc=7 -> MB_UNSUPPORTED_FUNCTION`), i stedet for det hidtidige `0x0A`.
+3. **Fund undervejs:** `MB_UNSUPPORTED_FUNCTION`/`error_code:10` kan IKKE aktuelt nås via REST-diagnostikkens `/write`-endpoint — dens EGEN JSON-parser (`mb_diag_parse_write_request()`) afviser allerede en fc udenfor `{5,6,15,16}` med `400 Bad Request` FØR noget PDU overhovedet bygges/sendes til kanal-laget (samme mønster gælder `/read` og `{1,2,3,4}`). Koden i `src/http_server.cpp` der rapporterer `MB_UNSUPPORTED_FUNCTION` med en specifik besked er derfor pt. kun nåelig via Modbus TCP-data-planet (verificeret ovenfor) — men forbliver værdifuld som beskyttelse MOD netop den "to lag drifter fra hinanden"-fejlklasse designdokumentet advarer om, hvis REST-parserens egen FC-liste nogensinde løsnes uafhængigt af `lib/modbus_pdu`s.
+
 ## [0.27.1 build 0037] — 2026-09-15 — FC15's REST-kontrakt rettet til booleans
 
 **Baggrund:** Jan bad om at krydstjekke v0.27.0's FC15/16-implementering mod PLC-udviklingsteamets egen spec for boardets Modbus TCP-data-plan og REST-diagnostik. Data-plan-delen (port 502/503, `lib/modbus_pdu`) stemte allerede fuldstændigt overens — `modbus_tcp_server.cpp` relayer PDU'en helt function-code-agnostisk, så tilføjelsen af `0x0F` til `mb_pdu_expected_response_frame_len()`s whitelist i v0.27.0 var alt der krævedes for at løse deres beskrevne problem ("MBX_WRITE_COILS fra ST Logic får en gateway-exception"). REST-diagnostik-delen (`POST /api/channels/{n}/write`) havde derimod en reel uoverensstemmelse: deres "Foreslået syntaks" for FC15 er `"values": [true, false, true, true]` (booleans), men v0.27.0's implementering genbrugte fejlagtigt FC16's tal-parser og forventede `[1, 0, 1]`.

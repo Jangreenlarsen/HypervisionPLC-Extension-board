@@ -40,6 +40,11 @@ size_t mb_pdu_build_rtu_request(uint8_t slave_id, const uint8_t *pdu, size_t pdu
   return frame_len;
 }
 
+// v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §1) — SKAL
+// holdes i sync med switch-casene lige nedenfor, se modbus_pdu.h's
+// kommentar ved MB_PDU_SUPPORTED_FUNCTIONS.
+const uint8_t MB_PDU_SUPPORTED_FUNCTIONS[8] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x0F, 0x10};
+
 mb_pdu_validation_t mb_pdu_expected_response_frame_len(const uint8_t *request_pdu, size_t request_pdu_len,
                                                         size_t *out_expected_len) {
   if (request_pdu == nullptr || out_expected_len == nullptr || request_pdu_len == 0) {
@@ -53,7 +58,7 @@ mb_pdu_validation_t mb_pdu_expected_response_frame_len(const uint8_t *request_pd
     case 0x02: {  // Read Discrete Inputs
       if (request_pdu_len != 5) return MB_PDU_MALFORMED_REQUEST;
       const uint16_t qty = (static_cast<uint16_t>(request_pdu[3]) << 8) | request_pdu[4];
-      if (qty == 0 || qty > 2000) return MB_PDU_MALFORMED_REQUEST;  // Modbus-spec-grænse for FC01/02
+      if (qty == 0 || qty > MB_PDU_MAX_READ_BIT_QUANTITY) return MB_PDU_MALFORMED_REQUEST;
       const size_t byte_count = (static_cast<size_t>(qty) + 7) / 8;
       *out_expected_len = 1 + 1 + 1 + byte_count + 2;
       return MB_PDU_VALID;
@@ -62,7 +67,7 @@ mb_pdu_validation_t mb_pdu_expected_response_frame_len(const uint8_t *request_pd
     case 0x04: {  // Read Input Registers
       if (request_pdu_len != 5) return MB_PDU_MALFORMED_REQUEST;
       const uint16_t qty = (static_cast<uint16_t>(request_pdu[3]) << 8) | request_pdu[4];
-      if (qty == 0 || qty > 125) return MB_PDU_MALFORMED_REQUEST;  // Modbus-spec-grænse for FC03/04
+      if (qty == 0 || qty > MB_PDU_MAX_READ_REGISTER_QUANTITY) return MB_PDU_MALFORMED_REQUEST;
       *out_expected_len = 1 + 1 + 1 + static_cast<size_t>(qty) * 2 + 2;
       return MB_PDU_VALID;
     }
@@ -77,7 +82,7 @@ mb_pdu_validation_t mb_pdu_expected_response_frame_len(const uint8_t *request_pd
       const uint16_t qty = (static_cast<uint16_t>(request_pdu[3]) << 8) | request_pdu[4];
       const uint8_t byte_count = request_pdu[5];
       const uint8_t expected_byte_count = static_cast<uint8_t>((qty + 7) / 8);
-      if (qty == 0 || qty > 1968 || byte_count != expected_byte_count ||  // Modbus-spec-grænse for FC15
+      if (qty == 0 || qty > MB_PDU_MAX_WRITE_COIL_QUANTITY || byte_count != expected_byte_count ||
           request_pdu_len != static_cast<size_t>(6 + byte_count)) {
         return MB_PDU_MALFORMED_REQUEST;
       }
@@ -88,7 +93,7 @@ mb_pdu_validation_t mb_pdu_expected_response_frame_len(const uint8_t *request_pd
       if (request_pdu_len < 6) return MB_PDU_MALFORMED_REQUEST;
       const uint16_t qty = (static_cast<uint16_t>(request_pdu[3]) << 8) | request_pdu[4];
       const uint8_t byte_count = request_pdu[5];
-      if (qty == 0 || qty > 123 || byte_count != qty * 2 ||
+      if (qty == 0 || qty > MB_PDU_MAX_WRITE_REGISTER_QUANTITY || byte_count != qty * 2 ||
           request_pdu_len != static_cast<size_t>(6 + byte_count)) {
         return MB_PDU_MALFORMED_REQUEST;
       }

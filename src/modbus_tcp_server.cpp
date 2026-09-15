@@ -23,6 +23,14 @@ constexpr uint32_t kSocketReadTimeoutMs = 1000;
 // at sige "din forespørgsel er gyldig, men jeg kunne ikke levere den".
 constexpr uint8_t kGatewayPathUnavailable = 0x0A;         // kanalen findes ikke/ugyldig forespørgsel til den
 constexpr uint8_t kGatewayTargetFailedToRespond = 0x0B;   // slaven svarede ikke/svarede forkert (CRC, adresse, timeout)
+// v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §2) — Modbus-
+// STANDARDEN's egen "Illegal Function"-exception, brugt SPECIFIKT for en
+// function code boardets gateway slet ikke kender. Hidtil faldt dette ind
+// under kGatewayPathUnavailable (0x0A) sammen med to andre, reelt
+// forskellige situationer (deaktiveret kanal, kanal optaget) — en
+// standard Modbus TCP-master/PLC forventer netop 0x01 for "ukendt FC", ikke
+// en gateway-specifik "sti util-gaengelig"-kode.
+constexpr uint8_t kIllegalFunction = 0x01;
 
 struct ServerContext {
   uint16_t port;
@@ -50,6 +58,8 @@ bool is_permitted_peer(const IPAddress &peer) {
 
 uint8_t gateway_exception_for(mb_error_code_t error) {
   switch (error) {
+    case MB_UNSUPPORTED_FUNCTION:  // v0.28.0: ADSKILT fra kGatewayPathUnavailable, se kIllegalFunction ovenfor
+      return kIllegalFunction;
     case MB_CHANNEL_UNREACHABLE:
     case MB_BUS_BUSY:
     case MB_INVALID_ADDRESS:

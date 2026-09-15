@@ -13,6 +13,16 @@
 
 constexpr size_t MB_DIAG_MAX_WRITE_VALUES = 32;  // rigeligt til diagnostisk brug, ikke høj-frekvent drift
 
+// v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §1) — REST-
+// diagnostikkens EGEN, flade quantity-loft for læsning (§4.5), navngivet så
+// `GET /api/capabilities` (lib/rest_status) kan rapportere den uden at
+// duplikere et magic number — se mb_diag_parse_read_request(). Dette er
+// IKKE Modbus-spec'ens pr.-FC-grænse (lib/modbus_pdu's
+// MB_PDU_MAX_READ_BIT_QUANTITY/MB_PDU_MAX_READ_REGISTER_QUANTITY, håndhævet
+// senere ved selve RTU-frame-bygningen) — REST-laget har bevidst ét enkelt,
+// simplere loft for alle read-FC'er ved selve JSON-parsingen.
+constexpr uint16_t MB_DIAG_MAX_READ_QUANTITY = 2000;
+
 // --- Læsning (FC01/02/03/04) ---
 
 struct mb_diag_read_request_t {

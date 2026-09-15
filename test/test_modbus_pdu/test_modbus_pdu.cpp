@@ -103,6 +103,43 @@ void test_expected_len_rejects_fc15_quantity_over_spec_limit(void) {
   TEST_ASSERT_EQUAL(MB_PDU_MALFORMED_REQUEST, mb_pdu_expected_response_frame_len(req, sizeof(req), &len));
 }
 
+// v0.28.0 (DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md §1) —
+// krydstjekker MB_PDU_SUPPORTED_FUNCTIONS (den erklærede liste, brugt af
+// GET /api/capabilities) mod mb_pdu_expected_response_frame_len()'s
+// FAKTISKE switch-cases, for ALLE 256 mulige function-code-byte-værdier.
+// Formålet er eksplicit at forhindre den "to lag drifter fra hinanden"-
+// fejlklasse designdokumentet selv advarer om (den ramte allerede PLC-siden
+// én gang for FC15/16) — tilføjes en case til switchen uden at opdatere
+// arrayet (eller omvendt), fejler denne test.
+void test_supported_functions_array_matches_switch(void) {
+  for (int fc = 0; fc <= 0xFF; fc++) {
+    // 6-byte facade-PDU — nok bytes til at komme forbi request_pdu_len-
+    // tjekket for alle i dag understøttede FC'er (5 for FC01-06, >=6 for
+    // FC15/16); det er UNDERSTØTTELSE (ikke gyldighed) denne test tjekker.
+    uint8_t pdu[6] = {static_cast<uint8_t>(fc), 0x00, 0x00, 0x00, 0x01, 0x00};
+    size_t len = 0;
+    const mb_pdu_validation_t result = mb_pdu_expected_response_frame_len(pdu, sizeof(pdu), &len);
+
+    bool in_array = false;
+    for (size_t i = 0; i < MB_PDU_SUPPORTED_FUNCTION_COUNT; i++) {
+      if (MB_PDU_SUPPORTED_FUNCTIONS[i] == static_cast<uint8_t>(fc)) {
+        in_array = true;
+        break;
+      }
+    }
+
+    if (in_array) {
+      TEST_ASSERT_NOT_EQUAL_MESSAGE(
+          MB_PDU_UNSUPPORTED_FUNCTION, result,
+          "FC er i MB_PDU_SUPPORTED_FUNCTIONS, men switchen afviser den som unsupported - listerne er drevet fra hinanden");
+    } else {
+      TEST_ASSERT_EQUAL_MESSAGE(
+          MB_PDU_UNSUPPORTED_FUNCTION, result,
+          "FC er IKKE i MB_PDU_SUPPORTED_FUNCTIONS, men switchen accepterer den - listerne er drevet fra hinanden");
+    }
+  }
+}
+
 void test_expected_len_rejects_unsupported_function(void) {
   const uint8_t req[] = {0x07, 0x00};  // FC07 er udenfor §4.1's scope (FC01-06/16)
   size_t len = 0;
@@ -295,6 +332,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_expected_len_rejects_fc15_bytecount_mismatch);
   RUN_TEST(test_expected_len_rejects_fc15_quantity_over_spec_limit);
   RUN_TEST(test_expected_len_rejects_unsupported_function);
+  RUN_TEST(test_supported_functions_array_matches_switch);
   RUN_TEST(test_expected_len_rejects_zero_quantity);
   RUN_TEST(test_expected_len_rejects_fc03_quantity_over_spec_limit);
   RUN_TEST(test_expected_len_rejects_fc16_bytecount_mismatch);
