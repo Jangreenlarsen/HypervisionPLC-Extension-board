@@ -47,6 +47,27 @@ GET /api/capabilities
 - **`max_read_quantity`/`max_write_quantity`** inkluderet, fordi PLC-manualens §4.5 allerede nævner *"Modbus-spec'ens egne grænser pr. function code håndhæves af kanal-laget"* uden at sige hvad de faktisk ER — en oplagt lejlighed til at gøre en implicit grænse eksplicit og forespørgelig, samme motivation som resten af dette dokument.
 - **`api_version:1`** — samme mønster som `/api/status` allerede bruger; bump KUN ved brydende ændringer af selve `/api/capabilities`-kontrakten.
 
+**Faktisk, live-verificeret svar (v0.28.0, `curl` mod et rigtigt board, 2026-09-16):**
+
+```json
+{
+  "api_version": 1,
+  "fw_version": "0.28.0",
+  "modbus_tcp": {
+    "supported_function_codes": [1, 2, 3, 4, 5, 6, 15, 16],
+    "max_read_quantity": 2000,
+    "max_write_quantity": 1968
+  },
+  "rest_diagnostic": {
+    "supported_function_codes": [1, 2, 3, 4, 5, 6, 15, 16],
+    "max_read_quantity": 2000,
+    "max_write_quantity": 32
+  }
+}
+```
+
+**Én bevidst afvigelse fra eksemplet ovenfor:** `rest_diagnostic` fik OGSÅ `max_read_quantity`/`max_write_quantity` (eksemplet ovenfor har dem kun under `modbus_tcp`). Begrundelse: REST-diagnostikken har sine EGNE, reelt håndhævede, flade lofter (2000/32 — hhv. `MB_DIAG_MAX_READ_QUANTITY` og `MB_DIAG_MAX_WRITE_VALUES` i koden), forskellige fra `modbus_tcp`'s rå Modbus-spec-grænser (2000/1968, den bredeste på tværs af understøttede FC'er) — at udelade dem ville have skjult netop den forskel, som er hele pointen med at have to separate sektioner (se "To separate lister"-punktet ovenfor). Alt andet (feltnavne, struktur, de to separate FC-lister, `api_version`/`fw_version`-mønsteret) matcher forslaget 1:1.
+
 ### 1.1 Alternativ med lavere implementeringsomkostning
 
 Hvis et helt nyt endpoint er mere end I ønsker at committe til lige nu: udvid i stedet det **eksisterende** `GET /api/status` (§4.2) med et `supported_function_codes`-felt:
