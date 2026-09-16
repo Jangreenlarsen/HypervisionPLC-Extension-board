@@ -4,6 +4,16 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.28.6 build 0044] — 2026-09-16 — Kanalnavnet er nu `mb_ch_A`/`mb_ch_B` (stort bogstav)
+
+**Baggrund:** Jan: "ændre i debug output tekst 'mb_ch_a' til 'mb_ch_A' det samme for b til B".
+
+**`src/modbus_channel.cpp`:** `modbus_channel_init_all()`s `task_name`-argument til `init_channel()` ændret fra `"mb_ch_a"`/`"mb_ch_b"` til `"mb_ch_A"`/`"mb_ch_B"` — rent kosmetisk, samme streng bruges både i alt debug-/syslog-output og som selve FreeRTOS-task-navnet, ingen kode andetsteds sammenligner disse strenge.
+
+**Filer ændret:** `src/modbus_channel.cpp`, `FEATURES.md`.
+
+**Status:** Ingen native-testbar logik ændret (rent `src/`-lag). Bygger rent for esp32dev. **Live-verificeret** på fysisk hardware (kanal A): alle linjer i en komplet transaktion viste konsekvent `mb_ch_A`.
+
 ## [0.28.5 build 0043] — 2026-09-16 — Debug-tidsstemplet gjort menneskelæseligt
 
 **Baggrund:** Jan: "kan vi ikke gør den timestamp mere pæn at se på jeg tænker få dag timer sekundær millisekundær på [d:t:s:m]" — v0.28.4's rå `[millis]`-millisekund-tal var svært at læse på et øjekast.

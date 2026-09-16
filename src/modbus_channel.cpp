@@ -627,8 +627,13 @@ void modbus_channel_init_all() {
   config_a.mode = g_hardware_mode;
   config_b.mode = g_hardware_mode;
 
-  init_channel(g_channelA, g_serialA, 0, kChannelATx, kChannelARx, kChannelADir, kChannelALedPin, "mb_ch_a", config_a);
-  init_channel(g_channelB, g_serialB, 1, kChannelBTx, kChannelBRx, kChannelBDir, kChannelBLedPin, "mb_ch_b", config_b);
+  // v0.28.6 (Jan: "ændre i debug output tekst 'mb_ch_a' til 'mb_ch_A' det
+  // samme for b til B") — samme streng bruges BÅDE som denne kanals navn i
+  // alt debug-/syslog-output OG som selve FreeRTOS-task-navnet (se
+  // init_channel()s xTaskCreate()-kald nedenfor) — et rent kosmetisk valg,
+  // ingen kode andetsteds sammenligner disse strenge (kun til visning).
+  init_channel(g_channelA, g_serialA, 0, kChannelATx, kChannelARx, kChannelADir, kChannelALedPin, "mb_ch_A", config_a);
+  init_channel(g_channelB, g_serialB, 1, kChannelBTx, kChannelBRx, kChannelBDir, kChannelBLedPin, "mb_ch_B", config_b);
 }
 
 mb_error_code_t modbus_channel_submit(ModbusChannelId channel, uint8_t slave_id, const uint8_t *pdu, size_t pdu_len,
