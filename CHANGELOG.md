@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.28.2 build 0040] — 2026-09-16 — Menneskelæselig Modbus-PDU-decode i debug-/syslog-outputtet
+
+**Baggrund:** Jan: "kan vi ikke få en modbus protocol frame pakke decode med i det debug output" — hidtil viste `debug modbus ...` kun rå hex (level 7/8) og et generisk slave/fc/pdu_len-resumé (level 1), aldrig selve INDHOLDET af en frame (adresse, quantity, faktiske register-/coil-værdier).
+
+**`lib/modbus_pdu/`:** ny `mb_pdu_decode()` — hardware-uafhængig, native-testet (14 nye tests). Fortolker en PDU (request ELLER response) til læsbar tekst for alle 8 understøttede FC'er, fx `"Read Holding Registers: addr=0 qty=1"` / `"Read Holding Registers: [17942]"` / `"Write Multiple Coils: addr=0 qty=3 values=[1,0,1]"` / `"Exception: Illegal Data Address (0x02)"`. Værdilister afkortes ved 20 elementer.
+
+**`src/modbus_channel.cpp`:** ny `log_pdu_decode()`-hjælper, kaldt fra `execute_transaction()` for BÅDE TX og RX — samme "altid til syslog, kun Serial bag `debug modbus level>=1`"-mønster som resten af filen. RX-decode kaldes KUN når CRC/slave-adresse allerede er bekræftet gyldig (`MB_PDU_RESULT_OK`/`_EXCEPTION`) — `out_pdu` er først reelt udfyldt på det tidspunkt.
+
+**Live-observeret og rettet bug undervejs:** den første implementering af `append_register_list()`/`append_bit_list()` (interne hjælpere) null-terminerede ikke bufferen korrekt efter den afsluttende `]` (en rå `out[pos++]=']'`-tildeling overskrev den forrige terminator uden at sætte en ny) — gav trailing garbage-bytes i outputtet, og for lange værdilister en reel krasch (`SIGILL`) i native-testen, da `strcmp`/`strstr` læste langt forbi den tiltænkte streng. Fundet af testene selv (`test_decode_fc03_response` m.fl.) FØR nogen live-upload. Rettet med eksplicit `out[pos]='\0'` (samme konvention som `mb_status_build_json`, `lib/rest_status`).
+
+**Filer ændret:** `lib/modbus_pdu/modbus_pdu.h/.cpp`, `src/modbus_channel.cpp`, `test/test_modbus_pdu/test_modbus_pdu.cpp`, `FEATURES.md`.
+
+**Status:** 297/297 native-tests bestået (14 nye). Bygger rent for esp32dev. **Live-verificeret** på fysisk hardware (kanal A, slave 9): en rigtig FC03-læsning viste både `DEBUG mb_ch_a: >> Read Holding Registers: addr=0 qty=1` (TX-decode) og `DEBUG mb_ch_a: << Read Holding Registers: [17942]` (RX-decode, den FAKTISKE registerværdi) — bekræftet gentagne gange, inkl. under en anden slave-enheds periodiske baggrundspolling (register 256 → `[0]`).
+
 ## [0.28.1 build 0039] — 2026-09-16 — Kanal-fejl vises nu kun på konsollen når debug er slået til
 
 **Baggrund:** Jan: "vi har i dag output ved fejl til console lave det om sådan vi ikke har det output men kun hvis vi bruger debug til at output til console".

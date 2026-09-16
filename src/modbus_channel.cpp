@@ -158,6 +158,23 @@ void syslog_hex_dump(mb_syslog_facility_t facility, uint8_t level, const char *l
   syslog_logf(facility, level, "%s: %s %s", chan_name, label, hex);
 }
 
+// v0.28.2 (Jan: "kan vi ikke få en modbus protocol frame pakke decode med
+// i det debug output") — menneskelæselig fortolkning af en PDU (funktion+
+// adresse+værdier, se lib/modbus_pdu's mb_pdu_decode()), IKKE kun rå hex
+// (debug_print_hex()/syslog_hex_dump() ovenfor). Samme "altid til syslog,
+// kun Serial bag dbg>=1"-mønster som resten af filen. Skriver INGEN linje
+// hvis PDU'en ikke kan afkodes (ukendt FC, for lille buffer) — bevidst
+// stille fallback, `mb_pdu_decode()` returnerer 0 i de tilfælde.
+void log_pdu_decode(ChannelContext &ctx, uint8_t dbg, const char *direction, const uint8_t *pdu, size_t pdu_len,
+                     bool is_response) {
+  char decoded[160];
+  if (mb_pdu_decode(pdu, pdu_len, is_response, decoded, sizeof(decoded)) == 0) return;
+  if (dbg >= 1) {
+    Serial.printf("DEBUG %s: %s %s\n", ctx.name, direction, decoded);
+  }
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: %s %s", ctx.name, direction, decoded);
+}
+
 // Mapper mb_channel_parity_t/stop_bits til Arduino/ESP32's SERIAL_8xx-config.
 // Altid 8 databits — hverken §4.2 eller Modbus RTU-praksis eksponerer andet.
 uint32_t serial_config_for(mb_channel_parity_t parity, uint8_t stop_bits) {
@@ -215,6 +232,7 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // niveauet (se syslog_sender.cpp's "any_target"-hurtig-exit).
   syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: TX slave=%u fc=%u pdu_len=%u", ctx.name, slave_id,
               pdu_len > 0 ? pdu[0] : 0, static_cast<unsigned>(pdu_len));
+  log_pdu_decode(ctx, dbg, ">>", pdu, pdu_len, false);
 
   size_t expected_len = 0;
   const mb_pdu_validation_t validation = mb_pdu_expected_response_frame_len(pdu, pdu_len, &expected_len);
@@ -395,6 +413,14 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     default:
       final_result = MB_CHANNEL_UNREACHABLE;
       break;
+  }
+
+  // out_pdu/*out_pdu_len er kun reelt udfyldt naar CRC+slave-adresse
+  // allerede er verificeret (MB_PDU_RESULT_OK/_EXCEPTION, se
+  // mb_pdu_parse_rtu_response()) — et decode-forsoeg for CRC_ERROR/
+  // SLAVE_MISMATCH/TOO_SHORT ville laese ikke-udfyldt data.
+  if (parse_result == MB_PDU_RESULT_OK || parse_result == MB_PDU_RESULT_EXCEPTION) {
+    log_pdu_decode(ctx, dbg, "<<", out_pdu, *out_pdu_len, true);
   }
 
   if (dbg >= 6) {

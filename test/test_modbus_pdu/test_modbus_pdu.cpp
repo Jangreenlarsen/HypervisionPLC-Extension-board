@@ -1,5 +1,7 @@
 #include <unity.h>
 
+#include <cstring>
+
 #include "modbus_pdu.h"
 
 void setUp(void) {}
@@ -310,6 +312,141 @@ void test_roundtrip_fc16(void) {
   TEST_ASSERT_EQUAL_UINT8_ARRAY(expected_response_pdu, response_pdu, sizeof(expected_response_pdu));
 }
 
+// ---------------------------------------------------------------------------
+// mb_pdu_decode (v0.28.2, Jan: "kan vi ikke få en modbus protocol frame
+// pakke decode med i det debug output")
+// ---------------------------------------------------------------------------
+
+void test_decode_fc03_request(void) {
+  const uint8_t pdu[] = {0x03, 0x00, 0x00, 0x00, 0x01};
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Read Holding Registers: addr=0 qty=1", out);
+}
+
+void test_decode_fc03_response(void) {
+  // register 0 = 0x4616 (17942) - samme register denne kodebase konsekvent
+  // har brugt til live-verifikation hele projektet igennem.
+  const uint8_t pdu[] = {0x03, 0x02, 0x46, 0x16};
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Read Holding Registers: [17942]", out);
+}
+
+void test_decode_fc01_request(void) {
+  const uint8_t pdu[] = {0x01, 0x00, 0x00, 0x00, 0x0A};
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Read Coils: addr=0 qty=10", out);
+}
+
+void test_decode_fc01_response(void) {
+  // byte_count=1 (8 bits, praecis): 0x05 = 0b00000101 -> bit0=1,bit1=0,bit2=1,resten 0
+  const uint8_t pdu[] = {0x01, 0x01, 0x05};
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Read Coils: [1,0,1,0,0,0,0,0]", out);
+}
+
+void test_decode_fc05_request_and_response(void) {
+  const uint8_t pdu[] = {0x05, 0x00, 0x03, 0xFF, 0x00};
+  char out[128];
+  size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Write Single Coil: addr=3 value=ON", out);
+
+  len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Write Single Coil (ack): addr=3 value=ON", out);
+}
+
+void test_decode_fc06_request(void) {
+  const uint8_t pdu[] = {0x06, 0x00, 0x0A, 0x04, 0xD2};  // addr=10, value=1234
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Write Single Register: addr=10 value=1234", out);
+}
+
+void test_decode_fc15_request(void) {
+  const uint8_t pdu[] = {0x0F, 0x00, 0x00, 0x00, 0x03, 0x01, 0x05};  // qty=3, values=[1,0,1]
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Write Multiple Coils: addr=0 qty=3 values=[1,0,1]", out);
+}
+
+void test_decode_fc15_response(void) {
+  const uint8_t pdu[] = {0x0F, 0x00, 0x00, 0x00, 0x03};
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Write Multiple Coils (ack): addr=0 qty=3", out);
+}
+
+void test_decode_fc16_request(void) {
+  const uint8_t pdu[] = {0x10, 0x00, 0x00, 0x00, 0x02, 0x04, 0x00, 0x01, 0x00, 0x02};
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Write Multiple Registers: addr=0 qty=2 values=[1,2]", out);
+}
+
+void test_decode_fc16_response(void) {
+  const uint8_t pdu[] = {0x10, 0x00, 0x00, 0x00, 0x02};
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Write Multiple Registers (ack): addr=0 qty=2", out);
+}
+
+void test_decode_exception_response(void) {
+  const uint8_t pdu[] = {0x83, 0x02};  // FC03|0x80, Illegal Data Address
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_EQUAL_STRING("Exception: Illegal Data Address (0x02)", out);
+}
+
+void test_decode_rejects_unknown_function(void) {
+  const uint8_t pdu[] = {0x07, 0x00};
+  char out[128];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_EQUAL_size_t(0, len);
+}
+
+void test_decode_truncates_long_value_list(void) {
+  // FC16-response ekkoer ingen values, saa brug FC16-REQUEST med 25 registre
+  // (>kDecodeMaxValues=20) for at teste afkortningen.
+  uint8_t pdu[6 + 25 * 2];
+  pdu[0] = 0x10;
+  pdu[1] = 0x00;
+  pdu[2] = 0x00;
+  pdu[3] = 0x00;
+  pdu[4] = 25;
+  pdu[5] = 25 * 2;
+  for (size_t i = 0; i < 25; i++) {
+    pdu[6 + i * 2] = 0x00;
+    pdu[6 + i * 2 + 1] = static_cast<uint8_t>(i);
+  }
+  char out[256];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_TRUE(len > 0);
+  TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, "...og 5 mere"), "25 vaerdier skal afkortes til 20 + '...og 5 mere'");
+  TEST_ASSERT_NULL_MESSAGE(strstr(out, ",24]"), "det 25. element skal IKKE vaere med i den afkortede liste");
+}
+
+void test_decode_rejects_undersized_buffer(void) {
+  const uint8_t pdu[] = {0x03, 0x00, 0x00, 0x00, 0x01};
+  char out[8];
+  const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
+  TEST_ASSERT_EQUAL_size_t(0, len);
+}
+
 int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -349,6 +486,21 @@ int main(int argc, char **argv) {
 
   RUN_TEST(test_roundtrip_fc15);
   RUN_TEST(test_roundtrip_fc16);
+
+  RUN_TEST(test_decode_fc03_request);
+  RUN_TEST(test_decode_fc03_response);
+  RUN_TEST(test_decode_fc01_request);
+  RUN_TEST(test_decode_fc01_response);
+  RUN_TEST(test_decode_fc05_request_and_response);
+  RUN_TEST(test_decode_fc06_request);
+  RUN_TEST(test_decode_fc15_request);
+  RUN_TEST(test_decode_fc15_response);
+  RUN_TEST(test_decode_fc16_request);
+  RUN_TEST(test_decode_fc16_response);
+  RUN_TEST(test_decode_exception_response);
+  RUN_TEST(test_decode_rejects_unknown_function);
+  RUN_TEST(test_decode_truncates_long_value_list);
+  RUN_TEST(test_decode_rejects_undersized_buffer);
 
   return UNITY_END();
 }
