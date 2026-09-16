@@ -2,6 +2,14 @@
 
 ---
 
+## v0.28.3 — 2026-09-16 — Ensrettet, kompakt debug-output
+
+`debug modbus ...`s output er nu fuldt ensrettet: hver linje følger samme skabelon `DEBUG <kanal> <retning> <label>: <indhold>` med `>TX>`/`<RX<`-retningsmarkører — inkl. hex-dump-linjen, som hidtil manglede kanalnavnet. Decode-linjen viser nu et kompakt feltformat (`ID: 09, FC: 03, Values: [17942], CRC: 59 85, Status: OK`) i stedet for fulde sætninger.
+
+**Live-verificeret** på fysisk hardware — en komplet transaktion viste konsekvent, korrekt formatterede linjer fra start til slut, uden en eneste undtagelse.
+
+---
+
 ## v0.28.2 — 2026-09-16 — Menneskelæselig Modbus-frame-decode i debug-outputtet
 
 `debug modbus ...` viser nu selve INDHOLDET af en Modbus-transaktion i klartekst, ikke kun rå hex — fx `"Read Holding Registers: addr=0 qty=1"` for en forespørgsel og `"Read Holding Registers: [17942]"` for svaret, eller `"Exception: Illegal Data Address (0x02)"` for en fejl. Dækker alle 8 understøttede function codes, både på den serielle konsol og i syslog.

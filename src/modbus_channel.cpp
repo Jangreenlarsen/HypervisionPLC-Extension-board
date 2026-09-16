@@ -1,6 +1,7 @@
 #include "modbus_channel.h"
 
 #include <Arduino.h>
+#include <cstdarg>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
@@ -130,49 +131,94 @@ const char *error_name(mb_error_code_t error) {
   }
 }
 
-// v0.25.0 — rå hex-dump af en frame, byte-for-byte (§BUGS.md v0.24.0-lektion:
-// channel_task() kører på en LILLE 4096-byte FreeRTOS-stack — INGEN stor
-// lokal streng-buffer må bygges her, kun direkte Serial.printf() pr. byte).
-void debug_print_hex(const char *label, const uint8_t *data, size_t len) {
-  Serial.print(label);
-  for (size_t i = 0; i < len; i++) {
-    Serial.printf("%02X ", data[i]);
+// v0.28.3 (Jan: "kan vi gøre det output mere lækket med en mere klar
+// afgrænsning af de modtage data samt sende data ... pakke output ikke er
+// kocistent") — FAST, ensrettet linjeformat for ALT debug-/syslog-output i
+// denne fil: `DEBUG <kanal> <retning> <label>: <indhold>`, hvor `<retning>`
+// altid er ÉN af `kTxArrow`/`kRxArrow` (aldrig udeladt, som hex-dump-
+// linjerne fejlagtigt gjorde før denne version — den inkonsistens var
+// netop Jans konkrete observation: "DEBUG RX: ..." manglede kanalnavnet de
+// øvrige linjer altid har). Genbruges af alle hjælpefunktionerne nedenfor
+// OG direkte i execute_transaction() for de linjer der ikke har deres egen
+// hjælper (start/error/dir/noise/delay/parse/result).
+constexpr const char *kTxArrow = ">TX>";
+constexpr const char *kRxArrow = "<RX<";
+
+void debug_line(ChannelContext &ctx, uint8_t dbg, uint8_t min_level, const char *direction, const char *label,
+                 const char *fmt, ...) {
+  char content[160];
+  va_list args;
+  va_start(args, fmt);
+  vsnprintf(content, sizeof(content), fmt, args);
+  va_end(args);
+
+  if (dbg >= min_level) {
+    Serial.printf("DEBUG %s %s %s: %s\n", ctx.name, direction, label, content);
   }
-  Serial.println();
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, min_level, "%s %s %s: %s", ctx.name, direction, label, content);
 }
 
-// v0.26.0 (Jan: syslog-funktion) — samme hex-dump, men som ÉT samlet
-// syslog-UDP-linje i stedet for byte-for-byte (en pakke pr. byte ville
-// oversvømme netværket/modtageren for enhver ikke-triviel respons). Bruger
-// to begrænsede LOKALE buffere (ikke store, se syslog_sender.h's egen
-// kommentar om samme stak-forsigtighed) — en meget lang frame afkortes
-// stille; den FULDE frame er stadig synlig via CLI'ens byte-for-byte-output
-// på samme niveau, hvis det er nødvendigt.
-void syslog_hex_dump(mb_syslog_facility_t facility, uint8_t level, const char *label, const char *chan_name,
-                      const uint8_t *data, size_t len) {
+// Rå hex-dump af en frame, byte-for-byte til Serial (§BUGS.md v0.24.0-
+// lektion: channel_task() kører på en LILLE 4096-byte FreeRTOS-stack —
+// INGEN stor lokal streng-buffer må bygges her til SERIAL-udgaven), men ÉT
+// samlet syslog-linje (en UDP-pakke pr. byte ville oversvømme netværket/
+// modtageren for enhver ikke-triviel respons) via en begrænset lokal buffer
+// (samme stak-forsigtighed, se syslog_sender.h). Samme `DEBUG <kanal>
+// <retning> packet: ...`-præfiks som alt andet output nu bruger.
+void debug_packet(ChannelContext &ctx, uint8_t dbg, uint8_t min_level, const char *direction, const uint8_t *data,
+                   size_t len) {
+  if (dbg >= min_level) {
+    Serial.printf("DEBUG %s %s packet: ", ctx.name, direction);
+    for (size_t i = 0; i < len; i++) {
+      Serial.printf("%02X ", data[i]);
+    }
+    Serial.println();
+  }
   char hex[220];
   size_t pos = 0;
   for (size_t i = 0; i < len && pos + 3 < sizeof(hex); i++) {
     pos += static_cast<size_t>(snprintf(hex + pos, sizeof(hex) - pos, "%02X ", data[i]));
   }
-  syslog_logf(facility, level, "%s: %s %s", chan_name, label, hex);
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, min_level, "%s %s packet: %s", ctx.name, direction, hex);
 }
 
-// v0.28.2 (Jan: "kan vi ikke få en modbus protocol frame pakke decode med
-// i det debug output") — menneskelæselig fortolkning af en PDU (funktion+
-// adresse+værdier, se lib/modbus_pdu's mb_pdu_decode()), IKKE kun rå hex
-// (debug_print_hex()/syslog_hex_dump() ovenfor). Samme "altid til syslog,
-// kun Serial bag dbg>=1"-mønster som resten af filen. Skriver INGEN linje
-// hvis PDU'en ikke kan afkodes (ukendt FC, for lille buffer) — bevidst
-// stille fallback, `mb_pdu_decode()` returnerer 0 i de tilfælde.
-void log_pdu_decode(ChannelContext &ctx, uint8_t dbg, const char *direction, const uint8_t *pdu, size_t pdu_len,
-                     bool is_response) {
-  char decoded[160];
+// v0.28.2/v0.28.3 (Jan: "kan vi ikke få en modbus protocol frame pakke
+// decode med i det debug output" / "kompakt felt-format") — menneskelæselig
+// (men kompakt) fortolkning af en HEL RTU-FRAME (adresse+PDU+CRC — IKKE kun
+// selve PDU'en, se lib/modbus_pdu's mb_pdu_decode(), som kun kender PDU-
+// delen). Denne funktion udtrækker adresse/PDU/CRC fra `frame` og
+// sammensætter "ID: <hex>, <mb_pdu_decode-indhold>, CRC: <hex hex>[,
+// Status: <resultat>]" — `status` er kun relevant for RX (det endelige
+// udfald er endnu ukendt når TX-framen afkodes) og udelades da (nullptr).
+// Samme "altid til syslog, kun Serial bag dbg>=1"-mønster som resten af
+// filen. Skriver INGEN linje hvis PDU-delen ikke kan afkodes (ukendt FC,
+// for lille buffer) — bevidst stille fallback.
+void debug_decode(ChannelContext &ctx, uint8_t dbg, const char *direction, const uint8_t *frame, size_t frame_len,
+                   bool is_response, const char *status) {
+  if (frame_len < 4) return;  // adresse(1) + fc(1) + CRC(2) er det absolutte minimum
+  const uint8_t slave = frame[0];
+  const uint8_t *pdu = frame + 1;
+  const size_t pdu_len = frame_len - 3;
+  const uint8_t crc_lo = frame[frame_len - 2];
+  const uint8_t crc_hi = frame[frame_len - 1];
+
+  char decoded[140];
   if (mb_pdu_decode(pdu, pdu_len, is_response, decoded, sizeof(decoded)) == 0) return;
-  if (dbg >= 1) {
-    Serial.printf("DEBUG %s: %s %s\n", ctx.name, direction, decoded);
+
+  char line[200];
+  int written;
+  if (status != nullptr) {
+    written = snprintf(line, sizeof(line), "ID: %02X, %s, CRC: %02X %02X, Status: %s", slave, decoded, crc_lo, crc_hi,
+                        status);
+  } else {
+    written = snprintf(line, sizeof(line), "ID: %02X, %s, CRC: %02X %02X", slave, decoded, crc_lo, crc_hi);
   }
-  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: %s %s", ctx.name, direction, decoded);
+  if (written <= 0 || static_cast<size_t>(written) >= sizeof(line)) return;
+
+  if (dbg >= 1) {
+    Serial.printf("DEBUG %s %s decode: %s\n", ctx.name, direction, line);
+  }
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s %s decode: %s", ctx.name, direction, line);
 }
 
 // Mapper mb_channel_parity_t/stop_bits til Arduino/ESP32's SERIAL_8xx-config.
@@ -220,19 +266,11 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   const uint8_t dbg = ctx.debug_level;
   const uint32_t txn_start = millis();
 
-  if (dbg >= 1) {
-    Serial.printf("DEBUG %s: >> slave=%u fc=%u pdu_len=%u\n", ctx.name, slave_id, pdu_len > 0 ? pdu[0] : 0,
-                  static_cast<unsigned>(pdu_len));
-  }
-  // v0.26.0: syslog er en UAFHÆNGIG udgangskanal fra CLI'ens "debug modbus"
-  // (Jan: "vi skal kunne sætte hvad for output der skal sendet") — en
-  // konfigureret syslog-modtager med et højt `max_level` skal kunne se
-  // fuld detalje, UANSET om nogen samtidig kigger på den serielle konsol.
-  // syslog_logf() er selv billig at kalde når ingen modtager vil have
-  // niveauet (se syslog_sender.cpp's "any_target"-hurtig-exit).
-  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: TX slave=%u fc=%u pdu_len=%u", ctx.name, slave_id,
-              pdu_len > 0 ? pdu[0] : 0, static_cast<unsigned>(pdu_len));
-  log_pdu_decode(ctx, dbg, ">>", pdu, pdu_len, false);
+  // v0.28.3: "start" er bevidst den ENESTE linje der stadig fyrer FØR selve
+  // PDU'en er valideret — resten af TX-siden (decode/packet) venter til
+  // frame'en rent faktisk er bygget nedenfor, så de kan vise ID/CRC.
+  debug_line(ctx, dbg, 1, kTxArrow, "start", "FC: %02X, Len: %u", pdu_len > 0 ? pdu[0] : 0,
+             static_cast<unsigned>(pdu_len));
 
   size_t expected_len = 0;
   const mb_pdu_validation_t validation = mb_pdu_expected_response_frame_len(pdu, pdu_len, &expected_len);
@@ -245,23 +283,18 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     // "boardet forstod ikke denne FC" fra "ugyldig adresse i en ellers
     // kendt FC", i stedet for at begge dele fremstår som MB_INVALID_ADDRESS.
     const mb_error_code_t err = (validation == MB_PDU_UNSUPPORTED_FUNCTION) ? MB_UNSUPPORTED_FUNCTION : MB_INVALID_ADDRESS;
-    if (dbg >= 1) {
-      Serial.printf("DEBUG %s: << %s (ukendt/ugyldig function code eller quantity)\n", ctx.name, error_name(err));
-    }
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX %s (ukendt/ugyldig function code eller quantity)", ctx.name,
-                error_name(err));
+    debug_line(ctx, dbg, 1, kTxArrow, "error", "%s (ukendt/ugyldig function code eller quantity)", error_name(err));
     return err;
   }
 
   uint8_t frame[MB_RTU_FRAME_MAX_LEN];
   const size_t frame_len = mb_pdu_build_rtu_request(slave_id, pdu, pdu_len, frame, sizeof(frame));
   if (frame_len == 0) {
-    if (dbg >= 1) {
-      Serial.printf("DEBUG %s: << MB_INVALID_ADDRESS (kunne ikke bygge RTU-frame)\n", ctx.name);
-    }
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_INVALID_ADDRESS (kunne ikke bygge RTU-frame)", ctx.name);
+    debug_line(ctx, dbg, 1, kTxArrow, "error", "%s (kunne ikke bygge RTU-frame)", error_name(MB_INVALID_ADDRESS));
     return MB_INVALID_ADDRESS;
   }
+
+  debug_decode(ctx, dbg, kTxArrow, frame, frame_len, false, nullptr);
 
   const bool is_rs485 = ctx.config.mode == MB_CHANNEL_MODE_RS485;
 
@@ -278,11 +311,7 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
       drained++;
     }
     if (drained > 0) {
-      if (dbg >= 2) {
-        Serial.printf("DEBUG %s: dræner %u støj-byte(s) fra bussen\n", ctx.name, static_cast<unsigned>(drained));
-      }
-      syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 2, "%s: draining %u noise byte(s) from bus", ctx.name,
-                  static_cast<unsigned>(drained));
+      debug_line(ctx, dbg, 2, kRxArrow, "noise", "draining %u byte(s) from bus", static_cast<unsigned>(drained));
     }
   }
 
@@ -291,13 +320,11 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // deployment-tids-beslutning, ikke noget der skifter live).
   if (is_rs485) {
     digitalWrite(ctx.dir_pin, HIGH);
-    if (dbg >= 3) Serial.printf("DEBUG %s: DE/RE -> TX (dir_pin HIGH)\n", ctx.name);
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 3, "%s: DE/RE -> TX (dir_pin HIGH)", ctx.name);
+    debug_line(ctx, dbg, 3, kTxArrow, "dir", "DE/RE -> TX (dir_pin HIGH)");
     delayMicroseconds(50);
   }
 
-  if (dbg >= 7) debug_print_hex("DEBUG TX: ", frame, frame_len);
-  syslog_hex_dump(MB_SYSLOG_FACILITY_MODBUS, 7, "TX", ctx.name, frame, frame_len);
+  debug_packet(ctx, dbg, 7, kTxArrow, frame, frame_len);
 
   ctx.serial->write(frame, frame_len);
   ctx.serial->flush();
@@ -306,8 +333,7 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     const uint32_t byte_us = (11UL * 1000000UL) / ctx.config.baudrate;
     delayMicroseconds(byte_us + 100);
     digitalWrite(ctx.dir_pin, LOW);
-    if (dbg >= 3) Serial.printf("DEBUG %s: DE/RE -> RX (dir_pin LOW)\n", ctx.name);
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 3, "%s: DE/RE -> RX (dir_pin LOW)", ctx.name);
+    debug_line(ctx, dbg, 3, kRxArrow, "dir", "DE/RE -> RX (dir_pin LOW)");
   }
 
   // To-fase timeout: fuld timeout til FØRSTE byte, kort inter-character-
@@ -353,41 +379,34 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
     }
   }
 
+  // v0.28.3: pr.-byte RX-timing forbliver Serial-only (kun under dbg>=4) —
+  // syslog faar i stedet ÉT samlet resumé, samme "flood ikke netværket
+  // pr. byte"-hensyn som debug_packet() ovenfor. Bruger DERFOR ikke den
+  // fælles debug_line()-hjælper (som altid ville sende BEGGE veje 1:1).
   if (dbg >= 4) {
     for (size_t i = 0; i < received; i++) {
-      Serial.printf("DEBUG %s: RX byte[%u]=0x%02X (ventede %ums)\n", ctx.name, static_cast<unsigned>(i),
+      Serial.printf("DEBUG %s %s byte[%u]: 0x%02X (ventede %ums)\n", ctx.name, kRxArrow, static_cast<unsigned>(i),
                     response[i], static_cast<unsigned>(rx_wait_ms[i]));
     }
   }
-  // v0.26.0: ÉN samlet syslog-linje i stedet for op til 256 enkelt-byte-
-  // pakker (samme "flood ikke netværket"-hensyn som syslog_hex_dump()) —
-  // den fulde pr.-byte-timing forbliver et CLI/seriel-only-detaljeniveau.
   if (received > 0) {
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 4, "%s: RX %u byte(s), foerste byte ventede %ums", ctx.name,
-                static_cast<unsigned>(received), static_cast<unsigned>(rx_wait_ms[0]));
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 4, "%s %s byte-summary: %u byte(s), foerste byte ventede %ums", ctx.name,
+                kRxArrow, static_cast<unsigned>(received), static_cast<unsigned>(rx_wait_ms[0]));
   }
 
   if (ctx.config.inter_frame_delay_ms > 0) {
-    if (dbg >= 5) {
-      Serial.printf("DEBUG %s: inter-frame-delay %ums\n", ctx.name, static_cast<unsigned>(ctx.config.inter_frame_delay_ms));
-    }
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 5, "%s: inter-frame-delay %ums", ctx.name,
-                static_cast<unsigned>(ctx.config.inter_frame_delay_ms));
+    debug_line(ctx, dbg, 5, kRxArrow, "delay", "inter-frame-delay %ums",
+               static_cast<unsigned>(ctx.config.inter_frame_delay_ms));
     delay(ctx.config.inter_frame_delay_ms);
   }
 
   if (timed_out || received == 0) {
-    if (dbg >= 1) {
-      Serial.printf("DEBUG %s: << MB_TIMEOUT (modtog %u byte(s), %ums)\n", ctx.name, static_cast<unsigned>(received),
-                    static_cast<unsigned>(millis() - txn_start));
-    }
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_TIMEOUT (modtog %u byte(s), %ums)", ctx.name,
-                static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
+    debug_line(ctx, dbg, 1, kRxArrow, "result", "%s (modtog %u byte(s), %ums)", error_name(MB_TIMEOUT),
+               static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
     return MB_TIMEOUT;
   }
 
-  if (dbg >= 8) debug_print_hex("DEBUG RX: ", response, received);
-  syslog_hex_dump(MB_SYSLOG_FACILITY_MODBUS, 8, "RX", ctx.name, response, received);
+  debug_packet(ctx, dbg, 8, kRxArrow, response, received);
 
   const mb_pdu_parse_result_t parse_result =
       mb_pdu_parse_rtu_response(slave_id, response, received, out_pdu, out_pdu_len, out_pdu_capacity);
@@ -415,26 +434,22 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
       break;
   }
 
-  // out_pdu/*out_pdu_len er kun reelt udfyldt naar CRC+slave-adresse
-  // allerede er verificeret (MB_PDU_RESULT_OK/_EXCEPTION, se
-  // mb_pdu_parse_rtu_response()) — et decode-forsoeg for CRC_ERROR/
-  // SLAVE_MISMATCH/TOO_SHORT ville laese ikke-udfyldt data.
+  // v0.28.3: decode af den RAA modtagne frame (`response`, adresse+PDU+CRC
+  // — IKKE `out_pdu`, som allerede har adresse/CRC strippet), saa "ID:"/
+  // "CRC:"-felterne har noget at vise. Kun forsøgt for MB_PDU_RESULT_OK/
+  // _EXCEPTION — for CRC_ERROR/SLAVE_MISMATCH/TOO_SHORT er `response`
+  // stadig de faktisk modtagne bytes, men CRC'en (eller adressen) har IKKE
+  // valideret at det er et ægte, intakt svar fra den forespurgte slave, så
+  // en decode af det ville kunne vise vildledende/tilfældige feltværdier
+  // som om de var pålidelige — bevidst udeladt for de tilfælde.
   if (parse_result == MB_PDU_RESULT_OK || parse_result == MB_PDU_RESULT_EXCEPTION) {
-    log_pdu_decode(ctx, dbg, "<<", out_pdu, *out_pdu_len, true);
+    debug_decode(ctx, dbg, kRxArrow, response, received, true, error_name(final_result));
   }
 
-  if (dbg >= 6) {
-    Serial.printf("DEBUG %s: parse_result=%d -> final_result=%s\n", ctx.name, static_cast<int>(parse_result),
-                  error_name(final_result));
-  }
-  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 6, "%s: parse_result=%d -> final_result=%s", ctx.name,
-              static_cast<int>(parse_result), error_name(final_result));
-  if (dbg >= 1) {
-    Serial.printf("DEBUG %s: << %s (modtog %u byte(s), %ums)\n", ctx.name, error_name(final_result),
-                  static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
-  }
-  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX %s (modtog %u byte(s), %ums)", ctx.name, error_name(final_result),
-              static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
+  debug_line(ctx, dbg, 6, kRxArrow, "parse", "parse_result=%d -> final_result=%s", static_cast<int>(parse_result),
+             error_name(final_result));
+  debug_line(ctx, dbg, 1, kRxArrow, "result", "%s (modtog %u byte(s), %ums)", error_name(final_result),
+             static_cast<unsigned>(received), static_cast<unsigned>(millis() - txn_start));
   return final_result;
 }
 

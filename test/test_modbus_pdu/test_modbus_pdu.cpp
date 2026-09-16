@@ -313,8 +313,11 @@ void test_roundtrip_fc16(void) {
 }
 
 // ---------------------------------------------------------------------------
-// mb_pdu_decode (v0.28.2, Jan: "kan vi ikke få en modbus protocol frame
-// pakke decode med i det debug output")
+// mb_pdu_decode (v0.28.2/v0.28.3, Jan: "kan vi ikke få en modbus protocol
+// frame pakke decode med i det debug output" / "kan vi gøre det output
+// mere lækket ... kompakt felt-format") — kompakt "FC: xx, Addr: n, ..."-
+// format, samme stil som kaldstedets omkringliggende "ID:"/"CRC:"-felter
+// (src/modbus_channel.cpp), ikke fulde engelske saetninger.
 // ---------------------------------------------------------------------------
 
 void test_decode_fc03_request(void) {
@@ -322,7 +325,7 @@ void test_decode_fc03_request(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Read Holding Registers: addr=0 qty=1", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 03, Addr: 0, Qty: 1", out);
 }
 
 void test_decode_fc03_response(void) {
@@ -332,7 +335,7 @@ void test_decode_fc03_response(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Read Holding Registers: [17942]", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 03, Values: [17942]", out);
 }
 
 void test_decode_fc01_request(void) {
@@ -340,7 +343,7 @@ void test_decode_fc01_request(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Read Coils: addr=0 qty=10", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 01, Addr: 0, Qty: 10", out);
 }
 
 void test_decode_fc01_response(void) {
@@ -349,19 +352,22 @@ void test_decode_fc01_response(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Read Coils: [1,0,1,0,0,0,0,0]", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 01, Values: [1,0,1,0,0,0,0,0]", out);
 }
 
 void test_decode_fc05_request_and_response(void) {
+  // FC05 er et bogstaveligt ekko - request og svar er BYTE-IDENTISKE, saa
+  // decode-teksten er ogsaa identisk. Retningen (>TX>/<RX<) kommer fra
+  // kaldstedets eget praefiks, ikke fra selve decode-indholdet.
   const uint8_t pdu[] = {0x05, 0x00, 0x03, 0xFF, 0x00};
   char out[128];
   size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Write Single Coil: addr=3 value=ON", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 05, Addr: 3, Value: ON", out);
 
   len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Write Single Coil (ack): addr=3 value=ON", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 05, Addr: 3, Value: ON", out);
 }
 
 void test_decode_fc06_request(void) {
@@ -369,7 +375,7 @@ void test_decode_fc06_request(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Write Single Register: addr=10 value=1234", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 06, Addr: 10, Value: 1234", out);
 }
 
 void test_decode_fc15_request(void) {
@@ -377,7 +383,7 @@ void test_decode_fc15_request(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Write Multiple Coils: addr=0 qty=3 values=[1,0,1]", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 0F, Addr: 0, Qty: 3, Values: [1,0,1]", out);
 }
 
 void test_decode_fc15_response(void) {
@@ -385,7 +391,7 @@ void test_decode_fc15_response(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Write Multiple Coils (ack): addr=0 qty=3", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 0F, Addr: 0, Qty: 3", out);
 }
 
 void test_decode_fc16_request(void) {
@@ -393,7 +399,7 @@ void test_decode_fc16_request(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), false, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Write Multiple Registers: addr=0 qty=2 values=[1,2]", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 10, Addr: 0, Qty: 2, Values: [1,2]", out);
 }
 
 void test_decode_fc16_response(void) {
@@ -401,7 +407,7 @@ void test_decode_fc16_response(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Write Multiple Registers (ack): addr=0 qty=2", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 10, Addr: 0, Qty: 2", out);
 }
 
 void test_decode_exception_response(void) {
@@ -409,7 +415,7 @@ void test_decode_exception_response(void) {
   char out[128];
   const size_t len = mb_pdu_decode(pdu, sizeof(pdu), true, out, sizeof(out));
   TEST_ASSERT_TRUE(len > 0);
-  TEST_ASSERT_EQUAL_STRING("Exception: Illegal Data Address (0x02)", out);
+  TEST_ASSERT_EQUAL_STRING("FC: 83, Exception: 02 (Illegal Data Address)", out);
 }
 
 void test_decode_rejects_unknown_function(void) {
