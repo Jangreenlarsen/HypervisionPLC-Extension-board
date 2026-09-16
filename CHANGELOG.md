@@ -4,6 +4,18 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.28.5 build 0043] — 2026-09-16 — Debug-tidsstemplet gjort menneskelæseligt
+
+**Baggrund:** Jan: "kan vi ikke gør den timestamp mere pæn at se på jeg tænker få dag timer sekundær millisekundær på [d:t:s:m]" — v0.28.4's rå `[millis]`-millisekund-tal var svært at læse på et øjekast.
+
+**Afklaret via 1 spørgsmål:** Jans egen notation "[d:t:s:m]" har kun 4 felter (dag/timer/sekunder/millisekunder), uden minutter — afklaret om det var bevidst (sekunder tæller så 0-3599 inden for timen) eller en forglemmelse. Valgte det fulde, standard 5-felts urs-format MED minutter (`D:HH:MM:SS.mmm`).
+
+**`src/modbus_channel.cpp`:** ny `format_uptime()` — omregner `millis()` til dage:timer:minutter:sekunder.millisekunder (fx `[0:00:19:51.352]`). Erstatter alle 5 steder der tidligere printede det rå `[%lu]`-tal (de tre delte hjælpere `debug_line()`/`debug_packet()`/`debug_decode()`, samt RX-byte-timing-loopet og `MB_NOT_ENABLED`-grenen).
+
+**Filer ændret:** `src/modbus_channel.cpp`, `FEATURES.md`.
+
+**Status:** 297/297 native-tests upåvirket. Bygger rent for esp32dev. **Live-verificeret** på fysisk hardware (kanal A, level 8): tidsstemplet viste nu `[0:00:00:01.192]`-stil gennem en komplet transaktion, korrekt voksende linje for linje (`01.192` → `01.206` → `01.220` → ... → `01.374`).
+
 ## [0.28.4 build 0042] — 2026-09-16 — Millisekund-tidsstempel på debug-/syslog-linjer
 
 **Baggrund:** Jan: "kan vi få timestamp på debug".
