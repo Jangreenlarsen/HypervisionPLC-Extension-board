@@ -152,10 +152,20 @@ void debug_line(ChannelContext &ctx, uint8_t dbg, uint8_t min_level, const char 
   vsnprintf(content, sizeof(content), fmt, args);
   va_end(args);
 
+  // v0.28.4 (Jan: "kan vi få timestamp på debug") — boardet har ingen RTC/
+  // NTP (samme begrænsning som syslog-headerens pseudo-dato, v0.26.0), saa
+  // `millis()` (ms siden boot) er det eneste RIGTIGE, altid-tilgængelige
+  // tidsstempel — samme grundlag alle de øvrige "ventede Xms"/"Xms"-
+  // tidsangivelser i denne fil allerede bruger, blot nu ogsaa som et
+  // absolut referencepunkt PR. linje (til at se afstanden MELLEM to
+  // linjer, ikke kun varigheden af ét trin). Samme `[millis]`-stil som
+  // ESP32-kernens egne logs (fx `[ 1193][E]...`, allerede synlig i
+  // konsollen fra andre biblioteker).
+  const unsigned long ts = millis();
   if (dbg >= min_level) {
-    Serial.printf("DEBUG %s %s %s: %s\n", ctx.name, direction, label, content);
+    Serial.printf("DEBUG [%lu] %s %s %s: %s\n", ts, ctx.name, direction, label, content);
   }
-  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, min_level, "%s %s %s: %s", ctx.name, direction, label, content);
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, min_level, "[%lu] %s %s %s: %s", ts, ctx.name, direction, label, content);
 }
 
 // Rå hex-dump af en frame, byte-for-byte til Serial (§BUGS.md v0.24.0-
@@ -167,8 +177,9 @@ void debug_line(ChannelContext &ctx, uint8_t dbg, uint8_t min_level, const char 
 // <retning> packet: ...`-præfiks som alt andet output nu bruger.
 void debug_packet(ChannelContext &ctx, uint8_t dbg, uint8_t min_level, const char *direction, const uint8_t *data,
                    size_t len) {
+  const unsigned long ts = millis();
   if (dbg >= min_level) {
-    Serial.printf("DEBUG %s %s packet: ", ctx.name, direction);
+    Serial.printf("DEBUG [%lu] %s %s packet: ", ts, ctx.name, direction);
     for (size_t i = 0; i < len; i++) {
       Serial.printf("%02X ", data[i]);
     }
@@ -179,7 +190,7 @@ void debug_packet(ChannelContext &ctx, uint8_t dbg, uint8_t min_level, const cha
   for (size_t i = 0; i < len && pos + 3 < sizeof(hex); i++) {
     pos += static_cast<size_t>(snprintf(hex + pos, sizeof(hex) - pos, "%02X ", data[i]));
   }
-  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, min_level, "%s %s packet: %s", ctx.name, direction, hex);
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, min_level, "[%lu] %s %s packet: %s", ts, ctx.name, direction, hex);
 }
 
 // v0.28.2/v0.28.3 (Jan: "kan vi ikke få en modbus protocol frame pakke
@@ -215,10 +226,11 @@ void debug_decode(ChannelContext &ctx, uint8_t dbg, const char *direction, const
   }
   if (written <= 0 || static_cast<size_t>(written) >= sizeof(line)) return;
 
+  const unsigned long ts = millis();
   if (dbg >= 1) {
-    Serial.printf("DEBUG %s %s decode: %s\n", ctx.name, direction, line);
+    Serial.printf("DEBUG [%lu] %s %s decode: %s\n", ts, ctx.name, direction, line);
   }
-  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s %s decode: %s", ctx.name, direction, line);
+  syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "[%lu] %s %s decode: %s", ts, ctx.name, direction, line);
 }
 
 // Mapper mb_channel_parity_t/stop_bits til Arduino/ESP32's SERIAL_8xx-config.
@@ -383,15 +395,30 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // syslog faar i stedet ÉT samlet resumé, samme "flood ikke netværket
   // pr. byte"-hensyn som debug_packet() ovenfor. Bruger DERFOR ikke den
   // fælles debug_line()-hjælper (som altid ville sende BEGGE veje 1:1).
+  //
+  // v0.28.4 (Jan: "kan vi få timestamp på debug") — `ts` er et absolut
+  // uptime-tidsstempel (txn_start + kumuleret ventetid), IKKE blot
+  // millis() ved selve print-tidspunktet (loopet printer alle linjer
+  // samlet EFTER RX er afsluttet — et fladt millis()-kald her ville derfor
+  // givet samme (forkerte) tidsstempel til alle bytes). Bemærk: `rx_wait_ms`
+  // er satureret ved 255ms — kun byte[0] (som bruger den fulde
+  // `timeout_ms`, ofte langt over 255ms) kan reelt ramme loftet;
+  // efterfølgende bytes bruger `interchar_ms` (maks 20ms) og saturerer
+  // derfor aldrig. En evt. unøjagtighed er dermed en KONSTANT forskydning
+  // fra byte[0] og frem, ikke en voksende fejl — acceptabelt for et
+  // debug-hjælpemiddel.
   if (dbg >= 4) {
+    unsigned long ts = txn_start;
     for (size_t i = 0; i < received; i++) {
-      Serial.printf("DEBUG %s %s byte[%u]: 0x%02X (ventede %ums)\n", ctx.name, kRxArrow, static_cast<unsigned>(i),
-                    response[i], static_cast<unsigned>(rx_wait_ms[i]));
+      ts += rx_wait_ms[i];
+      Serial.printf("DEBUG [%lu] %s %s byte[%u]: 0x%02X (ventede %ums)\n", ts, ctx.name, kRxArrow,
+                    static_cast<unsigned>(i), response[i], static_cast<unsigned>(rx_wait_ms[i]));
     }
   }
   if (received > 0) {
-    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 4, "%s %s byte-summary: %u byte(s), foerste byte ventede %ums", ctx.name,
-                kRxArrow, static_cast<unsigned>(received), static_cast<unsigned>(rx_wait_ms[0]));
+    syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 4, "[%lu] %s %s byte-summary: %u byte(s), foerste byte ventede %ums",
+                txn_start + rx_wait_ms[0], ctx.name, kRxArrow, static_cast<unsigned>(received),
+                static_cast<unsigned>(rx_wait_ms[0]));
   }
 
   if (ctx.config.inter_frame_delay_ms > 0) {
@@ -509,12 +536,19 @@ void channel_task(void *param) {
       // ubetinget fejl-print til konsollen længere. syslog er UAFHÆNGIG
       // heraf (egen verbositet pr. modtager, se lib/syslog_client) og
       // rammes ikke af denne ændring.
-      if (ctx->debug_level >= 1) {
-        Serial.printf("DEBUG %s: << MB_NOT_ENABLED (kanalen er deaktiveret, slave=%u fc=%u)\n", ctx->name,
-                      req->slave_id, req->pdu_len > 0 ? req->pdu[0] : 0);
+      // v0.28.3/v0.28.4: samme "DEBUG [ts] <kanal> <retning> <label>:
+      // <indhold>"-skabelon som execute_transaction() (denne gren kalder
+      // aldrig execute_transaction() selv, saa den skal formatere sit eget
+      // fejl-udfald manuelt, jf. v0.28.0's kommentar ovenfor).
+      {
+        const unsigned long ts = millis();
+        if (ctx->debug_level >= 1) {
+          Serial.printf("DEBUG [%lu] %s <RX< result: MB_NOT_ENABLED (kanalen er deaktiveret, slave=%u fc=%u)\n", ts,
+                        ctx->name, req->slave_id, req->pdu_len > 0 ? req->pdu[0] : 0);
+        }
+        syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "[%lu] %s <RX< result: MB_NOT_ENABLED (kanalen er deaktiveret, slave=%u fc=%u)",
+                    ts, ctx->name, req->slave_id, req->pdu_len > 0 ? req->pdu[0] : 0);
       }
-      syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_NOT_ENABLED (kanalen er deaktiveret, slave=%u fc=%u)",
-                  ctx->name, req->slave_id, req->pdu_len > 0 ? req->pdu[0] : 0);
     } else {
       digitalWrite(ctx->led_pin, HIGH);
       req->result = execute_transaction(*ctx, req->slave_id, req->pdu, req->pdu_len, req->out_pdu, req->out_pdu_len,

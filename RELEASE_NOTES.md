@@ -2,6 +2,14 @@
 
 ---
 
+## v0.28.4 — 2026-09-16 — Tidsstempel på debug-output
+
+Hver linje i `debug modbus ...`-outputtet starter nu med `[millis]` (millisekunder siden boot — boardet har ingen RTC/NTP, så det er den mest præcise tid der findes). Gør det muligt at se den præcise afstand mellem to hændelser, ikke kun varigheden af hvert enkelt trin.
+
+**Live-verificeret** på fysisk hardware — tidsstemplerne var korrekte og monotont voksende gennem en hel transaktion, inkl. de kumulerede pr.-byte-tidsstempler under RS485-modtagelsen.
+
+---
+
 ## v0.28.3 — 2026-09-16 — Ensrettet, kompakt debug-output
 
 `debug modbus ...`s output er nu fuldt ensrettet: hver linje følger samme skabelon `DEBUG <kanal> <retning> <label>: <indhold>` med `>TX>`/`<RX<`-retningsmarkører — inkl. hex-dump-linjen, som hidtil manglede kanalnavnet. Decode-linjen viser nu et kompakt feltformat (`ID: 09, FC: 03, Values: [17942], CRC: 59 85, Status: OK`) i stedet for fulde sætninger.
