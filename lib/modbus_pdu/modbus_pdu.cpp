@@ -1,5 +1,6 @@
 #include "modbus_pdu.h"
 
+#include <cstdio>
 #include <cstring>
 
 uint16_t mb_pdu_calc_crc16(const uint8_t *buffer, size_t len) {
@@ -154,4 +155,189 @@ mb_pdu_parse_result_t mb_pdu_parse_rtu_response(uint8_t expected_slave_id, const
   }
 
   return MB_PDU_RESULT_OK;
+}
+
+namespace {
+
+const char *exception_name(uint8_t code) {
+  switch (code) {
+    case 0x01: return "Illegal Function";
+    case 0x02: return "Illegal Data Address";
+    case 0x03: return "Illegal Data Value";
+    case 0x04: return "Slave Device Failure";
+    case 0x05: return "Acknowledge";
+    case 0x06: return "Slave Device Busy";
+    case 0x08: return "Memory Parity Error";
+    case 0x0A: return "Gateway Path Unavailable";
+    case 0x0B: return "Gateway Target Device Failed to Respond";
+    default: return "Unknown";
+  }
+}
+
+// v0.28.2 — afkortningsgrænse for værdilister i mb_pdu_decode(), se
+// modbus_pdu.h's kommentar ved funktionen.
+constexpr size_t kDecodeMaxValues = 20;
+
+// Skriver "[v1,v2,...]" for `count` 16-bit big-endian registre (delt af
+// FC03/04's svar og FC16's request/svar-decode).
+size_t append_register_list(char *out, size_t out_capacity, const uint8_t *data, size_t count) {
+  if (out_capacity == 0) return 0;
+  size_t pos = 0;
+  out[pos++] = '[';
+  const size_t shown = count < kDecodeMaxValues ? count : kDecodeMaxValues;
+  for (size_t i = 0; i < shown; i++) {
+    const uint16_t value = (static_cast<uint16_t>(data[i * 2]) << 8) | data[i * 2 + 1];
+    const int written = snprintf(out + pos, out_capacity - pos, "%s%u", i > 0 ? "," : "", value);
+    if (written <= 0 || static_cast<size_t>(written) >= out_capacity - pos) return 0;
+    pos += static_cast<size_t>(written);
+  }
+  if (count > shown) {
+    const int written = snprintf(out + pos, out_capacity - pos, ",...og %u mere", static_cast<unsigned>(count - shown));
+    if (written <= 0 || static_cast<size_t>(written) >= out_capacity - pos) return 0;
+    pos += static_cast<size_t>(written);
+  }
+  if (pos + 1 >= out_capacity) return 0;
+  out[pos++] = ']';
+  out[pos] = '\0';  // pos ekskluderer terminatoren (samme konvention som mb_status_build_json, lib/rest_status)
+  return pos;
+}
+
+// Skriver "[v1,v2,...]" for `count` bit-pakkede coil-værdier (LSB-først pr.
+// byte, §4.1 — delt af FC01/02's svar og FC15's request). BEMÆRK: kaldt med
+// `byte_count*8` for et FC01/02-SVAR (den faktiske forespurgte `qty` er ikke
+// en del af selve svar-PDU'en) — kan derfor vise op til 7 ekstra
+// padding-bit(s) ud over det reelt forespurgte antal. Disse er altid 0 pr.
+// Modbus-spec, så det tilføjer aldrig VILDLEDENDE information, kun
+// eventuelt lidt for mange nuller i enden — en accepteret, dokumenteret
+// forenkling for et debug-hjælpemiddel.
+size_t append_bit_list(char *out, size_t out_capacity, const uint8_t *data, size_t count) {
+  if (out_capacity == 0) return 0;
+  size_t pos = 0;
+  out[pos++] = '[';
+  const size_t shown = count < kDecodeMaxValues ? count : kDecodeMaxValues;
+  for (size_t i = 0; i < shown; i++) {
+    const uint8_t bit = (data[i / 8] >> (i % 8)) & 1;
+    const int written = snprintf(out + pos, out_capacity - pos, "%s%u", i > 0 ? "," : "", bit);
+    if (written <= 0 || static_cast<size_t>(written) >= out_capacity - pos) return 0;
+    pos += static_cast<size_t>(written);
+  }
+  if (count > shown) {
+    const int written = snprintf(out + pos, out_capacity - pos, ",...og %u mere", static_cast<unsigned>(count - shown));
+    if (written <= 0 || static_cast<size_t>(written) >= out_capacity - pos) return 0;
+    pos += static_cast<size_t>(written);
+  }
+  if (pos + 1 >= out_capacity) return 0;
+  out[pos++] = ']';
+  out[pos] = '\0';  // pos ekskluderer terminatoren (samme konvention som mb_status_build_json, lib/rest_status)
+  return pos;
+}
+
+}  // namespace
+
+size_t mb_pdu_decode(const uint8_t *pdu, size_t pdu_len, bool is_response, char *out, size_t out_capacity) {
+  if (pdu == nullptr || pdu_len == 0 || out == nullptr || out_capacity == 0) return 0;
+
+  const uint8_t fc = pdu[0];
+
+  if (is_response && (fc & 0x80) != 0) {
+    if (pdu_len < 2) return 0;
+    const int written = snprintf(out, out_capacity, "Exception: %s (0x%02X)", exception_name(pdu[1]), pdu[1]);
+    return (written > 0 && static_cast<size_t>(written) < out_capacity) ? static_cast<size_t>(written) : 0;
+  }
+
+  size_t pos = 0;
+  int written = 0;
+
+  switch (fc) {
+    case 0x01:
+    case 0x02: {
+      const char *name = (fc == 0x01) ? "Read Coils" : "Read Discrete Inputs";
+      if (!is_response) {
+        if (pdu_len < 5) return 0;
+        const uint16_t addr = (static_cast<uint16_t>(pdu[1]) << 8) | pdu[2];
+        const uint16_t qty = (static_cast<uint16_t>(pdu[3]) << 8) | pdu[4];
+        written = snprintf(out, out_capacity, "%s: addr=%u qty=%u", name, addr, qty);
+        return (written > 0 && static_cast<size_t>(written) < out_capacity) ? static_cast<size_t>(written) : 0;
+      }
+      if (pdu_len < 2) return 0;
+      const uint8_t byte_count = pdu[1];
+      if (pdu_len < static_cast<size_t>(2 + byte_count)) return 0;
+      written = snprintf(out, out_capacity, "%s: ", name);
+      if (written <= 0 || static_cast<size_t>(written) >= out_capacity) return 0;
+      pos = static_cast<size_t>(written);
+      const size_t list_len = append_bit_list(out + pos, out_capacity - pos, pdu + 2, static_cast<size_t>(byte_count) * 8);
+      return list_len == 0 ? 0 : pos + list_len;
+    }
+    case 0x03:
+    case 0x04: {
+      const char *name = (fc == 0x03) ? "Read Holding Registers" : "Read Input Registers";
+      if (!is_response) {
+        if (pdu_len < 5) return 0;
+        const uint16_t addr = (static_cast<uint16_t>(pdu[1]) << 8) | pdu[2];
+        const uint16_t qty = (static_cast<uint16_t>(pdu[3]) << 8) | pdu[4];
+        written = snprintf(out, out_capacity, "%s: addr=%u qty=%u", name, addr, qty);
+        return (written > 0 && static_cast<size_t>(written) < out_capacity) ? static_cast<size_t>(written) : 0;
+      }
+      if (pdu_len < 2) return 0;
+      const uint8_t byte_count = pdu[1];
+      if (pdu_len < static_cast<size_t>(2 + byte_count) || byte_count % 2 != 0) return 0;
+      written = snprintf(out, out_capacity, "%s: ", name);
+      if (written <= 0 || static_cast<size_t>(written) >= out_capacity) return 0;
+      pos = static_cast<size_t>(written);
+      const size_t list_len = append_register_list(out + pos, out_capacity - pos, pdu + 2, byte_count / 2);
+      return list_len == 0 ? 0 : pos + list_len;
+    }
+    case 0x05: {
+      if (pdu_len < 5) return 0;
+      const uint16_t addr = (static_cast<uint16_t>(pdu[1]) << 8) | pdu[2];
+      const uint16_t raw = (static_cast<uint16_t>(pdu[3]) << 8) | pdu[4];
+      written = snprintf(out, out_capacity, "Write Single Coil%s: addr=%u value=%s", is_response ? " (ack)" : "", addr,
+                          raw == 0xFF00 ? "ON" : "OFF");
+      return (written > 0 && static_cast<size_t>(written) < out_capacity) ? static_cast<size_t>(written) : 0;
+    }
+    case 0x06: {
+      if (pdu_len < 5) return 0;
+      const uint16_t addr = (static_cast<uint16_t>(pdu[1]) << 8) | pdu[2];
+      const uint16_t value = (static_cast<uint16_t>(pdu[3]) << 8) | pdu[4];
+      written = snprintf(out, out_capacity, "Write Single Register%s: addr=%u value=%u", is_response ? " (ack)" : "",
+                          addr, value);
+      return (written > 0 && static_cast<size_t>(written) < out_capacity) ? static_cast<size_t>(written) : 0;
+    }
+    case 0x0F: {
+      if (pdu_len < 5) return 0;
+      const uint16_t addr = (static_cast<uint16_t>(pdu[1]) << 8) | pdu[2];
+      const uint16_t qty = (static_cast<uint16_t>(pdu[3]) << 8) | pdu[4];
+      if (is_response) {
+        written = snprintf(out, out_capacity, "Write Multiple Coils (ack): addr=%u qty=%u", addr, qty);
+        return (written > 0 && static_cast<size_t>(written) < out_capacity) ? static_cast<size_t>(written) : 0;
+      }
+      if (pdu_len < 6) return 0;
+      const uint8_t byte_count = pdu[5];
+      if (pdu_len < static_cast<size_t>(6 + byte_count)) return 0;
+      written = snprintf(out, out_capacity, "Write Multiple Coils: addr=%u qty=%u values=", addr, qty);
+      if (written <= 0 || static_cast<size_t>(written) >= out_capacity) return 0;
+      pos = static_cast<size_t>(written);
+      const size_t list_len = append_bit_list(out + pos, out_capacity - pos, pdu + 6, qty);
+      return list_len == 0 ? 0 : pos + list_len;
+    }
+    case 0x10: {
+      if (pdu_len < 5) return 0;
+      const uint16_t addr = (static_cast<uint16_t>(pdu[1]) << 8) | pdu[2];
+      const uint16_t qty = (static_cast<uint16_t>(pdu[3]) << 8) | pdu[4];
+      if (is_response) {
+        written = snprintf(out, out_capacity, "Write Multiple Registers (ack): addr=%u qty=%u", addr, qty);
+        return (written > 0 && static_cast<size_t>(written) < out_capacity) ? static_cast<size_t>(written) : 0;
+      }
+      if (pdu_len < 6) return 0;
+      const uint8_t byte_count = pdu[5];
+      if (pdu_len < static_cast<size_t>(6 + byte_count) || byte_count != qty * 2) return 0;
+      written = snprintf(out, out_capacity, "Write Multiple Registers: addr=%u qty=%u values=", addr, qty);
+      if (written <= 0 || static_cast<size_t>(written) >= out_capacity) return 0;
+      pos = static_cast<size_t>(written);
+      const size_t list_len = append_register_list(out + pos, out_capacity - pos, pdu + 6, qty);
+      return list_len == 0 ? 0 : pos + list_len;
+    }
+    default:
+      return 0;  // ukendt FC — kaldstedet har sin egen MB_UNSUPPORTED_FUNCTION-håndtering
+  }
 }

@@ -2,6 +2,14 @@
 
 ---
 
+## v0.28.2 — 2026-09-16 — Menneskelæselig Modbus-frame-decode i debug-outputtet
+
+`debug modbus ...` viser nu selve INDHOLDET af en Modbus-transaktion i klartekst, ikke kun rå hex — fx `"Read Holding Registers: addr=0 qty=1"` for en forespørgsel og `"Read Holding Registers: [17942]"` for svaret, eller `"Exception: Illegal Data Address (0x02)"` for en fejl. Dækker alle 8 understøttede function codes, både på den serielle konsol og i syslog.
+
+**Live-verificeret** på fysisk hardware — en rigtig læsning viste både forespørgslens og svarets decode, inkl. den faktiske registerværdi.
+
+---
+
 ## v0.28.1 — 2026-09-16 — Kanal-fejl på konsollen kræver nu debug slået til
 
 Boardet viste hidtil altid en `MODBUS-FEJL kanal ...`-linje på den serielle konsol når en transaktion fejlede, uanset om debug var slået til. Denne ubetingede fejlvisning er nu fjernet — fejl vises kun på konsollen når `debug modbus ...` er slået til for den pågældende kanal (samme information, nu via debug-systemets egne linjer). Syslog er upåvirket og modtager fortsat alle fejl uafhængigt.
