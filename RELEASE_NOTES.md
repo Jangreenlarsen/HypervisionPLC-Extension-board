@@ -2,6 +2,14 @@
 
 ---
 
+## v0.28.6 — 2026-09-16 — Kanalnavnet er nu `mb_ch_A`/`mb_ch_B`
+
+Kanalnavnet i debug-/syslog-output (og selve FreeRTOS-task-navnet) staves nu med stort bogstav — `mb_ch_A`/`mb_ch_B` i stedet for `mb_ch_a`/`mb_ch_b`.
+
+**Live-verificeret** på fysisk hardware.
+
+---
+
 ## v0.28.5 — 2026-09-16 — Debug-tidsstemplet gjort menneskelæseligt
 
 Debug-outputtets tidsstempel viser nu `D:HH:MM:SS.mmm` (dage:timer:minutter:sekunder.millisekunder, fx `[0:00:19:51.352]`) i stedet for et råt millisekund-tal — meget lettere at læse på et øjekast.
