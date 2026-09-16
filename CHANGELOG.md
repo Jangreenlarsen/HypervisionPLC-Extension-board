@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.28.3 build 0041] — 2026-09-16 — Ensrettet, kompakt debug-/syslog-linjeformat
+
+**Baggrund:** Jan: "kan vi gøre det output mere lækket med en mere klar afgrænsning af de modtage data samt sende data, sådan pakkeren bliver mere let læselige" — pegede konkret på at `DEBUG RX: 09 03 02 00 00 59 85` manglede kanalnavnet, modsat resten af linjerne (`DEBUG mb_ch_a: ...`). Foreslog selv et nyt format med `<RX<`/`>TX>`-retningsmarkører og et kompakt `ID:/FC:/Addr:/CRC:/...`-feltformat for decode-linjen.
+
+**Afklaret via 2 spørgsmål:** (1) skift `mb_pdu_decode()`s indhold til det kompakte feltformat (valgt, i stedet for at beholde de fulde engelske sætninger fra v0.28.2) — (2) brug Jans egne `>TX>`/`<RX<`-pile som retningsmarkør (valgt, i stedet for simplere "TX:"/"RX:").
+
+**`src/modbus_channel.cpp`:** al debug-/syslog-udskrivning i `execute_transaction()` ensrettet til ÉN fast skabelon: `DEBUG <kanal> <retning> <label>: <indhold>`. Tre nye delte hjælpere: `debug_line()` (variadic, generisk enkelt-linje, sender BÅDE Serial bag `dbg>=min_level` OG syslog ubetinget — samme "syslog er en uafhængig kanal"-princip som hele v0.26.0), `debug_packet()` (hex-dump, nu MED kanalnavn — det var netop denne linje der manglede det), `debug_decode()` (afkoder den FULDE RTU-frame, ikke kun PDU'en — lægger `ID: <hex slave-adresse>` foran og `CRC: <hex hex>` bagved `mb_pdu_decode()`s indhold, plus `Status: <resultat>` for RX-linjen, da det endelige udfald er kendt på det tidspunkt). RX-byte-timing (level 4) forbliver bevidst en SÆRSKILT, ikke-delt kodesti — syslog skal stadig kun have ÉT samlet resumé pr. transaktion, ikke én pakke pr. byte (uændret fra v0.26.0's "flood ikke netværket"-hensyn).
+
+**`lib/modbus_pdu/`:** `mb_pdu_decode()`s outputformat ændret fra fulde sætninger ("Read Holding Registers: addr=0 qty=1") til Jans kompakte feltformat ("FC: 03, Addr: 0, Qty: 1") — FC vises nu i HEX (matcher hex-dump-linjens bytes for nem krydsreference), Addr/Qty/Values forbliver decimal. FC05/06's tidligere " (ack)"-tekst-suffiks på svar er fjernet — request og svar er byte-identiske (et ægte ekko), og retningen fremgår nu i forvejen af kaldstedets `>TX>`/`<RX<`-præfiks.
+
+**Filer ændret:** `lib/modbus_pdu/modbus_pdu.h/.cpp`, `src/modbus_channel.cpp`, `test/test_modbus_pdu/test_modbus_pdu.cpp`, `FEATURES.md`.
+
+**Status:** 297/297 native-tests bestået (14 opdaterede). Bygger rent for esp32dev. **Live-verificeret** på fysisk hardware (kanal A, level 8): samtlige linjer i en komplet transaktion fulgte nu det ensrettede format uden undtagelse — `>TX> start`, `>TX> decode` (`ID: 09, FC: 03, Addr: 0, Qty: 1, CRC: 85 42`), `>TX> dir`, `>TX> packet`, `<RX< dir`, `<RX< byte[N]` (×7), `<RX< packet`, `<RX< decode` (`ID: 09, FC: 03, Values: [17942], CRC: EA 2B, Status: MB_OK`), `<RX< parse`, `<RX< result` — ingen linje mangler længere kanalnavn/retning.
+
 ## [0.28.2 build 0040] — 2026-09-16 — Menneskelæselig Modbus-PDU-decode i debug-/syslog-outputtet
 
 **Baggrund:** Jan: "kan vi ikke få en modbus protocol frame pakke decode med i det debug output" — hidtil viste `debug modbus ...` kun rå hex (level 7/8) og et generisk slave/fc/pdu_len-resumé (level 1), aldrig selve INDHOLDET af en frame (adresse, quantity, faktiske register-/coil-værdier).

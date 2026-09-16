@@ -100,18 +100,20 @@ enum mb_pdu_parse_result_t {
 mb_pdu_parse_result_t mb_pdu_parse_rtu_response(uint8_t expected_slave_id, const uint8_t *frame, size_t frame_len,
                                                  uint8_t *out_pdu, size_t *out_pdu_len, size_t out_pdu_capacity);
 
-// v0.28.2 (Jan: "kan vi ikke få en modbus protocol frame pakke decode med
-// i det debug output") — menneskelæselig fortolkning af en PDU (function
-// code + data, UDEN adresse/CRC — samme "PDU" som resten af denne fil), til
-// brug i debug-/syslog-output (src/modbus_channel.cpp), IKKE kun rå hex.
-// `is_response=false` fortolker `pdu` som en FORESPØRGSEL (fx "Read Holding
-// Registers: addr=0 qty=1"); `is_response=true` fortolker den som et SVAR —
-// enten en exception ("Exception: Illegal Function (0x01)") eller de
-// faktiske værdier ("Registers: [17942]"/"Coils: [1,0,1]"). Kun FC01-06/15/
-// 16 (§4.1's scope) genkendes — alt andet giver en tom streng (0 bytes
-// skrevet), IKKE en fejl (kaldstedet har allerede sin egen ukendt-FC-
-// håndtering, se MB_UNSUPPORTED_FUNCTION). Værdilister afkortes ved 20
-// elementer ("...og N mere") — en fuld ~2000-værdiers FC01/02-liste ville
-// gøre én debug-/syslog-linje ubrugeligt lang. Returnerer antal skrevne
-// bytes, eller 0 ved ugyldige argumenter/for lille buffer/ukendt FC.
+// v0.28.2/v0.28.3 (Jan: "kan vi ikke få en modbus protocol frame pakke
+// decode med i det debug output" / "kan vi gøre det output mere lækket ...
+// kompakt felt-format") — KOMPAKT feltbaseret fortolkning af en PDU
+// (function code + data, UDEN adresse/CRC — samme "PDU" som resten af
+// denne fil), til brug i debug-/syslog-output (src/modbus_channel.cpp,
+// som selv tilføjer "ID: <slave>"-feltet foran og "CRC: <hex hex>" bagved
+// — begge dele af den FULDE RTU-frame, ikke selve PDU'en, derfor uden for
+// denne funktions scope). Format: "FC: <hex>, Addr: <tal>, Qty: <tal>" for
+// en forespørgsel, "FC: <hex>, Values: [v1,v2,...]" for et registersvar,
+// "FC: <hex>, Exception: <hex> (<navn>)" for en Modbus-exception. Kun
+// FC01-06/15/16 (§4.1's scope) genkendes — alt andet giver en tom streng
+// (0 bytes skrevet), IKKE en fejl (kaldstedet har allerede sin egen
+// ukendt-FC-håndtering, se MB_UNSUPPORTED_FUNCTION). Værdilister afkortes
+// ved 20 elementer ("...og N mere") — en fuld ~2000-værdiers FC01/02-liste
+// ville gøre én debug-/syslog-linje ubrugeligt lang. Returnerer antal
+// skrevne bytes, eller 0 ved ugyldige argumenter/for lille buffer/ukendt FC.
 size_t mb_pdu_decode(const uint8_t *pdu, size_t pdu_len, bool is_response, char *out, size_t out_capacity);
