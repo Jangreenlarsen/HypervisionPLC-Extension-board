@@ -4,6 +4,16 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.28.4 build 0042] — 2026-09-16 — Millisekund-tidsstempel på debug-/syslog-linjer
+
+**Baggrund:** Jan: "kan vi få timestamp på debug".
+
+**`src/modbus_channel.cpp`:** hver debug-/syslog-linje starter nu med `[millis]` (ms siden boot) — boardet har ingen RTC/NTP, så det er det eneste rigtige, altid-tilgængelige tidsstempel (samme grundlag alle "ventede Xms"-angivelser allerede bruger). Tilføjet til de tre delte hjælpere (`debug_line()`/`debug_packet()`/`debug_decode()`, v0.28.3) OG de to steder der bevidst omgår dem: pr.-byte RX-timing-loopet (level 4) og `MB_NOT_ENABLED`-grenen i `channel_task()` (som aldrig kalder `execute_transaction()`). Pr.-byte-tidsstemplerne er et reelt, KUMULERET absolut tidspunkt (`txn_start` + løbende summeret ventetid), ikke et fladt `millis()`-kald ved print-tidspunktet (som ville have vist samme, misvisende tidsstempel for alle bytes, da hele listen printes samlet efter modtagelsen er afsluttet) — dokumenteret unøjagtighed: kun byte[0] kan ramme `rx_wait_ms`s 255ms-saturering (efterfølgende bytes bruger `interchar_ms`, maks 20ms, og saturerer derfor aldrig), så en evt. fejl er en konstant forskydning, ikke en voksende.
+
+**Filer ændret:** `src/modbus_channel.cpp`, `FEATURES.md`.
+
+**Status:** 297/297 native-tests upåvirket (ingen native-testbar logik ændret). Bygger rent for esp32dev. **Live-verificeret** på fysisk hardware (kanal A, level 8): samtlige linjer fik et korrekt, monotont voksende `[millis]`-tidsstempel, og de kumulerede pr.-byte-tidsstempler stemte PRÆCIST overens med de allerede viste "ventede Xms"-deltaer (fx `[1254] byte[0] (ventede 63ms)` → `[1255] byte[1] (ventede 1ms)` → ... → `[1262] byte[6] (ventede 2ms)`, alle verificeret som `forrige ts + ventetid`).
+
 ## [0.28.3 build 0041] — 2026-09-16 — Ensrettet, kompakt debug-/syslog-linjeformat
 
 **Baggrund:** Jan: "kan vi gøre det output mere lækket med en mere klar afgrænsning af de modtage data samt sende data, sådan pakkeren bliver mere let læselige" — pegede konkret på at `DEBUG RX: 09 03 02 00 00 59 85` manglede kanalnavnet, modsat resten af linjerne (`DEBUG mb_ch_a: ...`). Foreslog selv et nyt format med `<RX<`/`>TX>`-retningsmarkører og et kompakt `ID:/FC:/Addr:/CRC:/...`-feltformat for decode-linjen.
