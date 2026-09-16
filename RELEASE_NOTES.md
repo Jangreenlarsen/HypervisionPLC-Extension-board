@@ -2,6 +2,14 @@
 
 ---
 
+## v0.28.5 — 2026-09-16 — Debug-tidsstemplet gjort menneskelæseligt
+
+Debug-outputtets tidsstempel viser nu `D:HH:MM:SS.mmm` (dage:timer:minutter:sekunder.millisekunder, fx `[0:00:19:51.352]`) i stedet for et råt millisekund-tal — meget lettere at læse på et øjekast.
+
+**Live-verificeret** på fysisk hardware — korrekt, letlæseligt tidsstempel gennem en hel transaktion.
+
+---
+
 ## v0.28.4 — 2026-09-16 — Tidsstempel på debug-output
 
 Hver linje i `debug modbus ...`-outputtet starter nu med `[millis]` (millisekunder siden boot — boardet har ingen RTC/NTP, så det er den mest præcise tid der findes). Gør det muligt at se den præcise afstand mellem to hændelser, ikke kun varigheden af hvert enkelt trin.
