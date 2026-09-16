@@ -442,20 +442,6 @@ void record_stats(ChannelContext &ctx, const ChannelRequest &req) {
   ctx.stats.last_error_at_uptime_s = millis() / 1000;
 }
 
-// v0.25.1 (Jan: "hvis [debug] er aktiv skal alt andet console output
-// undertrykkes og ikke som nu hvor man få blandet alt muligt ind i debug
-// output også") — den generiske MODBUS-FEJL-linje nedenfor fyrer for HVER
-// fejlende transaktion på BEGGE kanaler, uanset debug-niveau. I praksis
-// druknede den den ellers rene debug-visning af én kanal i støj fra den
-// ANDEN (uafhængige) kanals helt normale, uafhængige trafik (fx en
-// tredjeparts Modbus TCP-master der periodisk poller en kanal uden noget
-// tilsluttet). Så snart mindst ÉN kanal har debug slået til, undertrykkes
-// denne linje derfor for BEGGE kanaler — debug-outputtet (level ≥1) viser
-// allerede slave/fc/resultat for den/de kanal(er) man rent faktisk kigger
-// på, så intet reelt går tabt for DEM; for en ikke-debugget kanal er det en
-// bevidst, midlertidig afvejning Jan selv har bedt om for at få et rent
-// debug-vindue.
-bool any_channel_debug_active() { return g_channelA.debug_level > 0 || g_channelB.debug_level > 0; }
 
 void channel_task(void *param) {
   ChannelContext *ctx = static_cast<ChannelContext *>(param);
@@ -474,8 +460,18 @@ void channel_task(void *param) {
 
     if (!ctx->config.enabled) {
       req->result = MB_NOT_ENABLED;  // ingen reel bus-aktivitet — LED'en blinker bevidst IKKE for dette
-      // v0.26.0: eneste udfald execute_transaction() ALDRIG selv rapporterer
-      // til syslog (den kaldes slet ikke her) — tilføjes derfor eksplicit her.
+      // v0.28.1 (Jan: "vi har i dag output ved fejl til console lave det om
+      // sådan vi ikke har det output men kun hvis vi bruger debug til at
+      // output til console") — Serial-output for en kanal-fejl vises nu
+      // UDELUKKENDE når debug er slået til for DEN kanal (samme "<< RESULT"-
+      // stil som execute_transaction()s egne dbg>=1-linjer) — INGEN
+      // ubetinget fejl-print til konsollen længere. syslog er UAFHÆNGIG
+      // heraf (egen verbositet pr. modtager, se lib/syslog_client) og
+      // rammes ikke af denne ændring.
+      if (ctx->debug_level >= 1) {
+        Serial.printf("DEBUG %s: << MB_NOT_ENABLED (kanalen er deaktiveret, slave=%u fc=%u)\n", ctx->name,
+                      req->slave_id, req->pdu_len > 0 ? req->pdu[0] : 0);
+      }
       syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "%s: RX MB_NOT_ENABLED (kanalen er deaktiveret, slave=%u fc=%u)",
                   ctx->name, req->slave_id, req->pdu_len > 0 ? req->pdu[0] : 0);
     } else {
@@ -486,17 +482,6 @@ void channel_task(void *param) {
     }
 
     record_stats(*ctx, *req);
-
-    if (req->result != MB_OK && !any_channel_debug_active()) {
-      Serial.print("MODBUS-FEJL kanal ");
-      Serial.print(ctx->name);
-      Serial.print(": slave=");
-      Serial.print(req->slave_id);
-      Serial.print(" fc=");
-      Serial.print(req->pdu_len > 0 ? req->pdu[0] : 0);
-      Serial.print(" -> ");
-      Serial.println(error_name(req->result));
-    }
     xSemaphoreGive(req->done);
   }
 }
