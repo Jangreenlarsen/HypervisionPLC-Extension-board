@@ -4,6 +4,18 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.28.1 build 0039] — 2026-09-16 — Kanal-fejl vises nu kun på konsollen når debug er slået til
+
+**Baggrund:** Jan: "vi har i dag output ved fejl til console lave det om sådan vi ikke har det output men kun hvis vi bruger debug til at output til console".
+
+**`src/modbus_channel.cpp`:** fjernede den ubetingede `MODBUS-FEJL kanal ...`-Serial-linje fra `channel_task()` — den fyrede hidtil for HVER fejlende transaktion på BEGGE kanaler, uanset debug-tilstand (kun undertrykt hvis en ANDEN kanal havde debug slået til, v0.25.1). Al Serial-fejlvisning sker fremover UDELUKKENDE via `debug modbus ...`s eksisterende `level>=1`-opsummeringslinjer i `execute_transaction()`, plus en ny, tilsvarende linje for `MB_NOT_ENABLED` (den ene fejltilstand der aldrig går igennem `execute_transaction()`, da kanalen slet ikke er aktiveret). v0.25.1's `any_channel_debug_active()`-hjælper er fjernet som overflødig (dens formål — undertrykke krydskanal-støj — er nu opnået strukturelt, ved slet ikke at printe noget uden om debug-systemet).
+
+**syslog upåvirket:** syslog (v0.26.0) er en bevidst UAFHÆNGIG udgangskanal med sin egen, pr.-modtager-konfigurerede verbositet — den modtager fortsat alle fejl uanset om CLI-debug er slået til, denne ændring gælder KUN den serielle konsol.
+
+**Filer ændret:** `src/modbus_channel.cpp`, `FEATURES.md`.
+
+**Status:** 283/283 native-tests upåvirket (ingen native-testbar logik ændret — rent `src/`-lag), bygger rent for esp32dev. **Live-verificeret** på fysisk hardware: med debug FRA var konsollen fuldstændig stille i et 4-sekunders observationsvindue (ingen `MODBUS-FEJL`-linjer, selv under trafik der tidligere ville have logget); med `debug modbus a level 1` slået til viste konsollen straks de forventede `DEBUG mb_ch_a: ...`-linjer igen.
+
 ## [0.28.0 build 0038] — 2026-09-15 — `GET /api/capabilities` + dedikeret "unsupported function code"-fejlkode
 
 **Baggrund:** Jan: "vi skal have lavet en udvidelse til test se efter i projekt folde efter en fil 'DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md' hvor det er beskrivet" — et designforslag fra PLC-udviklingsteamet (allerede i repoets rod), skrevet efter PLC-siden fik et empirisk "Funktions-test"-panel og indså at der ingen live-forespørgelig capabilities-API fandtes. Implementeret i sin helhed (§1 anbefalede løsning + §2's supplerende fejlkode-oprydning, begge valgt via AskUserQuestion).

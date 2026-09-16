@@ -2,6 +2,14 @@
 
 ---
 
+## v0.28.1 — 2026-09-16 — Kanal-fejl på konsollen kræver nu debug slået til
+
+Boardet viste hidtil altid en `MODBUS-FEJL kanal ...`-linje på den serielle konsol når en transaktion fejlede, uanset om debug var slået til. Denne ubetingede fejlvisning er nu fjernet — fejl vises kun på konsollen når `debug modbus ...` er slået til for den pågældende kanal (samme information, nu via debug-systemets egne linjer). Syslog er upåvirket og modtager fortsat alle fejl uafhængigt.
+
+**Live-verificeret** på fysisk hardware: konsollen forblev helt stille med debug fra, og viste straks de forventede linjer igen efter `debug modbus a level 1`.
+
+---
+
 ## v0.28.0 — 2026-09-15 — `GET /api/capabilities` + korrekt "ukendt function code"-fejl
 
 Implementerer PLC-udviklingsteamets eget designforslag (`DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md`): et nyt, rent deklarativt `GET /api/capabilities`-endpoint der viser hvilke function codes boardet understøtter (separat for Modbus TCP-data-planet og REST-diagnostikken) uden at skulle sende en rigtig test-transaktion. Desuden en ny, dedikeret fejlkode for "boardet kender slet ikke denne function code" (`MB_UNSUPPORTED_FUNCTION`, REST `error_code:10`, Modbus TCP-exception `0x01` "Illegal Function") — adskilt fra den hidtidige, bredere `MB_INVALID_ADDRESS`/`0x0A`, som nu kun betyder "ugyldig adresse for en ellers kendt function code" eller "kanal util-gaengelig".
