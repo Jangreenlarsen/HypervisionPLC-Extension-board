@@ -16,7 +16,7 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 **Filer ændret:** `src/provisioning.cpp`, `lib/board_config/board_config.cpp`, `test/test_board_config/test_board_config.cpp`, `BUGS.md`, `version.json`.
 
-**Status:** 305/305 native-tests grønne. Bygger for esp32dev. **IKKE live-verificeret endnu** — upload blokeret (COM8 optaget af seriel monitor).
+**Status:** 305/305 native-tests grønne. Bygger for esp32dev. **Live-verificeret** på fysisk hardware (Ethernet-only board, aldrig WiFi-`connect`): `show` viste `plc.ip: 10.1.1.30` straks efter opstart (før rettelsen: "(ikke sat)"), og værdien overlevede `save` → `reboot` → `show`.
 
 ## [0.29.0 build 0045] — 2026-09-24 — Udførlig, sektionsopdelt `help` i den serielle CLI
 
