@@ -33,8 +33,11 @@ constexpr size_t MB_PROV_HOSTNAME_MAX_LEN = 32;
 // "eth.*"-felterne i "show") fik help-teksten til at overskride 1024 og
 // blive stille afkortet (samme BUGS.md v0.4.0-klasse-bug). ESP32 har 320KB
 // RAM, så det er billigere at have rigelig margin end at ramme denne
-// afkortnings-bug en tredje gang.
-constexpr size_t MB_PROV_MSG_MAX_LEN = 2048;
+// afkortnings-bug en tredje gang. v0.29.0: hævet 2048→4096 — den
+// sektionsopdelte "help"-oversigt og de udførlige "help <emne>"-tekster
+// overskred 2048. Kaldstedets buffer (src/provisioning.cpp) er derfor nu
+// `static`, ikke på loopTask-stakken (BUGS.md v0.24.0's stack-overflow).
+constexpr size_t MB_PROV_MSG_MAX_LEN = 4096;
 
 // v0.25.0 (Jan: "lave en debug som outputer til console alt hvad der forgå
 // på kanal A og B") — hvilke(n) kanal(er) en "debug modbus ..."-kommando

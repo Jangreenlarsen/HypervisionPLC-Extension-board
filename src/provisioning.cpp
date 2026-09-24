@@ -440,7 +440,10 @@ void provisioning_poll() {
       history_push(g_line_buf);
       g_history_browse = -1;
 
-      char message[MB_PROV_MSG_MAX_LEN];
+      // v0.29.0: `static` (4096 bytes) — samme begrundelse som response_pdu/
+      // resp_body nedenfor: loopTask-stakken er kun 8192 bytes (BUGS.md
+      // v0.24.0), og provisioning_poll() er aldrig genindtrædende.
+      static char message[MB_PROV_MSG_MAX_LEN];
       const mb_provisioning_result_t result =
           mb_provisioning_apply_line(&g_state, g_line_buf, message, sizeof(message));
 
@@ -495,8 +498,8 @@ void provisioning_poll() {
 
         // BUGS.md v0.24.0: `static` her (og for err_body/resp_body nedenfor)
         // er IKKE stilistisk — response_pdu (253 bytes) + resp_body (op til
-        // 4608 bytes) som stak-lokale variable i denne funktion (der ALLEREDE
-        // har en 2048-byte `message`-buffer i samme scope, se ovenfor)
+        // 4608 bytes) som stak-lokale variable i denne funktion (der dengang
+        // ALLEREDE havde en 2048-byte `message`-buffer paa stakken - nu static)
         // overskred faktisk Arduino-kernens loopTask-stak (8192 bytes) og gav
         // et rigtigt, live-observeret stack-overflow-nedbrud. `provisioning_poll()`
         // kører udelukkende sekventielt på ÉN task (aldrig genindtrædende), så
