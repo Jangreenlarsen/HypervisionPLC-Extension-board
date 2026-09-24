@@ -675,6 +675,51 @@ void test_syslog_targets_roundtrip_through_config(void) {
   TEST_ASSERT_EQUAL_UINT8(5, reloaded.syslog_targets[0].max_level);
 }
 
+// BUGS.md v0.29.1: et board sat op med "save" alene (aldrig en vellykket
+// WiFi-"connect", dvs. provisioned=false) skal faa HELE sin config tilbage
+// efter en genstart - via den rigtige NVS-blob-serialisering, ikke kun
+// struct-til-struct.
+void test_saved_config_without_connect_survives_reboot(void) {
+  mb_provisioning_state_t state;
+  mb_provisioning_state_init(&state);
+  strncpy(state.plc_ip, "192.168.1.10", sizeof(state.plc_ip) - 1);
+  state.has_plc_ip = true;
+  strncpy(state.rest_user, "admin", sizeof(state.rest_user) - 1);
+  state.has_rest_user = true;
+  state.eth_static_ip = true;
+  strncpy(state.eth_ip, "192.168.1.50", sizeof(state.eth_ip) - 1);
+  // Delvist udfyldt WiFi-static-saet: kun ip, hverken mask eller gw.
+  state.static_ip = true;
+  strncpy(state.ip, "192.168.1.60", sizeof(state.ip) - 1);
+  state.has_ip = true;
+
+  mb_board_config_t config;
+  mb_config_set_defaults(&config);
+  mb_config_apply_provisioning_state(&config, &state);
+  TEST_ASSERT_FALSE(config.provisioned);
+
+  uint8_t blob[sizeof(mb_board_config_t)];
+  const size_t len = mb_config_save_to_blob(&config, blob, sizeof(blob));
+  TEST_ASSERT_TRUE(len > 0);
+  mb_board_config_t loaded;
+  mb_config_load_from_blob(blob, len, &loaded);
+
+  mb_provisioning_state_t reloaded;
+  mb_config_to_provisioning_state(&loaded, &reloaded);
+
+  TEST_ASSERT_TRUE(reloaded.has_plc_ip);
+  TEST_ASSERT_EQUAL_STRING("192.168.1.10", reloaded.plc_ip);
+  TEST_ASSERT_TRUE(reloaded.has_rest_user);
+  TEST_ASSERT_EQUAL_STRING("admin", reloaded.rest_user);
+  TEST_ASSERT_TRUE(reloaded.eth_static_ip);
+  TEST_ASSERT_EQUAL_STRING("192.168.1.50", reloaded.eth_ip);
+  TEST_ASSERT_TRUE(reloaded.static_ip);
+  TEST_ASSERT_TRUE(reloaded.has_ip);
+  TEST_ASSERT_EQUAL_STRING("192.168.1.60", reloaded.ip);
+  TEST_ASSERT_FALSE_MESSAGE(reloaded.has_mask, "mask blev aldrig sat - maa ikke genindlaeses som 'sat'");
+  TEST_ASSERT_FALSE_MESSAGE(reloaded.has_gw, "gw blev aldrig sat - maa ikke genindlaeses som 'sat'");
+}
+
 void test_apply_provisioning_state_never_touches_mgmt_token(void) {
   mb_provisioning_state_t state;
   mb_provisioning_state_init(&state);
@@ -733,6 +778,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_apply_provisioning_state_transfers_fields);
   RUN_TEST(test_apply_provisioning_state_never_touches_mgmt_token);
   RUN_TEST(test_to_provisioning_state_roundtrips_eth_fields);
+  RUN_TEST(test_saved_config_without_connect_survives_reboot);
   RUN_TEST(test_syslog_targets_roundtrip_through_config);
 
   return UNITY_END();
