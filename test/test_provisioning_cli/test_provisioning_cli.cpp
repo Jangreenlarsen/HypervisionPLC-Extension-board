@@ -1,5 +1,6 @@
 #include <unity.h>
 
+#include <cstdio>
 #include <cstring>
 
 #include "provisioning_cli.h"
@@ -862,6 +863,91 @@ void test_help_is_multiline(void) {
   TEST_ASSERT_NOT_NULL(strstr(msg, "\r\n"));
 }
 
+// v0.29.0 — oversigten er opdelt i sektioner (Jan: "i den help skal ting
+// være opdelt i seksioner").
+void test_help_overview_has_sections(void) {
+  mb_provisioning_apply_line(&state, "help", msg, sizeof(msg));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- WiFi (help wifi) ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- Ethernet (help eth) ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- REST-API login (help rest / token) ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- Logging og diagnose (help syslog / debug / test) ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- Vis, gem og system ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- Hjaelp ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest auth token|basic|both"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "syslog add"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "debug modbus"));
+}
+
+// Testen deler MB_PROV_MSG_MAX_LEN med produktionskoden, så en ren "sidste
+// linje findes"-test kan ikke opdage at konstanten er for lille til NÆSTE
+// udvidelse (CHANGELOG v0.4.0-lektionen) — kræv derfor en fast margin.
+static const size_t kHelpMargin = 512;
+
+void test_help_overview_has_margin(void) {
+  mb_provisioning_apply_line(&state, "help", msg, sizeof(msg));
+  TEST_ASSERT_TRUE(strlen(msg) + kHelpMargin < sizeof(msg));
+}
+
+void test_help_topic_rest_explains_show_fields(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "help rest", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_ACTION_HELP, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- Kommandoer ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- Vises i 'show' som ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "--- Traeder i kraft ---"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest.auth_mode"));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "rest auth both\r\n"));  // eksemplets sidste linje - ikke afkortet
+}
+
+void test_help_topic_is_case_insensitive(void) {
+  TEST_ASSERT_EQUAL(PROV_ACTION_HELP, mb_provisioning_apply_line(&state, "HELP Wifi", msg, sizeof(msg)));
+  TEST_ASSERT_NOT_NULL(strstr(msg, "=== WIFI"));
+}
+
+// Kernen i featuren: det man ser i "show"/"status" skal kunne slås op direkte.
+void test_help_show_field_lookup(void) {
+  struct {
+    const char *query;
+    const char *expected_header;
+  } cases[] = {
+      {"help rest.auth_mode", "=== REST"},   {"help rest.user", "=== REST"},
+      {"help rest.api", "=== REST"},         {"help mgmt.token", "=== TOKEN"},
+      {"help wifi.ssid", "=== WIFI"},        {"help wifi.rssi_dbm", "=== WIFI"},
+      {"help eth.mac", "=== ETH"},           {"help plc.ip", "=== PLC"},
+      {"help syslog.target2", "=== SYSLOG"}, {"help syslog.targets", "=== SYSLOG"},
+      {"help debug.channel_a", "=== DEBUG"}, {"help firmware", "=== VERSION"},
+      {"help board_mode", "=== BOARD_MODE"}, {"help hostname", "=== HOSTNAME"},
+      {"help uptime_s", "=== STATUS"},       {"help provisioned", "=== STATUS"},
+  };
+  for (const auto &c : cases) {
+    TEST_ASSERT_EQUAL_MESSAGE(PROV_ACTION_HELP, mb_provisioning_apply_line(&state, c.query, msg, sizeof(msg)),
+                              c.query);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(msg, c.expected_header), c.query);
+  }
+}
+
+void test_help_unknown_topic(void) {
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "help foo", msg, sizeof(msg));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+  TEST_ASSERT_NOT_NULL(strstr(msg, "ukendt hjaelpe-emne 'foo'"));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "help foo.bar", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "help .ssid", msg, sizeof(msg)));
+}
+
+// Alle emner nævnt i "help help" skal findes og være uafkortede.
+void test_help_every_topic_resolves_and_fits(void) {
+  const char *topics[] = {"wifi",    "eth",     "hostname", "plc",           "rest",    "token",
+                          "syslog",  "debug",   "test",     "show",          "status",  "save",
+                          "connect", "reboot",  "factory-reset", "version",  "board_mode", "no", "help"};
+  for (const char *topic : topics) {
+    char line[48];
+    snprintf(line, sizeof(line), "help %s", topic);
+    TEST_ASSERT_EQUAL_MESSAGE(PROV_ACTION_HELP, mb_provisioning_apply_line(&state, line, msg, sizeof(msg)), topic);
+    const size_t len = strlen(msg);
+    TEST_ASSERT_TRUE_MESSAGE(len + kHelpMargin < sizeof(msg), topic);
+    TEST_ASSERT_TRUE_MESSAGE(len >= 2 && msg[len - 2] == '\r' && msg[len - 1] == '\n', topic);
+  }
+}
+
 void test_version_action_without_build_flags(void) {
   // native-miljøet faar bevidst IKKE FW_VERSION/FW_BUILD injiceret (kun
   // esp32dev-target'et faar dem fra extract_version.py) — denne test
@@ -1087,6 +1173,13 @@ int main(int argc, char **argv) {
   RUN_TEST(test_wifi_pass_confirmation_shows_password);
   RUN_TEST(test_help_action);
   RUN_TEST(test_help_is_multiline);
+  RUN_TEST(test_help_overview_has_sections);
+  RUN_TEST(test_help_overview_has_margin);
+  RUN_TEST(test_help_topic_rest_explains_show_fields);
+  RUN_TEST(test_help_topic_is_case_insensitive);
+  RUN_TEST(test_help_show_field_lookup);
+  RUN_TEST(test_help_unknown_topic);
+  RUN_TEST(test_help_every_topic_resolves_and_fits);
   RUN_TEST(test_version_action_without_build_flags);
   RUN_TEST(test_empty_line);
   RUN_TEST(test_trailing_crlf_is_stripped);

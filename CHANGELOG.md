@@ -4,6 +4,27 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.29.0 build 0045] — 2026-09-24 — Udførlig, sektionsopdelt `help` i den serielle CLI
+
+**Baggrund:** Jan: "opret en help i cli som forklar alle cli commandos hvad de skal brugs" / "da det man se i cli ikke er det samme som de kommando man skal slå så skal vi bruge en help" / "i den help skal ting være opdelt i seksioner". Feltnavnene i `show` (fx `rest.auth_mode`) svarer ikke til de kommandoer man skriver (`rest auth ...`), og den gamle `help` var én lang, usorteret liste.
+
+**`lib/provisioning_cli/provisioning_cli.cpp`:**
+- `help` viser nu oversigten opdelt i sektioner (WiFi, Ethernet, Netværk og adgang, REST-API login, Logging og diagnose, Vis/gem/system, Hjælp), hver med henvisning til sit udførlige emne.
+- Ny `help <emne>` — udførlig forklaring pr. emne (`kHelpTopics`: wifi, eth, hostname, plc, rest, token, syslog, debug, test, show, status, save, connect, reboot, factory-reset, version, board_mode, no, help) med faste undersektioner: Kommandoer / Vises i 'show' som / Træder i kraft / Eksempel.
+- Ny `help <felt>` — et feltnavn fra `show`/`status` slås op direkte (`find_help_topic()`): delen før punktummet (`rest.auth_mode` → rest, `syslog.target2` → syslog) eller et alias (`firmware` → version, `mgmt.token` → token, `uptime_s` → status). `help show` giver en samlet felt → kommando-oversigt.
+- Ukendt emne → `PROV_INVALID_VALUE` med listen over gyldige emner.
+- Rettet undervejs: oversigtens `show`-linje sagde stadig "password maskeret" (forkert siden CLI'en viser alt i klartekst); `factory-reset`-beskrivelsen nævnte en "firewall" i stedet for det reelle (hele NVS inkl. kanal-opsætning); `rest` uden argumenter nævnte ikke `rest auth`.
+
+**`lib/provisioning_cli/provisioning_cli.h`:** `MB_PROV_MSG_MAX_LEN` 2048 → 4096 (oversigt + emne-tekster overskred 2048).
+
+**`src/provisioning.cpp`:** `message`-bufferen i `provisioning_poll()` er nu `static` — 4096 bytes på loopTask-stakken (8192) ville genintroducere BUGS.md v0.24.0's stack-overflow-klasse.
+
+**Tests (`test/test_provisioning_cli/`):** 7 nye — sektioner i oversigten, fast margin (512 bytes) under bufferen for oversigt OG hvert emne (en test der deler konstanten med koden kan ellers ikke opdage at den er for lille, jf. v0.4.0-lektionen), `help rest`'s undersektioner, versal-uafhængighed, 16 `show`/`status`-felter slået op, ukendte emner, og at alle emner i `help help` findes og er uafkortede.
+
+**Filer ændret:** `lib/provisioning_cli/provisioning_cli.cpp`, `lib/provisioning_cli/provisioning_cli.h`, `src/provisioning.cpp`, `test/test_provisioning_cli/test_provisioning_cli.cpp`, `FEATURES.md`, `CLAUDE.md` (testantal), `version.json`.
+
+**Status:** 304/304 native-tests grønne. Bygger rent for esp32dev (ingen nye advarsler).
+
 ## [0.28.6 build 0044] — 2026-09-16 — Kanalnavnet er nu `mb_ch_A`/`mb_ch_B` (stort bogstav)
 
 **Baggrund:** Jan: "ændre i debug output tekst 'mb_ch_a' til 'mb_ch_A' det samme for b til B".

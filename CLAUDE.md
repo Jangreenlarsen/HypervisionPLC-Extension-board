@@ -160,7 +160,7 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 │   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — v0.7.0, færdig
 │   ├── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — v0.7.0, færdig
 │   └── syslog_client/              # RFC 3164-pakkeformatering (facility/severity, hardware-uafhængig) — v0.26.0
-└── test/                            # PlatformIO native unit-tests (`pio test -e native`) — 278 tests i alt
+└── test/                            # PlatformIO native unit-tests (`pio test -e native`) — 304 tests i alt
     ├── test_modbus_pdu/
     ├── test_modbus_tcp/
     ├── test_provisioning_cli/

@@ -2,6 +2,14 @@
 
 ---
 
+## v0.29.0 — 2026-09-24 — Ny, sektionsopdelt `help` i den serielle CLI
+
+- `help` viser nu kommandoerne grupperet i sektioner (WiFi, Ethernet, netværk og adgang, REST-API-login, logging og diagnose, system, hjælp).
+- `help <emne>` — fx `help rest`, `help syslog`, `help eth` — forklarer udførligt, hvad kommandoerne gør, hvilke felter i `show` de ændrer, hvornår ændringen træder i kraft (straks, efter `save`, eller efter `save` + `reboot`), og giver et eksempel.
+- `help <felt>` — skriv præcis det du ser i `show`/`status`, fx `help rest.auth_mode` eller `help mgmt.token`, og få forklaringen på den kommando der sætter det. `help show` viser en samlet oversigt over, hvilken kommando der sætter hvert felt.
+
+---
+
 ## v0.28.6 — 2026-09-16 — Kanalnavnet er nu `mb_ch_A`/`mb_ch_B`
 
 Kanalnavnet i debug-/syslog-output (og selve FreeRTOS-task-navnet) staves nu med stort bogstav — `mb_ch_A`/`mb_ch_B` i stedet for `mb_ch_a`/`mb_ch_b`.
