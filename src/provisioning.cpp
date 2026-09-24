@@ -389,11 +389,16 @@ void provisioning_begin() {
   // som ogsaa afhaenger af den. Kaldes IKKE her igen (ville blot vaere overfloedigt).
   print_boot_banner();
 
+  // BUGS.md v0.29.1: CLI'ens arbejdskopi indlæses ALTID fra den gemte
+  // konfiguration — ikke kun efter en vellykket WiFi-"connect". Ellers
+  // viste "show" tomme felter efter genstart på et board sat op med "save"
+  // alene, og næste "save"/"rest ..." overskrev hele NVS med den tomme kopi.
+  mb_config_to_provisioning_state(&config_get(), &g_state);
+
   // Automatisk genforbindelse ved boot, hvis boardet allerede er
   // provisioneret (§3.4's "CLI'en er altid tilgængelig"-princip — en
   // genstart skal ikke kræve at et menneske genindtaster credentials).
   if (config_get().provisioned && config_get().wifi_has_ssid) {
-    mb_config_to_provisioning_state(&config_get(), &g_state);
     // v0.21.0 (Jan: "kan vi disable wifi også fra cli") — "wifi disable"
     // springer KUN denne automatiske boot-tids-genforbindelse over; en
     // eksplicit "connect" fra CLI'en virker stadig uanset flaget.

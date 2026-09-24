@@ -538,13 +538,13 @@ void mb_config_to_provisioning_state(const mb_board_config_t *config, mb_provisi
   strncpy(out_state->ip, config->wifi_ip, sizeof(out_state->ip) - 1);
   strncpy(out_state->mask, config->wifi_mask, sizeof(out_state->mask) - 1);
   strncpy(out_state->gw, config->wifi_gw, sizeof(out_state->gw) - 1);
-  // ip/mask/gw persisteres kun ved en vellykket "connect", som selv kræver
-  // (via is_ready_to_connect() i lib/provisioning_cli) at alle tre var sat
-  // når wifi_static_ip er true — derfor er wifi_static_ip alene en
-  // pålidelig proxy for "disse tre felter er reelt udfyldt".
-  out_state->has_ip = config->wifi_static_ip;
-  out_state->has_mask = config->wifi_static_ip;
-  out_state->has_gw = config->wifi_static_ip;
+  // BUGS.md v0.29.1: udledt af om feltet reelt har indhold — IKKE af
+  // wifi_static_ip. "save" persisterer også et delvist udfyldt static-sæt
+  // (ikke kun en vellykket "connect"), så wifi_static_ip er ingen pålidelig
+  // proxy for at alle tre felter er sat.
+  out_state->has_ip = config->wifi_ip[0] != '\0';
+  out_state->has_mask = config->wifi_mask[0] != '\0';
+  out_state->has_gw = config->wifi_gw[0] != '\0';
 
   strncpy(out_state->plc_ip, config->plc_ip, sizeof(out_state->plc_ip) - 1);
   out_state->has_plc_ip = config->has_plc_ip;

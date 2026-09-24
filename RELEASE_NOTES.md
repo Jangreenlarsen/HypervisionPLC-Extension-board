@@ -2,6 +2,12 @@
 
 ---
 
+## v0.29.1 — 2026-09-24 — Rettet: gemte indstillinger forsvandt efter genstart
+
+`save` gemte faktisk indstillingerne (fx `plc ip`), men på et board der aldrig havde haft en vellykket WiFi-`connect`, viste `show` dem som "(ikke sat)" efter en genstart — og det næste `save` eller `rest ...` slettede dem så reelt. Nu indlæses den gemte konfiguration altid ved opstart, uanset om WiFi er brugt.
+
+---
+
 ## v0.29.0 — 2026-09-24 — Ny, sektionsopdelt `help` i den serielle CLI
 
 - `help` viser nu kommandoerne grupperet i sektioner (WiFi, Ethernet, netværk og adgang, REST-API-login, logging og diagnose, system, hjælp).

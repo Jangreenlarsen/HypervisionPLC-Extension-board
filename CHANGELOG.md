@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.29.1 build 0046] — 2026-09-24 — fix: gemt konfiguration forsvandt efter genstart (plc ip m.m.)
+
+**Baggrund:** Jan: "save fungere ikke som den skal plc ip bliver ikke save m.m." — se BUGS.md v0.29.1.
+
+**`src/provisioning.cpp`:** `provisioning_begin()` indlæser nu ALTID CLI'ens arbejdskopi (`g_state`) fra den gemte konfiguration (`mb_config_to_provisioning_state()`), ikke kun når boardet er `provisioned` (= har haft en vellykket WiFi-`connect`). Tidligere startede et board sat op med `save` alene med en tom `g_state` — `show` viste "(ikke sat)", og næste `save`/`rest ...` overskrev hele NVS med de tomme felter. Den automatiske WiFi-genforbindelse er uændret betinget af `provisioned`.
+
+**`lib/board_config/board_config.cpp`:** `mb_config_to_provisioning_state()` udleder nu `has_ip/has_mask/has_gw` af om feltet har indhold, i stedet for af `wifi_static_ip` (som antog at de kun persisteres ved en vellykket `connect` — ikke sandt, `save` persisterer dem også).
+
+**Tests:** ny `test_saved_config_without_connect_survives_reboot` (`test/test_board_config/`) — apply → rigtig NVS-blob-serialisering → load → CLI-state for et board der aldrig har kørt `connect`, inkl. et delvist udfyldt static-sæt.
+
+**Filer ændret:** `src/provisioning.cpp`, `lib/board_config/board_config.cpp`, `test/test_board_config/test_board_config.cpp`, `BUGS.md`, `version.json`.
+
+**Status:** 305/305 native-tests grønne. Bygger for esp32dev. **Live-verificeret** på fysisk hardware (Ethernet-only board, aldrig WiFi-`connect`): `show` viste `plc.ip: 10.1.1.30` straks efter opstart (før rettelsen: "(ikke sat)"), og værdien overlevede `save` → `reboot` → `show`.
+
 ## [0.29.0 build 0045] — 2026-09-24 — Udførlig, sektionsopdelt `help` i den serielle CLI
 
 **Baggrund:** Jan: "opret en help i cli som forklar alle cli commandos hvad de skal brugs" / "da det man se i cli ikke er det samme som de kommando man skal slå så skal vi bruge en help" / "i den help skal ting være opdelt i seksioner". Feltnavnene i `show` (fx `rest.auth_mode`) svarer ikke til de kommandoer man skriver (`rest auth ...`), og den gamle `help` var én lang, usorteret liste.
