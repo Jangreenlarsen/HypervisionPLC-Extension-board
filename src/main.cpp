@@ -5,6 +5,7 @@
 #include "http_server.h"
 #include "modbus_channel.h"
 #include "modbus_tcp_server.h"
+#include "ota_manager.h"
 #include "provisioning.h"
 #include "syslog_sender.h"
 
@@ -21,6 +22,11 @@ void setup() {
   // status (samme filosofi som modbus_channel_init_all() nedenfor) -
   // UDP-afsendelse fejler blot stille indtil et interface reelt har en IP.
   syslog_sender_begin();
+  // v0.30.0: afgoer om denne firmware er en ny, endnu ubekraeftet OTA-
+  // opdatering (starter i saa fald rollback-deadline'en) - tidligt, saa en
+  // firmware der crasher senere i setup() stadig rulles tilbage af
+  // bootloaderen (den er ikke markeret gyldig foer ota_manager_confirm()).
+  ota_manager_begin();
   modbus_channel_init_all();  // uafhaengigt af WiFi-status, se modbus_channel.h
   // valgfri W5500-Ethernet, dual-stack med WiFi - fejler stille uden hardware
   // tilsluttet. enable/disable + static-IP (v0.20.0, "eth ..."-CLI) laeses

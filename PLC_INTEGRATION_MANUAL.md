@@ -237,16 +237,25 @@ Exception-/fejl-svar: samme form som `/read` (afsnit 4.5).
 
 **Bemærk:** ikke alle slave-devices understøtter alle function codes — nogle svarer med en ægte Modbus-exception (`Illegal Function`, kode 1), andre svarer slet ikke (giver en `502 channel_error` med `MB_TIMEOUT`). Begge er set og verificeret i praksis (se CHANGELOG.md v0.11.0).
 
-### 4.7 OTA-firmwareopdatering
+### 4.7 OTA-firmwareopdatering (v0.30.0: bekræftelse + automatisk rollback)
 
-- **`POST /api/ota`** — rå binær body (`.bin`-filen direkte, IKKE multipart — samme mønster som `curl --data-binary @firmware.bin`). Skrives chunket til den inaktive OTA-partition og verificeres automatisk (checksum). Svar ved succes:
+**Den fulde PLC-side-implementeringsplan (forløb, relay-handler, web-UI, fejltekster, acceptkriterier) står i [PLC_OTA_INTEGRATION_PLAN.md](PLC_OTA_INTEGRATION_PLAN.md).** Kort API-reference:
+
+- **`POST /api/ota`** — rå binær body (`.bin`-filen direkte, IKKE multipart — samme mønster som `curl --data-binary @firmware.bin`). **`Content-Length` påkrævet** (ellers `411 length_required` — chunked transfer-encoding understøttes ikke). Valgfri header **`X-Firmware-MD5: <32 hex>`** (v0.30.0) verificeres mod det skrevne image. Skrives chunket til den inaktive OTA-partition og verificeres. Svar ved succes:
   ```json
-  {"ok": true, "message": "Firmware uploadet og verificeret - kald POST /api/reboot for at aktivere", "bytes": 810257}
+  {"ok": true, "message": "Firmware uploadet og verificeret - kald POST /api/reboot for at aktivere", "bytes": 896688, "new_version": "0.30.0-b0048", "md5_verified": true}
   ```
-  Fejler uploadet (forkert magic byte, for stor til partitionen, afbrudt forbindelse, checksum-fejl), svares der med `400`/`500` og en beskrivende `message` — boardet forbliver upåvirket på den KØRENDE firmware.
-- **`GET /api/ota/status`** — følg fremdriften: `{"state": "idle|in_progress|success|failed", "received": 0, "total": 0, "percent": 0, "error": ""}`.
-- **`POST /api/reboot`** — **påkrævet efter en vellykket `/api/ota`** for reelt at aktivere den nye firmware. Et vellykket OTA-upload sætter KUN den nye firmware som boot-partition — boardet fortsætter uforstyrret på den gamle, kørende firmware indtil denne genstart eksplicit kaldes. Svarer `{"ok": true, "message": "Genstarter..."}` og genstarter ca. 500 ms senere.
-- Kun ÉT OTA-upload ad gangen — et samtidigt forsøg giver `409 Conflict`.
+  Afvisninger (boardet forbliver ALTID på den kørende firmware): `400 ota_invalid_image` (ikke `0xE9`), `400 ota_wrong_firmware` (v0.30.0 — imaget mangler boardets identitets-markør `HVEXT-FWID:hypervisionplc-extension-board:<version>;`, fx PLC'ens egen firmware), `400 bad_md5`, `400 ota_begin_failed`, `409 ota_in_progress`, `409 ota_pending_confirm` (v0.30.0 — se nedenfor), `413 ota_too_large` (v0.30.0), `500 ota_failed`/`ota_verify_failed`.
+- **`POST /api/reboot`** — **påkrævet efter en vellykket `/api/ota`** for at aktivere den nye firmware. Svarer `{"ok": true, "message": "Genstarter..."}` og genstarter ca. 500 ms senere.
+- **Bekræftelse + rollback (v0.30.0):** første opstart af en ny firmware er **"afventer bekræftelse"**. PLC'en skal kalde **`POST /api/ota/confirm`** (når den har verificeret boardet) inden **600 s** — ellers, eller hvis den nye firmware crasher/genstarter inden, starter boardet igen på den forrige firmware. **En `POST /api/reboot` i dette vindue ruller derfor bevidst tilbage.** Mens der afventes bekræftelse, afvises nye uploads med `409 ota_pending_confirm` (de ville overskrive rollback-målet). `POST /api/ota/confirm` er idempotent: `{"ok":true,"confirmed":true|false,"running_version":"...","message":"..."}`; `500 ota_confirm_failed` = prøv igen.
+- **`GET /api/ota/status`:**
+  ```json
+  {"state": "idle|in_progress|success|failed", "received": 0, "total": 0, "percent": 0, "error": "",
+   "running_version": "0.30.0-b0048", "new_version": "", "pending_confirm": true, "confirm_remaining_s": 594,
+   "last_update_rolled_back": false}
+  ```
+  `running_version` (inkl. build-nummer) er den autoritative kilde til "hvilken firmware kører" efter en opdatering. **Kan ikke aflæses mens et upload står på** — boardets HTTP-server har én arbejdstråd; PLC'en tæller selv fremdriften.
+- Kun ÉT OTA-upload ad gangen.
 
 ### 4.8 `GET /api/capabilities` (v0.28.0)
 
@@ -325,7 +334,7 @@ Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsn
 - **W5500-Ethernet (v0.13.0) er implementeret men IKKE hardware-verificeret** — kun boot-testet uden fysisk modul tilsluttet (fejler sikkert, resten af boardet upåvirket). Link/DHCP/faktisk dataoverførsel over Ethernet er endnu ikke testet.
 - **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode` kan IKKE sættes via REST (se nedenfor) — kræver at MODE_SEL-jumperen fysisk flyttes til GND, hvilket ikke er afprøvet endnu.
 - **Ingen `POST /api/channels/{n}/reset-stats`/`POST /api/stats/reset`** — statistikken (afsnit 4.3) kan kun nulstilles ved reboot.
-- **OTA-uploadets fremdrift kan IKKE afbrydes** — en gang startet, kører uploadet til den lykkes eller fejler; der er intet "annullér"-endpoint.
+- **OTA-uploadet har intet "annullér"-endpoint** — det afbrydes ved at lukke forbindelsen (boardet kasserer da uploadet og bliver på den kørende firmware). Fremdriften kan ikke aflæses via `GET /api/ota/status` mens uploadet står på (én HTTP-arbejdstråd).
 - **`active_channels` er altid 2, ikke auto-detekteret** — designdokumentets §2.2.2 (auto-detektion af bestykning) gælder kun Variant B.
 - **RS232/RS485-mode er nu ÉN fabriksvalgt hardware-input for HELE boardet, ikke et PUT-bart felt** (hardware-revision 2026-09-14, §2.0.1) — kanal A og B kan ikke have forskellig mode, og mode kan ikke ændres via REST uden en fysisk jumper-omkobling. Se afsnit 4.4's boks om dette.
 - Se [FEATURES.md](FEATURES.md)'s "Planlagte features" for den fulde, opdaterede liste over hvad der mangler.

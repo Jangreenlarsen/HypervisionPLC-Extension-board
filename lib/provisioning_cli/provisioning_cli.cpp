@@ -431,6 +431,20 @@ static const help_topic_t kHelpTopics[] = {
      "  kanalens opsaetning (baud, paritet, timeout) saettes fra PLC'en, ikke her\r\n"
      "--- Eksempel ---\r\n"
      "  test 1 9 3 0 10         laes 10 holding-registre fra slave 9 paa kanal A\r\n"},
+    {"ota",
+     "=== OTA - firmwareopdatering (styres normalt fra PLC'en) ===\r\n"
+     "--- Kommandoer ---\r\n"
+     "  ota confirm             bekraeft en ny firmware manuelt (normalt goer PLC'en det)\r\n"
+     "--- Saadan virker det ---\r\n"
+     "  PLC'en uploader firmwaren (POST /api/ota) og genstarter boardet. Foerste\r\n"
+     "  opstart afventer bekraeftelse: bekraeftes den ikke inden 10 minutter, eller\r\n"
+     "  crasher den, ruller boardet selv tilbage til den forrige firmware\r\n"
+     "  kun boardets egen firmware accepteres (identitets-markoer i filen)\r\n"
+     "--- Vises i 'status' som ---\r\n"
+     "  ota.firmware_id, ota.pending_confirm (sekunder til rollback), ota.last_rolled_back\r\n"
+     "--- Eksempel ---\r\n"
+     "  status\r\n"
+     "  ota confirm\r\n"},
     {"show",
      "=== SHOW - vis al konfiguration (klartekst, inkl. adgangskoder og token) ===\r\n"
      "Viser det du har indtastet - ogsaa aendringer der endnu ikke er gemt.\r\n"
@@ -461,7 +475,8 @@ static const help_topic_t kHelpTopics[] = {
      "--- Viser ---\r\n"
      "  firmware, uptime_s (sekunder siden opstart), heap_free_bytes (fri RAM),\r\n"
      "  hostname, board_mode, WiFi-/Ethernet-forbindelse, debug.channel_a/b,\r\n"
-     "  rest.api (URL), provisioned, mgmt.token, rest.auth_mode, modbus_tcp-porte\r\n"
+     "  rest.api (URL), provisioned, mgmt.token, rest.auth_mode, modbus_tcp-porte,\r\n"
+     "  ota.firmware_id, ota.pending_confirm, ota.last_rolled_back (se 'help ota')\r\n"
      "--- Forskel til 'show' ---\r\n"
      "  status viser den GEMTE konfiguration boardet koerer med,\r\n"
      "  show viser det du har indtastet - ogsaa det der endnu ikke er gemt\r\n"},
@@ -521,7 +536,7 @@ static const help_topic_t kHelpTopics[] = {
      "  help <emne>             udfoerlig forklaring, fx 'help wifi'\r\n"
      "  help <felt>             forklaring af et felt fra 'show'/'status', fx 'help rest.auth_mode'\r\n"
      "--- Emner ---\r\n"
-     "  wifi eth hostname plc rest token syslog debug test show status\r\n"
+     "  wifi eth hostname plc rest token syslog debug test ota show status\r\n"
      "  save connect reboot factory-reset version board_mode no help\r\n"},
 };
 
@@ -634,7 +649,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
       const help_topic_t *topic = find_help_topic(tokens[1]);
       if (topic == nullptr) {
         snprintf(out_message, out_message_capacity,
-                 "ukendt hjaelpe-emne '%s'. Emner: wifi eth hostname plc rest token syslog debug test show "
+                 "ukendt hjaelpe-emne '%s'. Emner: wifi eth hostname plc rest token syslog debug test ota show "
                  "status save connect reboot factory-reset version board_mode no help - eller et felt fra "
                  "'show', fx 'help rest.auth_mode'",
                  tokens[1]);
@@ -683,6 +698,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(m, cap, &pos, "save", "gem i flash uden at forbinde WiFi");
     append_line(m, cap, &pos, "connect", "forbind til WiFi og gem");
     append_line(m, cap, &pos, "reboot", "genstart - rydder INTET");
+    append_line(m, cap, &pos, "ota confirm", "bekraeft ny firmware efter OTA - 'help ota'");
     append_line(m, cap, &pos, "factory-reset confirm", "slet AL konfiguration og genstart");
     append_line(m, cap, &pos, "version", "vis firmware-version+build");
     append_section(m, cap, &pos, "Hjaelp");
@@ -754,6 +770,17 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     }
     snprintf(out_message, out_message_capacity, "ok - genererer nyt management-API-token");
     return PROV_ACTION_TOKEN_REGENERATE;
+  }
+
+  // v0.30.0 — manuel bekræftelse af en ny OTA-firmware (normalt gør PLC'en
+  // det via POST /api/ota/confirm, se PLC_OTA_INTEGRATION_PLAN.md).
+  if (ieq(tokens[0], "ota")) {
+    if (token_count < 2 || !ieq(tokens[1], "confirm")) {
+      snprintf(out_message, out_message_capacity, "brug 'ota confirm' (se 'help ota')");
+      return PROV_MISSING_ARGUMENT;
+    }
+    snprintf(out_message, out_message_capacity, "ok - bekraefter den koerende firmware");
+    return PROV_ACTION_OTA_CONFIRM;
   }
 
   if (ieq(tokens[0], "factory-reset")) {
