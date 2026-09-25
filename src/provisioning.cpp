@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
+#include <cerrno>
 #include <cstring>
 #include <strings.h>
 
@@ -356,6 +357,24 @@ void print_status() {
     Serial.print("rest.pass: ");
     Serial.println(config_get().has_rest_pass ? config_get().rest_pass : "(ikke sat)");
   }
+
+  // v0.30.1 (BUGS.md) — syslog-afsendelsens tællere: en modtager der ikke
+  // kan naas, ses her i stedet for som fejllinjer paa konsollen.
+  syslog_sender_stats_t syslog_stats;
+  syslog_sender_get_stats(&syslog_stats);
+  Serial.printf("syslog.sent: %lu, syslog.failed: %lu, syslog.queue_dropped: %lu",
+                static_cast<unsigned long>(syslog_stats.sent), static_cast<unsigned long>(syslog_stats.failed),
+                static_cast<unsigned long>(syslog_stats.queue_dropped));
+  if (syslog_stats.last_errno != 0) {
+    Serial.printf(" (sidste fejlkode: %d", syslog_stats.last_errno);
+    // Live-verificeret (BUGS.md v0.30.1): en modtager der ikke svarer paa
+    // netvaerket (ARP) giver netop ENOMEM, én pakke pr. burst.
+    if (syslog_stats.last_errno == ENOMEM) {
+      Serial.print(" - modtageren svarer ikke paa netvaerket: tjek syslog-serverens IP og at den koerer");
+    }
+    Serial.print(")");
+  }
+  Serial.println();
 
   // v0.30.0 — OTA-tilstand (se 'help ota').
   Serial.print("ota.firmware_id: ");

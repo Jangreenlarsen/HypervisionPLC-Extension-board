@@ -4,6 +4,22 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.30.1 build 0048] — 2026-09-25 — fix: syslog-fejl lignede WiFi-fejl på konsollen; syslog sendes nu fra egen task
+
+**Baggrund:** Jan: "jeg få en fejl ved modbus read på wifi selv om jeg køre med ethernet modul kun, se ud som om jeg ikke kan disable wifi selv om comand bliver accepteret" — `[E][WiFiUdp.cpp:185] endPacket(): could not send data: 12` efter hver Modbus-transaktion. Se BUGS.md v0.30.1.
+
+**Årsag (live-genskabt):** linjen kom fra syslog-afsenderen (Arduino-klassen `WiFiUDP` — en almindelig socket, sender via Ethernet; WiFi VAR slået fra). Syslog-modtageren `10.1.1.75` svarer ikke på netværket; ventende pakker til en adresse uden ARP-svar fylder netværksstakkens kø, og den næste afvises med `ENOMEM` (12) — præcis én pakke pr. transaktion-burst, genskabt 1:1 på testboardet med samme modtager-IP. Arduino-corens `log_e()` skrev den ubetingede `[E]`-linje.
+
+**`src/syslog_sender.cpp`:** omskrevet. `syslog_log()` lægger nu kun beskeden i en kø (32 pladser, aldrig blokerende — fuld kø tælles som `queue_dropped`); en egen lav-prioritets task (`syslog_tx`) sender via en egen lwIP-socket (ingen `WiFiUDP` → `could not send data`-strengen er væk fra binæren) med op til 3 genforsøg ved `ENOMEM`/`EAGAIN`. Modbus-kanal-tasks laver dermed ikke længere netværks-I/O midt i en transaktion. Modtager-listen beskyttes af en mutex mod en samtidig `syslog_sender_refresh()`.
+
+**`src/syslog_sender.h`:** ny `syslog_sender_get_stats()` (sent/failed/queue_dropped/last_errno).
+
+**`src/provisioning.cpp`:** `status` viser `syslog.sent/failed/queue_dropped` + sidste fejlkode, med forklaring ved 12 ("modtageren svarer ikke paa netvaerket"). **`lib/provisioning_cli`:** `help syslog` forklarer tællerne.
+
+**Filer ændret:** `src/syslog_sender.cpp`, `src/syslog_sender.h`, `src/provisioning.cpp`, `lib/provisioning_cli/provisioning_cli.cpp`, `BUGS.md`, `version.json`.
+
+**Status:** 317/317 native-tests grønne. Bygger for esp32dev. **Live-verificeret** på testboardet (OTA-opdateret 0.30.0 → 0.30.1 og bekræftet): level 8-burst til en lyttende PC — 12/12 pakker modtaget, `failed: 0`; modtager `10.1.1.75` — `failed: 3` (én pr. transaktion, fejlkode 12 med forklaring), 0 `[E]`-linjer. CLI'ens `ota.firmware_id`-linje i `status` bekræftet på hardware (manglede i v0.30.0).
+
 ## [0.30.0 build 0047] — 2026-09-24 — PLC-styret OTA: identitetstjek, MD5, bekræftelse + automatisk rollback
 
 **Baggrund:** Jan: "kan vi implementere OTA så det kan styre og upload fra PLC, hvis ja og med en plan som jeg kan tag med over til PLC team" / "vi har firewall access regl for at kun PLC ip kan nå PLC expansions boardet så der for tænker jeg at hvis vi kan styre det fra plc". v0.12.0's `POST /api/ota` virkede, men havde intet sikkerhedsnet for en fjernstyret opdatering: PLC'ens egen `.bin` (også en ESP32-firmware, `0xE9`) ville være accepteret, og en ny firmware der ikke kom på nettet igen krævede fysisk USB-adgang.

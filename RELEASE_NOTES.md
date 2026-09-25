@@ -2,6 +2,16 @@
 
 ---
 
+## v0.30.1 — 2026-09-25 — Rettet: vildledende "WiFi"-fejl på konsollen
+
+Efter Modbus-læsninger kunne konsollen vise `[E][WiFiUdp.cpp:185] endPacket(): could not send data: 12` — også når WiFi var slået fra. Linjen havde intet med WiFi at gøre: den kom fra syslog-afsendelsen, når syslog-serveren ikke kunne nås på netværket.
+
+- Fejllinjen vises ikke længere på konsollen.
+- `status` viser i stedet, hvor mange syslog-beskeder der er sendt, og hvor mange der ikke kunne sendes — med en forklaring, hvis serveren ikke svarer.
+- Syslog sendes nu i baggrunden, så Modbus-kanalerne aldrig venter på netværket for at logge.
+
+---
+
 ## v0.30.0 — 2026-09-24 — Sikker firmwareopdatering styret fra PLC'en
 
 Boardet er nu klar til at blive opdateret fjernstyret fra PLC'en — med et sikkerhedsnet, så en opdatering aldrig kan efterlade boardet uden netværk:

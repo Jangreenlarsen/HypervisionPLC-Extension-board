@@ -17,8 +17,8 @@
 void syslog_sender_begin();
 void syslog_sender_refresh();
 
-// Sender `message` til hver konfigureret modtager hvis dens `max_level >=
-// level` (se lib/syslog_client.h for facility/level-semantik). Ingen
+// Lægger `message` i kø til hver konfigureret modtager hvis dens `max_level >=
+// level` (v0.30.1: selve afsendelsen sker i en egen task, se syslog_sender.cpp) (se lib/syslog_client.h for facility/level-semantik). Ingen
 // modtagere konfigureret, eller ingen matcher, er en billig, hurtig no-op.
 void syslog_log(mb_syslog_facility_t facility, uint8_t level, const char *message);
 
@@ -27,3 +27,14 @@ void syslog_log(mb_syslog_facility_t facility, uint8_t level, const char *messag
 // et kaldested der selv kan køre på en lille FreeRTOS-task-stak, fx
 // channel_task()). Lange beskeder afkortes stille.
 void syslog_logf(mb_syslog_facility_t facility, uint8_t level, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
+
+// v0.30.1 (BUGS.md): beskeder lægges i en kø og sendes af en egen task —
+// tællere til CLI'ens "status", så en syslog-modtager der ikke kan nås er
+// synlig i stedet for at give fejllinjer på konsollen.
+struct syslog_sender_stats_t {
+  uint32_t sent;           // pakker afleveret til netværksstakken
+  uint32_t failed;         // pakker der ikke kunne sendes (efter genforsøg)
+  uint32_t queue_dropped;  // beskeder smidt væk fordi køen var fuld (burst)
+  int last_errno;          // seneste socket-fejlkode, 0 hvis ingen
+};
+void syslog_sender_get_stats(syslog_sender_stats_t *out);
