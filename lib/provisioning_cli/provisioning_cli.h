@@ -42,9 +42,15 @@ constexpr size_t MB_PROV_MSG_MAX_LEN = 4096;
 // v0.25.0 (Jan: "lave en debug som outputer til console alt hvad der forgå
 // på kanal A og B") — hvilke(n) kanal(er) en "debug modbus ..."-kommando
 // gælder. Jans egen syntaks: "debug modbus a|b|all level 1-8".
-enum class mb_debug_target_t : uint8_t { kA, kB, kAll };
+// v0.31.0: kC/kD = kanal C/D (CJMCU-752) — om de er aktive afgøres på
+// boardet (src/provisioning.cpp), ikke af denne hardware-uafhængige parser.
+enum class mb_debug_target_t : uint8_t { kA, kB, kAll, kC, kD };
 
 constexpr uint8_t MB_PROV_DEBUG_LEVEL_MAX = 8;
+
+// v0.31.0: "test <kanal>" accepterer 1-4 (A-D). Om kanal 3/4 reelt er
+// aktive (CJMCU-752 monteret) tjekker boardet selv ved udførelsen.
+constexpr uint32_t MB_CHANNEL_COUNT_MAX_CLI = 4;
 
 // v0.26.0 (Jan: "kan vi lave en syslog funktion som vi kan sætte et target
 // på som modtager af syslog" / "en eller flere target" / "vi skal have lave

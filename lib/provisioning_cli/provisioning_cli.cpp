@@ -407,7 +407,7 @@ static const help_topic_t kHelpTopics[] = {
     {"debug",
      "=== DEBUG - vis Modbus-trafikken paa kanal A/B live i denne konsol ===\r\n"
      "--- Kommandoer ---\r\n"
-     "  debug modbus <a|b|all> level <1-8>   slaa debug til, hoejere level = flere\r\n"
+     "  debug modbus <a|b|c|d|all> level <1-8>   slaa debug til, hoejere level = flere\r\n"
      "                                       detaljer, 8 = ogsaa raa hex-dump\r\n"
      "  no debug modbus         slaa debug fra paa begge kanaler (= 'no debug all')\r\n"
      "--- Vises i 'status' som ---\r\n"
@@ -422,7 +422,7 @@ static const help_topic_t kHelpTopics[] = {
      "=== TEST - diagnostisk Modbus-laesning direkte fra CLI'en ===\r\n"
      "--- Kommandoer ---\r\n"
      "  test <kanal> <slave_id> <fc> <adresse> <antal>\r\n"
-     "      kanal    = 1 (kanal A) eller 2 (kanal B)\r\n"
+     "      kanal    = 1-4 (kanal A-D; C og D kun med CJMCU-752 monteret)\r\n"
      "      slave_id = 1-247\r\n"
      "      fc       = 1 coils, 2 diskrete input, 3 holding-registre, 4 input-registre\r\n"
      "      adresse  = 0-65535 (0-baseret)\r\n"
@@ -691,7 +691,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     append_line(m, cap, &pos, "syslog add <ip> <port> <tag> <level 1-8>", "tilfoej syslog-modtager (maks 4)");
     append_line(m, cap, &pos, "syslog remove <tag>", "fjern en syslog-modtager");
     append_line(m, cap, &pos, "no syslog", "fjern ALLE syslog-modtagere");
-    append_line(m, cap, &pos, "debug modbus <a|b|all> level <1-8>", "vis Modbus-trafik live i konsollen");
+    append_line(m, cap, &pos, "debug modbus <a|b|c|d|all> level <1-8>", "vis Modbus-trafik live i konsollen");
     append_line(m, cap, &pos, "no debug modbus", "slaa debug fra (begge kanaler)");
     append_line(m, cap, &pos, "test <kanal> <slave_id> <fc> <adresse> <antal>", "laes fra en Modbus-slave (fc 1-4)");
     append_section(m, cap, &pos, "Vis, gem og system");
@@ -1188,13 +1188,13 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
   // adresse 0-65535, antal 1-2000. KUN læsning - ingen "test write".
   if (ieq(tokens[0], "test")) {
     if (token_count < 6) {
-      snprintf(out_message, out_message_capacity, "brug 'test <kanal 1|2> <slave_id> <fc 1-4> <adresse> <antal>'");
+      snprintf(out_message, out_message_capacity, "brug 'test <kanal 1-4> <slave_id> <fc 1-4> <adresse> <antal>'");
       return PROV_MISSING_ARGUMENT;
     }
 
     uint32_t n = 0, slave = 0, fc = 0, addr = 0, qty = 0;
-    if (!parse_uint_token(tokens[1], &n) || (n != 1 && n != 2)) {
-      snprintf(out_message, out_message_capacity, "ugyldig kanal '%s' - brug 1 (kanal A) eller 2 (kanal B)", tokens[1]);
+    if (!parse_uint_token(tokens[1], &n) || n < 1 || n > MB_CHANNEL_COUNT_MAX_CLI) {
+      snprintf(out_message, out_message_capacity, "ugyldig kanal '%s' - brug 1-4 (kanal A-D)", tokens[1]);
       return PROV_INVALID_VALUE;
     }
     if (!parse_uint_token(tokens[2], &slave) || slave == 0 || slave > 247) {
@@ -1230,7 +1230,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
   // den kun live via modbus_channel_set_debug_level(), rører aldrig NVS).
   if (ieq(tokens[0], "debug")) {
     if (token_count < 4 || !ieq(tokens[1], "modbus") || !ieq(tokens[3], "level") || token_count < 5) {
-      snprintf(out_message, out_message_capacity, "brug 'debug modbus <a|b|all> level <1-8>'");
+      snprintf(out_message, out_message_capacity, "brug 'debug modbus <a|b|c|d|all> level <1-8>'");
       return PROV_MISSING_ARGUMENT;
     }
 
@@ -1239,10 +1239,14 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
       target = mb_debug_target_t::kA;
     } else if (ieq(tokens[2], "b")) {
       target = mb_debug_target_t::kB;
+    } else if (ieq(tokens[2], "c")) {
+      target = mb_debug_target_t::kC;
+    } else if (ieq(tokens[2], "d")) {
+      target = mb_debug_target_t::kD;
     } else if (ieq(tokens[2], "all")) {
       target = mb_debug_target_t::kAll;
     } else {
-      snprintf(out_message, out_message_capacity, "ugyldig kanal '%s' - brug 'a', 'b' eller 'all'", tokens[2]);
+      snprintf(out_message, out_message_capacity, "ugyldig kanal '%s' - brug 'a', 'b', 'c', 'd' eller 'all'", tokens[2]);
       return PROV_INVALID_VALUE;
     }
 
@@ -1256,7 +1260,7 @@ mb_provisioning_result_t mb_provisioning_apply_line(mb_provisioning_state_t *sta
     state->debug_target = target;
     state->debug_level = static_cast<uint8_t>(level);
     snprintf(out_message, out_message_capacity, "ok - modbus-debug level %u for kanal %s",
-             static_cast<unsigned>(level), ieq(tokens[2], "all") ? "A+B" : tokens[2]);
+             static_cast<unsigned>(level), ieq(tokens[2], "all") ? "alle aktive" : tokens[2]);
     return PROV_ACTION_DEBUG_SET;
   }
 

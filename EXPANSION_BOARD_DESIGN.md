@@ -204,7 +204,7 @@ Pr. kanal kræves 3 kanal-specifikke signaler (TX/RX/DIR) + 1 boardfælles signa
 | INT | GPIO39 | input-only, interrupt-drevet drift (ikke polling) af esp_eth-driveren |
 | RST | GPIO23 | Software-styret — **ændret 2026-09-14** (var oprindeligt "intet dedikeret RST" pr. 2026-09-13's beslutning). Frigjort ved at samle MODE_SEL til én delt GPIO (se ovenfor) i stedet for én pr. kanal. |
 
-Bevidst IKKE brugt: GPIO21/GPIO22 (Arduino-frameworkets sædvanlige default I2C-pins, SDA/SCL) — holdt fri til fremtidig I2C (display, RTC, e.l.), selvom de var elektrisk lige så velegnede til SPI. GPIO26/33 (aktivitets-LED'erne ovenfor) er heller ikke rørt.
+GPIO21/GPIO22 (Arduino-frameworkets sædvanlige default I2C-pins, SDA/SCL) blev holdt fri til fremtidig I2C — **v0.31.0 (2026-09-25): nu brugt til CJMCU-752 (SC16IS752, 2× UART over I2C) = kanal C+D**, med EXP_SEL-jumper på GPIO36 (3,3 V = monteret, ekstern pull-down) og modulets IRQ reserveret på GPIO34. Et board kan dermed have 2 eller 4 kanaler (port 502-505); alle følger samme MODE_SEL. Se [GPIO_MAPPING.md](GPIO_MAPPING.md) for tilslutningen. GPIO26/33 (aktivitets-LED'erne ovenfor) er heller ikke rørt.
 
 **Software-arkitektur-note (når W5500 rent faktisk implementeres):** kør Ethernet-driveren i sin egen FreeRTOS-task (samme mønster som kanal-tasksene, §3.2) for at undgå at en SPI-transaktion nogensinde kan sulte kanal A/B's UART-læsning for CPU-tid — overvej at pin'e den til core 0, mens kanal-tasks/Modbus TCP-serveren kører på core 1.
 

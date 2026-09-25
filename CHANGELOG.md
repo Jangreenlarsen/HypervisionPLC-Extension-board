@@ -4,6 +4,32 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.31.0 build 0049] — 2026-09-25 — Kanal C+D via CJMCU-752 (SC16IS752 over I2C), board_type og EXP_SEL-jumper
+
+**Baggrund:** Jan: "jeg har det her uart board med 2xuart model cjmcu-752 hvordan kan vi implementere det". Afklaret: kanal C+D OVENI A+B (4 kanaler, port 502-505), I2C på GPIO21/22, 1,8432 MHz-krystal. Undervejs: "board skal signalere til plc at det er et 4 x rs232 eller 4 x rs485, alt efter jumper" og "vi skal bruge et jumper mere til at fortælle at vi har den ny chip ombord".
+
+**Ny `lib/sc16is75x/`** (native-testbar): registerkonstanter, I2C-subadresse, baud-divisor med ±1 %-tjek (1,8432 MHz: 1200-115200 eksakt, højere afvises), LCR/EFCR/MCR-værdier (RS485: auto-RTS som DE/RE; RS232: RTS holdt lavt så en evt. RS485-driver er slukket).
+
+**Nyt Lag 3 (`src/`):** `channel_port.h` (fælles UART-interface), `uart_port_native.cpp` (kanal A/B — uændret opførsel, `serial_config_for()` flyttet hertil), `uart_expander.cpp` (SC16IS752 over I2C, 400 kHz: finder chippen på alle 16 adresser 0x48-0x57 via scratch-register-test, én bus-mutex for begge UART'er, FIFO læses/skrives i hele bidder pr. I2C-transaktion — byte for byte ville ikke følge med ved 115200 baud — aktivitets-LED'er på chippens GPIO0/GPIO1).
+
+**`src/modbus_channel.cpp`:** kanal-tasken bruger nu `ChannelPort` i stedet for `HardwareSerial` direkte; manuel DE/RE-toggling kun for porte der ikke selv styrer retningen. `ModbusChannelId::kC/kD`. EXP_SEL-jumper på GPIO36 (læst ved boot): **3,3 V = CJMCU-752 monteret** → 4 kanaler. Jumperen er autoritativ — svarer chippen ikke, er C/D stadig aktive men afviser transaktioner (`MB_CHANNEL_UNREACHABLE`) og logges til syslog. Nye `modbus_channel_active_count()`, `modbus_channel_expander_status()`, `modbus_channel_hardware_present()`, `modbus_channel_max_baudrate()`.
+
+**Polaritet ændret undervejs (live-fund):** første version brugte "GND = monteret". På testboardet UDEN modstand læste den flydende GPIO36 LAV → boardet påstod fejlagtigt `4xRS232, expander: not_found`. Vendt til "3,3 V = monteret" med ekstern pull-down, så en manglende modstand typisk giver den sikre, hidtidige opførsel (2 kanaler) — modstanden er stadig påkrævet.
+
+**Config schema 7 → 8 (`lib/board_config/`):** `channel[]` 2 → 4. Ny konstant `MB_CHANNEL_COUNT_SCHEMA_3_TO_7 = 2` i de frosne v3-v7-structs, frossen `mb_board_config_v7_t` + `migrate_v7_to_current()` (A+B uændret, C+D defaults). **Rettet latent fejl:** `migrate_v2_to_v3()`'s løkke og `migrate_v5/v6_to_current()`'s `memcpy(..., sizeof(out->channel))` ville have læst/skrevet ud over 2-kanals-arrays, når `MB_CHANNEL_COUNT` blev hævet. `static_assert` sikrer at alle schema-størrelser er forskellige (indlæsning genkender schema på størrelsen).
+
+**REST (`src/http_server.cpp`, `lib/rest_status/`, `lib/channel_config/`):** `/api/status` har `active_channels` 2/4, **`board_type`** (`"4xRS485"`/`"4xRS232"`/`"2xRS485"`/`"2xRS232"`) og **`expander`** (`not_fitted`/`ok`/`not_found`). `/api/channels/{3,4}`; kanal-`status` kan være `"unavailable"`. `PUT` til kanal 3/4 over 115200 → `400 invalid_baudrate`. Kanal-listens buffer 1024 → 2048 med grænsetjek. **Modbus TCP:** port 504/505 startes kun ved 4 kanaler.
+
+**CLI:** `test <kanal 1-4>`, `debug modbus <a|b|c|d|all>`, `status` viser `board_type` + expander-tilstand og debug-niveau for alle aktive kanaler; klar besked hvis kanal 3/4 ikke er aktiv.
+
+**Dokumentation:** `GPIO_MAPPING.md` (GPIO21/22 I2C, GPIO36 EXP_SEL, GPIO34 IRQ reserveret, ledningsguide til CJMCU-752), `PLC_INTEGRATION_MANUAL.md` (§3.1 port 504/505, §4.2 board_type/expander, §4.3 unavailable, §4.4 baud-grænse, §7), `EXPANSION_BOARD_DESIGN.md` §2.0.1, `ARCHITECTURE.md`, `CLAUDE.md`.
+
+**Tests:** 12 nye — `test_sc16is75x` (6: subadresse, divisorer 1200-115200, >115200 afvist, ueksakt/ugyldige argumenter, LCR, EFCR/MCR), schema 7→8-migration + genindlæsning, v6→aktuel giver rene C/D-defaults, `board_type`/`expander` i status-JSON, `status:"unavailable"`, CLI kanal 3/4 + debug c/d.
+
+**Filer:** `lib/sc16is75x/*` (ny), `src/channel_port.h`, `src/uart_port_native.*`, `src/uart_expander.*` (nye), `src/modbus_channel.*`, `src/modbus_tcp_server.cpp`, `src/http_server.cpp`, `src/provisioning.cpp`, `lib/board_config/*`, `lib/rest_status/*`, `lib/channel_config/*`, `lib/provisioning_cli/*`, `test/*`, dokumentation, `version.json`.
+
+**Status:** 329/329 native-tests grønne. Bygger for esp32dev. **Live-verificeret på testboardet (UDEN CJMCU-752):** OTA 0.30.1 → 0.31.0 — gemt schema-7-config overlevede (samme token virkede), `board_type:"2xRS232"`, `expander:"not_fitted"`, `/api/channels/3` → 404, port 504/505 lukkede, kanal A kører gennem det nye port-lag (diagnostisk læsning → timeout som forventet uden slave, tællet i statistikken). "Jumper sat, chip mangler"-stien sås også live med den første polaritet (`4xRS232`, `expander:"not_found"`). **IKKE verificeret på hardware:** alt med et rigtigt CJMCU-752-modul — I2C-detektion, baud/paritet på C/D, auto-RS485-retning via RTS, FIFO-burst ved høj baud, LED'er på modulets GPIO.
+
 ## [0.30.1 build 0048] — 2026-09-25 — fix: syslog-fejl lignede WiFi-fejl på konsollen; syslog sendes nu fra egen task
 
 **Baggrund:** Jan: "jeg få en fejl ved modbus read på wifi selv om jeg køre med ethernet modul kun, se ud som om jeg ikke kan disable wifi selv om comand bliver accepteret" — `[E][WiFiUdp.cpp:185] endPacket(): could not send data: 12` efter hver Modbus-transaktion. Se BUGS.md v0.30.1.

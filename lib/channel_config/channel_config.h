@@ -28,8 +28,11 @@ struct mb_channel_stats_t {
 // Bygger JSON for GET /api/channels/{n} (EXPANSION_BOARD_DESIGN.md §4.2's
 // eksempel-payload). `channel_number` er 1-baseret (n=1..MB_CHANNEL_COUNT).
 // Returnerer antal skrevne bytes, eller 0 hvis `out_capacity` er for lille.
+// v0.31.0: `hardware_present=false` (kanal C/D, EXP_SEL siger CJMCU-752 er
+// monteret, men chippen svarer ikke) giver "status":"unavailable" — ellers
+// ville en kanal der ikke kan sende noget, fejlagtigt fremstå som "ok".
 size_t mb_channel_build_json(int channel_number, const mb_channel_config_t *config, const mb_channel_stats_t *stats,
-                              char *out, size_t out_capacity);
+                              char *out, size_t out_capacity, bool hardware_present = true);
 
 // Parser en `PUT /api/channels/{n}/config`-JSON-body. §4.2: ATOMISK — ALLE
 // felter skal være til stede og gyldige (ingen PATCH-semantik); mangler

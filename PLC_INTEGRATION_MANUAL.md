@@ -60,6 +60,10 @@ Dette er den vej PLC'en skal bruge til NORMAL, høj-frekvent Modbus-drift — RE
 |---|---|
 | 502 | A (n=1) |
 | 503 | B (n=2) |
+| 504 | C (n=3) — kun når CJMCU-752 er monteret (v0.31.0) |
+| 505 | D (n=4) — kun når CJMCU-752 er monteret (v0.31.0) |
+
+Port 504/505 lyttes kun på, når `active_channels` er 4 (afsnit 4.2). Et board med 2 kanaler afviser forbindelser til dem.
 
 ### 3.2 Forbindelse og framing
 
@@ -120,6 +124,11 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
   "ethernet": {"connected": false, "status": "not_detected"}
 }
 ```
+**`board_type` og `expander` (v0.31.0):** `GET /api/status` indeholder også fx `"board_type":"4xRS485","expander":"ok"`.
+- `board_type` = `"<active_channels>x<RS485|RS232>"` — én streng PLC'en kan vise og validere direkte: `"2xRS485"`, `"2xRS232"`, `"4xRS485"` eller `"4xRS232"`. **Alle kanaler på et board har altid samme mode** (én MODE_SEL-jumper).
+- `active_channels` er **2 eller 4**, afgjort ved boot af boardets EXP_SEL-jumper (CJMCU-752 monteret eller ej).
+- `expander`: `"not_fitted"` (2 kanaler), `"ok"` (CJMCU-752 fundet, 4 kanaler) eller `"not_found"` — jumperen siger monteret, men chippen svarer ikke. Da er `active_channels` stadig 4, men kanal 3/4 har `"status":"unavailable"` og afviser alle transaktioner (REST: `error_code` 9, Modbus TCP: gateway-exception 0x0A "Gateway Path Unavailable"). Vis det som en hardwarefejl på boardet.
+
 `board_mode` (`"rs485"` eller `"rs232"`, v0.15.0) er boardets AKTUELLE RS232/RS485-mode — siden begge kanaler siden v0.14.0 deler én fysisk MODE_SEL-GPIO (§2.0.1), er dette den samme værdi som ENHVER kanals `mode`-felt i `GET /api/channels`. Foretrukket direkte kilde til board-mode fremfor at udlede den fra en tilfældig kanal. **Ren læseværdi (hardware-revision 2026-09-14, 2. ændring):** afspejler MODE_SEL-jumperens fysiske position, læst af firmwaren ved boot — kan IKKE påvirkes via REST, se afsnit 4.4.
 
 `ethernet.status` (v0.18.0) skelner mere præcist end `connected` alene: `"not_detected"` (intet W5500-modul fundet på SPI-bussen — hardware-/wiring-problem), `"link_down"` (modul fundet og driver kører, men PHY'en rapporterer intet link — netværkskabel/switch-port), `"waiting_dhcp"` (link oppe, venter på IP) eller `"connected"` (link oppe + IP). `connected` (boolean, uændret siden v0.13.0) er `true` UDELUKKENDE ved `"connected"`-status — de tre øvrige giver alle `connected:false`, men `status` fortæller PLC-siden PRÆCIS hvorfor, i stedet for kun at vide at Ethernet ikke virker lige nu.
@@ -127,7 +136,7 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
 
 ### 4.3 `GET /api/channels` og `GET /api/channels/{n}`
 
-`n` er **1-baseret**: 1=kanal A, 2=kanal B. `n` udenfor `1..active_channels` giver `404`.
+`n` er **1-baseret**: 1=kanal A, 2=kanal B, 3=kanal C, 4=kanal D (v0.31.0, kun med CJMCU-752). `n` udenfor `1..active_channels` giver `404`. Kanalens `status` er `"ok"`, `"error"`, `"disabled"` eller (v0.31.0) `"unavailable"` — sidstnævnte når kanalens hardware ikke svarer (`expander: "not_found"`).
 
 `GET /api/channels` returnerer et JSON-array af nøjagtigt samme objekt-form som `GET /api/channels/{n}`, ét pr. aktiv kanal:
 
@@ -159,6 +168,8 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
 - `last_error_type` er en `mb_error_code_t`-værdi — se afsnit 5.
 
 ### 4.4 `PUT /api/channels/{n}/config`
+
+> **v0.31.0 — baudrate-grænse på kanal 3/4:** CJMCU-752's 1,8432 MHz-krystal kan levere 1200-115200 baud. En højere baudrate til kanal 3 eller 4 afvises med `400 {"error":"invalid_baudrate","message":"Kanal 3 understoetter hoejst 115200 baud (UART-expanderens krystal)"}`. Kanal 1/2 er uændrede.
 
 **Atomisk — ALLE felter er påkrævet i ét kald.** Mangler blot ét, eller er ét ugyldigt, afvises HELE requestet (`400`) uden nogen sideeffekt (uændret config).
 
@@ -330,11 +341,11 @@ Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsn
 
 ## 7. Kendte begrænsninger lige nu
 
-- **Kun 2 kanaler** (Variant A). Variant B (8 kanaler, SPI-expander) er designet (§2.2) men ikke bygget.
+- **2 eller 4 kanaler** (v0.31.0: kanal C+D med CJMCU-752). Variant B (8 kanaler, SPI-expander) er designet (§2.2) men ikke bygget. **Kanal C/D er IKKE verificeret med rigtig hardware endnu** (se CHANGELOG v0.31.0).
 - **W5500-Ethernet (v0.13.0) er implementeret men IKKE hardware-verificeret** — kun boot-testet uden fysisk modul tilsluttet (fejler sikkert, resten af boardet upåvirket). Link/DHCP/faktisk dataoverførsel over Ethernet er endnu ikke testet.
 - **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode` kan IKKE sættes via REST (se nedenfor) — kræver at MODE_SEL-jumperen fysisk flyttes til GND, hvilket ikke er afprøvet endnu.
 - **Ingen `POST /api/channels/{n}/reset-stats`/`POST /api/stats/reset`** — statistikken (afsnit 4.3) kan kun nulstilles ved reboot.
 - **OTA-uploadet har intet "annullér"-endpoint** — det afbrydes ved at lukke forbindelsen (boardet kasserer da uploadet og bliver på den kørende firmware). Fremdriften kan ikke aflæses via `GET /api/ota/status` mens uploadet står på (én HTTP-arbejdstråd).
-- **`active_channels` er altid 2, ikke auto-detekteret** — designdokumentets §2.2.2 (auto-detektion af bestykning) gælder kun Variant B.
+- **`active_channels` (2 eller 4) afgøres af EXP_SEL-jumperen ved boot**, ikke af ren auto-detektion — firmwaren tjekker dog, at chippen svarer, og melder `expander: "not_found"` hvis ikke (afsnit 4.2).
 - **RS232/RS485-mode er nu ÉN fabriksvalgt hardware-input for HELE boardet, ikke et PUT-bart felt** (hardware-revision 2026-09-14, §2.0.1) — kanal A og B kan ikke have forskellig mode, og mode kan ikke ændres via REST uden en fysisk jumper-omkobling. Se afsnit 4.4's boks om dette.
 - Se [FEATURES.md](FEATURES.md)'s "Planlagte features" for den fulde, opdaterede liste over hvad der mangler.

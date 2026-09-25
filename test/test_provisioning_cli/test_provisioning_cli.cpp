@@ -433,8 +433,16 @@ void test_test_read_missing_args(void) {
 }
 
 void test_test_read_rejects_invalid_channel(void) {
-  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "test 3 9 3 0 1", msg, sizeof(msg));
-  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+  // v0.31.0: 1-4 er gyldige (A-D) — 0 og 5 afvises.
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 5 9 3 0 1", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, mb_provisioning_apply_line(&state, "test 0 9 3 0 1", msg, sizeof(msg)));
+}
+
+void test_test_read_accepts_channels_c_and_d(void) {
+  TEST_ASSERT_EQUAL(PROV_ACTION_TEST_READ, mb_provisioning_apply_line(&state, "test 3 9 3 0 1", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL_UINT8(3, state.test_channel_number);
+  TEST_ASSERT_EQUAL(PROV_ACTION_TEST_READ, mb_provisioning_apply_line(&state, "test 4 9 3 0 1", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL_UINT8(4, state.test_channel_number);
 }
 
 void test_test_read_rejects_invalid_slave_id(void) {
@@ -493,8 +501,16 @@ void test_debug_modbus_is_case_insensitive(void) {
 }
 
 void test_debug_modbus_rejects_invalid_channel(void) {
-  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus c level 3", msg, sizeof(msg));
+  const mb_provisioning_result_t r = mb_provisioning_apply_line(&state, "debug modbus e level 3", msg, sizeof(msg));
   TEST_ASSERT_EQUAL(PROV_INVALID_VALUE, r);
+}
+
+void test_debug_modbus_channels_c_and_d(void) {
+  TEST_ASSERT_EQUAL(PROV_ACTION_DEBUG_SET, mb_provisioning_apply_line(&state, "debug modbus c level 3", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(mb_debug_target_t::kC, state.debug_target);
+  TEST_ASSERT_EQUAL(PROV_ACTION_DEBUG_SET, mb_provisioning_apply_line(&state, "debug modbus D level 8", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(mb_debug_target_t::kD, state.debug_target);
+  TEST_ASSERT_EQUAL_UINT8(8, state.debug_level);
 }
 
 void test_debug_modbus_rejects_level_zero(void) {
@@ -1120,6 +1136,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_test_read_action);
   RUN_TEST(test_test_read_missing_args);
   RUN_TEST(test_test_read_rejects_invalid_channel);
+  RUN_TEST(test_test_read_accepts_channels_c_and_d);
   RUN_TEST(test_test_read_rejects_invalid_slave_id);
   RUN_TEST(test_test_read_rejects_invalid_function_code);
   RUN_TEST(test_test_read_rejects_invalid_address);
@@ -1130,6 +1147,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_debug_modbus_sets_all_channels);
   RUN_TEST(test_debug_modbus_is_case_insensitive);
   RUN_TEST(test_debug_modbus_rejects_invalid_channel);
+  RUN_TEST(test_debug_modbus_channels_c_and_d);
   RUN_TEST(test_debug_modbus_rejects_level_zero);
   RUN_TEST(test_debug_modbus_rejects_level_above_max);
   RUN_TEST(test_debug_modbus_missing_args);

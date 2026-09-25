@@ -40,12 +40,16 @@ size_t mb_status_build_json(const mb_status_data_t *data, char *out, size_t out_
                                        "\"heap_free_bytes\":%lu,"
                                        "\"active_channels\":%u,"
                                        "\"provisioned\":%s,"
-                                       "\"board_mode\":\"%s\",",
+                                       "\"board_mode\":\"%s\","
+                                       "\"board_type\":\"%ux%s\","
+                                       "\"expander\":\"%s\",",
                                        static_cast<unsigned>(MB_REST_API_VERSION), data->fw_version, data->fw_build,
                                        static_cast<unsigned long>(data->uptime_s),
                                        static_cast<unsigned long>(data->heap_free_bytes),
                                        static_cast<unsigned>(data->active_channels), data->provisioned ? "true" : "false",
-                                       mode_to_string(data->board_mode));
+                                       mode_to_string(data->board_mode), static_cast<unsigned>(data->active_channels),
+                                       data->board_mode == MB_CHANNEL_MODE_RS232 ? "RS232" : "RS485",
+                                       data->expander_status != nullptr ? data->expander_status : "not_fitted");
   if (header_written <= 0 || static_cast<size_t>(header_written) >= out_capacity) {
     return 0;
   }

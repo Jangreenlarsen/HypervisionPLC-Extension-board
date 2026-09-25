@@ -183,8 +183,36 @@ const char *test_error_text(mb_error_code_t error) {
 
 void print_board_mode() {
   const mb_channel_config_t cfg_a = modbus_channel_get_config(ModbusChannelId::kA);
+  const bool rs485 = cfg_a.mode == MB_CHANNEL_MODE_RS485;
   Serial.print("board_mode: ");
-  Serial.println(cfg_a.mode == MB_CHANNEL_MODE_RS485 ? "rs485" : "rs232");
+  Serial.println(rs485 ? "rs485" : "rs232");
+  // v0.31.0 (Jan: "board skal signalere til plc at det er et 4 x rs232 eller
+  // 4 x rs485, alt efter jumper") — samme streng som REST'ens board_type.
+  Serial.printf("board_type: %ux%s\r\n", static_cast<unsigned>(modbus_channel_active_count()), rs485 ? "RS485" : "RS232");
+  Serial.print("expander: ");
+  switch (modbus_channel_expander_status()) {
+    case ModbusExpanderStatus::kOk:
+      Serial.println("CJMCU-752 fundet (kanal C+D aktive)");
+      break;
+    case ModbusExpanderStatus::kNotFound:
+      Serial.println("FEJL: EXP_SEL-jumperen siger monteret, men CJMCU-752 svarer ikke paa I2C (GPIO21/22) - kanal C+D virker ikke");
+      break;
+    case ModbusExpanderStatus::kNotFitted:
+    default:
+      Serial.println("ikke monteret (EXP_SEL-jumper ikke sat)");
+      break;
+  }
+}
+
+// v0.31.0: kanal-nummer 1-4 → id; false (med besked) hvis kanalen ikke er aktiv.
+bool active_channel_from_number(uint8_t n, ModbusChannelId *out) {
+  if (n < 1 || n > modbus_channel_active_count()) {
+    Serial.printf("FEJL: kanal %u er ikke aktiv - boardet har %u kanaler (kanal 3-4 kraever CJMCU-752 og EXP_SEL-jumperen)\r\n",
+                  static_cast<unsigned>(n), static_cast<unsigned>(modbus_channel_active_count()));
+    return false;
+  }
+  *out = static_cast<ModbusChannelId>(n - 1);
+  return true;
 }
 
 // v0.22.0 (Jan: "vi skal lige have en hostname på") — viser den FAKTISK
@@ -307,10 +335,10 @@ void print_status() {
   // runtime-tilstand (IKKE persisteret, se modbus_channel_set_debug_level()),
   // derfor vist her i 'status', ikke i 'show' (som kun viser konfigureret,
   // persisteret data).
-  Serial.print("debug.channel_a: ");
-  Serial.println(modbus_channel_get_debug_level(ModbusChannelId::kA));
-  Serial.print("debug.channel_b: ");
-  Serial.println(modbus_channel_get_debug_level(ModbusChannelId::kB));
+  for (size_t i = 0; i < modbus_channel_active_count(); i++) {
+    Serial.printf("debug.channel_%c: %u\r\n", static_cast<char>('a' + i),
+                  static_cast<unsigned>(modbus_channel_get_debug_level(static_cast<ModbusChannelId>(i))));
+  }
   // v0.21.0-fund: viste hidtil KUN rest.api naar WiFi var forbundet - et
   // rent Ethernet-board (WiFi deaktiveret/aldrig konfigureret, se BUGS.md's
   // relaterede server-start-fund) fik derfor aldrig vist URL'en, selvom
@@ -514,8 +542,12 @@ void provisioning_poll() {
         // lib/diagnostic_modbus-byggeklodser som REST-handleren
         // (src/http_server.cpp) bruger. Udløser en RIGTIG transaktion —
         // tænder derfor ogsaa kanalens aktivitets-LED (v0.23.1).
-        const ModbusChannelId test_id =
-            (g_state.test_channel_number == 1) ? ModbusChannelId::kA : ModbusChannelId::kB;
+        ModbusChannelId test_id;
+        if (!active_channel_from_number(g_state.test_channel_number, &test_id)) {
+          g_line_len = 0;
+          Serial.print("> ");
+          continue;
+        }
 
         // Jan (afklaret efter at have oplevet dette som "kanal B goer ingenting"
         // under et "test"-kald mod kanal A, som timede ud): "test" er BEVIDST
@@ -568,11 +600,24 @@ void provisioning_poll() {
         // (state->debug_target/debug_level er scratch-felter, se
         // provisioning_cli.h). "all" saetter begge kanaler til samme level
         // (ogsaa 0, for "no debug modbus"/"no debug all").
-        if (g_state.debug_target == mb_debug_target_t::kA || g_state.debug_target == mb_debug_target_t::kAll) {
-          modbus_channel_set_debug_level(ModbusChannelId::kA, g_state.debug_level);
-        }
-        if (g_state.debug_target == mb_debug_target_t::kB || g_state.debug_target == mb_debug_target_t::kAll) {
-          modbus_channel_set_debug_level(ModbusChannelId::kB, g_state.debug_level);
+        // v0.31.0: kanal C/D. "all" = alle AKTIVE kanaler.
+        if (g_state.debug_target == mb_debug_target_t::kAll) {
+          for (size_t i = 0; i < modbus_channel_active_count(); i++) {
+            modbus_channel_set_debug_level(static_cast<ModbusChannelId>(i), g_state.debug_level);
+          }
+        } else {
+          uint8_t n = 1;
+          switch (g_state.debug_target) {
+            case mb_debug_target_t::kB: n = 2; break;
+            case mb_debug_target_t::kC: n = 3; break;
+            case mb_debug_target_t::kD: n = 4; break;
+            case mb_debug_target_t::kA:
+            default: n = 1; break;
+          }
+          ModbusChannelId id;
+          if (active_channel_from_number(n, &id)) {
+            modbus_channel_set_debug_level(id, g_state.debug_level);
+          }
         }
       } else if (result == PROV_ACTION_OTA_CONFIRM) {
         switch (ota_manager_confirm()) {

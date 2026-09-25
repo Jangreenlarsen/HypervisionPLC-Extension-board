@@ -144,8 +144,11 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 │   ├── main.cpp                    # setup(): config_begin() FØR modbus_channel_init_all() (raekkefoelgen er kritisk, se BUGS.md v0.10.0)
 │   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect + config.cpp-kobling (§3.4) — v0.6.0, faerdig
 │   ├── config.cpp/.h               # NVS (ESP32 Preferences) omkring lib/board_config/, inkl. pr.-kanal-config — v0.10.0, faerdig
-│   ├── modbus_channel.cpp/.h       # × 2 (Variant A), én FreeRTOS-task pr. kanal, laeser config fra NVS, live-omkonfigurering + statistik — bruger lib/modbus_pdu/ — v0.11.0, live-verificeret (kanal A)
-│   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-503 (Variant A, §2.0/§4.1), plc_ip-permit (§4.3) inline — Fase 4, live-verificeret
+│   ├── modbus_channel.cpp/.h       # 2 eller 4 kanaler (EXP_SEL-jumper), én FreeRTOS-task pr. kanal, laeser config fra NVS, live-omkonfigurering + statistik — bruger lib/modbus_pdu/ — v0.11.0, 4 kanaler v0.31.0
+│   ├── channel_port.h              # fælles UART-interface for kanal-tasken (Lag 3) — v0.31.0
+│   ├── uart_port_native.cpp/.h     # kanal A/B: ESP32-UART + DIR/LED-GPIO — v0.31.0
+│   ├── uart_expander.cpp/.h        # kanal C/D: SC16IS752 (CJMCU-752) over I2C GPIO21/22 — v0.31.0, IKKE hardware-verificeret
+│   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-503 (+504-505 med CJMCU-752), plc_ip-permit (§4.3) inline — Fase 4, live-verificeret
 │   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — status/channels(get/put/post read-write) — v0.11.0, faerdig
 │   ├── http_helpers.h/.cpp         # require_auth()/send_json_error(), delt mellem http_server.cpp og ota_handler.cpp — v0.12.0
 │   ├── ota_handler.cpp/.h          # POST /api/ota, GET /api/ota/status, POST /api/ota/confirm, POST /api/reboot — v0.12.0, udvidet v0.30.0
@@ -155,14 +158,15 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 │   ├── modbus_pdu/                 # CRC16 + RTU-frame-building/parsing (FC01-06/15/16) — v0.2.0, færdig, FC15 tilføjet v0.27.0
 │   ├── modbus_tcp/                 # MBAP-header parsing/bygning (§4.1) — v0.9.0, faerdig
 │   ├── provisioning_cli/           # seriel CLI-kommando-parsing/validering (§3.4.1) — v0.5.0, færdig
-│   ├── board_config/               # persisteret config-schema (schema 7, inkl. pr.-kanal-config + syslog-modtagere) + serialisering (§3.5) — v0.10.0, faerdig
+│   ├── board_config/               # persisteret config-schema (schema 8: 4 kanal-pladser, inkl. syslog-modtagere) + serialisering/migration (§3.5) — v0.10.0, schema 8 v0.31.0
 │   ├── channel_config/             # mb_is_valid_baudrate(), JSON build/parse for §4.2's kanal-config — v0.10.0, faerdig
 │   ├── diagnostic_modbus/          # JSON<->PDU for §4.2's diagnostiske read/write (FC01-06/15/16) — v0.11.0, faerdig
 │   ├── ota_validation/             # ESP32-magic-byte, firmware-identitets-scanner, MD5-format, OTA-status-JSON — v0.12.0, udvidet v0.30.0
 │   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — v0.7.0, færdig
-│   ├── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — v0.7.0, færdig
+│   ├── rest_status/                # JSON-builders for GET /api/status (inkl. board_type/expander) + REST-fejlsvar — v0.7.0, udvidet v0.31.0
+│   ├── sc16is75x/                  # SC16IS752-registerlogik (baud-divisor, LCR/EFCR/MCR, I2C-subadresse) — v0.31.0
 │   └── syslog_client/              # RFC 3164-pakkeformatering (facility/severity, hardware-uafhængig) — v0.26.0
-└── test/                            # PlatformIO native unit-tests (`pio test -e native`) — 317 tests i alt
+└── test/                            # PlatformIO native unit-tests (`pio test -e native`) — 329 tests i alt
     ├── test_modbus_pdu/
     ├── test_modbus_tcp/
     ├── test_provisioning_cli/
@@ -172,5 +176,6 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
     ├── test_ota_validation/
     ├── test_rest_auth/
     ├── test_rest_status/
+    ├── test_sc16is75x/
     └── test_syslog_client/
 ```
