@@ -45,6 +45,7 @@
 - `config.cpp` — NVS-persisteret konfiguration (kanaler, firewall-allowlist, auth-token, schema-version — §3.5 i designdokumentet). Læses af Lag 1 (auth/firewall/kanal-opsætning) og Lag 2 (kanal-parametre ved task-start).
 - `net_driver.cpp` — WiFi/Ethernet-forbindelse; forudsætning for at Lag 1 overhovedet kan lytte på noget.
 - `ota_handler.cpp` — modtages via Lag 1 (`POST /api/ota`), men skriver til sin egen, uafhængige flash-partition — rører ikke Lag 2/3.
+- `ota_manager.cpp` (v0.30.0) — tværgående OTA-tilstand: bekræftelse/automatisk rollback + firmware-identitets-markøren. Bruges af både REST (`ota_handler.cpp`) og CLI (`provisioning.cpp`), så de to front-ends aldrig kalder hinanden.
 - Watchdog — overvåger alle lag, reset-årsag persisteres til RTC/NVS.
 
 ---
@@ -94,7 +95,8 @@
 │   ├── modbus_tcp_server.cpp/.h    # Lag 1 — data-plan, port 502-503, plc_ip-permit (§4.3)
 │   ├── http_server.cpp/.h          # Lag 1 — REST management-API, port 8080 (§4.2)
 │   ├── http_helpers.h/.cpp         # require_auth()/send_json_error() — delt af http_server.cpp/ota_handler.cpp
-│   ├── ota_handler.cpp/.h          # POST /api/ota, GET /api/ota/status, POST /api/reboot
+│   ├── ota_handler.cpp/.h          # POST /api/ota, GET /api/ota/status, POST /api/ota/confirm, POST /api/reboot
+│   ├── ota_manager.cpp/.h          # bekræftelse/rollback + firmware-identitet (v0.30.0), delt af REST og CLI
 │   ├── eth_driver.cpp/.h           # valgfri W5500-Ethernet (SPI), dual-stack med WiFi
 │   └── syslog_sender.h/.cpp        # ESP32 UDP-afsendelse for lib/syslog_client/'s pakker
 ├── lib/                             # Hardware-uafhængig, native-testbar logik — se note nedenfor
@@ -104,7 +106,7 @@
 │   ├── board_config/               # Persisteret config-schema + serialisering (§3.5) — bruges af config.cpp
 │   ├── channel_config/             # JSON build/parse for §4.2's kanal-config
 │   ├── diagnostic_modbus/          # JSON<->PDU for §4.2's diagnostiske read/write (FC01-06/15/16)
-│   ├── ota_validation/             # ESP32-firmware-magic-byte-tjek
+│   ├── ota_validation/             # ESP32-magic-byte, firmware-identitets-scanner, MD5-format, OTA-status-JSON
 │   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — bruges af http_server.cpp
 │   ├── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — bruges af http_server.cpp
 │   └── syslog_client/              # RFC 3164-pakkeformatering (facility/severity), hardware-uafhængig

@@ -917,12 +917,20 @@ void test_help_show_field_lookup(void) {
       {"help debug.channel_a", "=== DEBUG"}, {"help firmware", "=== VERSION"},
       {"help board_mode", "=== BOARD_MODE"}, {"help hostname", "=== HOSTNAME"},
       {"help uptime_s", "=== STATUS"},       {"help provisioned", "=== STATUS"},
+      {"help ota.pending_confirm", "=== OTA"},
   };
   for (const auto &c : cases) {
     TEST_ASSERT_EQUAL_MESSAGE(PROV_ACTION_HELP, mb_provisioning_apply_line(&state, c.query, msg, sizeof(msg)),
                               c.query);
     TEST_ASSERT_NOT_NULL_MESSAGE(strstr(msg, c.expected_header), c.query);
   }
+}
+
+void test_ota_confirm_action(void) {
+  TEST_ASSERT_EQUAL(PROV_ACTION_OTA_CONFIRM, mb_provisioning_apply_line(&state, "ota confirm", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_ACTION_OTA_CONFIRM, mb_provisioning_apply_line(&state, "OTA Confirm", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, mb_provisioning_apply_line(&state, "ota", msg, sizeof(msg)));
+  TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, mb_provisioning_apply_line(&state, "ota rollback", msg, sizeof(msg)));
 }
 
 void test_help_unknown_topic(void) {
@@ -936,7 +944,7 @@ void test_help_unknown_topic(void) {
 // Alle emner nævnt i "help help" skal findes og være uafkortede.
 void test_help_every_topic_resolves_and_fits(void) {
   const char *topics[] = {"wifi",    "eth",     "hostname", "plc",           "rest",    "token",
-                          "syslog",  "debug",   "test",     "show",          "status",  "save",
+                          "syslog",  "debug",   "test",     "ota",     "show",          "status",  "save",
                           "connect", "reboot",  "factory-reset", "version",  "board_mode", "no", "help"};
   for (const char *topic : topics) {
     char line[48];
@@ -1179,6 +1187,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_help_topic_is_case_insensitive);
   RUN_TEST(test_help_show_field_lookup);
   RUN_TEST(test_help_unknown_topic);
+  RUN_TEST(test_ota_confirm_action);
   RUN_TEST(test_help_every_topic_resolves_and_fits);
   RUN_TEST(test_version_action_without_build_flags);
   RUN_TEST(test_empty_line);

@@ -10,6 +10,7 @@
 #include "diagnostic_modbus.h"
 #include "eth_driver.h"
 #include "modbus_channel.h"
+#include "ota_manager.h"
 #include "provisioning_cli.h"
 #include "syslog_sender.h"
 
@@ -356,6 +357,19 @@ void print_status() {
     Serial.println(config_get().has_rest_pass ? config_get().rest_pass : "(ikke sat)");
   }
 
+  // v0.30.0 — OTA-tilstand (se 'help ota').
+  Serial.print("ota.firmware_id: ");
+  Serial.println(ota_manager_running_version());
+  uint32_t ota_remaining_s = 0;
+  if (ota_manager_pending_confirm(&ota_remaining_s)) {
+    Serial.printf("ota.pending_confirm: JA - automatisk rollback om %u s (bekraeft med 'ota confirm')\r\n",
+                  static_cast<unsigned>(ota_remaining_s));
+  } else {
+    Serial.println("ota.pending_confirm: nej");
+  }
+  Serial.print("ota.last_rolled_back: ");
+  Serial.println(ota_manager_last_update_rolled_back() ? "ja - seneste opdatering blev rullet tilbage" : "nej");
+
   Serial.print("modbus_tcp: ");
   Serial.println("port 502 (kanal A) / 503 (kanal B) - se 'help' for oevrige kommandoer");
 }
@@ -540,6 +554,21 @@ void provisioning_poll() {
         }
         if (g_state.debug_target == mb_debug_target_t::kB || g_state.debug_target == mb_debug_target_t::kAll) {
           modbus_channel_set_debug_level(ModbusChannelId::kB, g_state.debug_level);
+        }
+      } else if (result == PROV_ACTION_OTA_CONFIRM) {
+        switch (ota_manager_confirm()) {
+          case OtaConfirmResult::kConfirmed:
+            Serial.print("Firmware ");
+            Serial.print(ota_manager_running_version());
+            Serial.println(" bekraeftet - automatisk rollback annulleret.");
+            break;
+          case OtaConfirmResult::kNothingPending:
+            Serial.println("Intet at bekraefte - den koerende firmware er allerede bekraeftet.");
+            break;
+          case OtaConfirmResult::kFailed:
+          default:
+            Serial.println("FEJL: bekraeftelse fejlede - firmwaren afventer stadig bekraeftelse. Proev igen.");
+            break;
         }
       } else if (result == PROV_ACTION_FACTORY_RESET) {
         Serial.println("Rydder NVS-konfiguration og genstarter.");

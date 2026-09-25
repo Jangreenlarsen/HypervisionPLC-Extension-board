@@ -2,6 +2,20 @@
 
 ---
 
+## v0.30.0 — 2026-09-24 — Sikker firmwareopdatering styret fra PLC'en
+
+Boardet er nu klar til at blive opdateret fjernstyret fra PLC'en — med et sikkerhedsnet, så en opdatering aldrig kan efterlade boardet uden netværk:
+
+- **Kun boardets egen firmware accepteres.** Vælges ved en fejl fx PLC'ens egen firmwarefil, afvises den med en tydelig besked, og boardet er upåvirket.
+- **Automatisk tilbagerulning.** Efter en opdatering skal PLC'en bekræfte, at den nye firmware virker. Sker det ikke inden 10 minutter — eller går den nye firmware ned — starter boardet selv igen på den forrige version.
+- **Integritetstjek hele vejen** med valgfri MD5-kontrol af filen.
+- **CLI:** `ota confirm` bekræfter manuelt over USB, `status` viser OTA-tilstanden, og `help ota` forklarer forløbet.
+- Alle OTA-hændelser (upload, fejl, bekræftelse, tilbagerulning) sendes til syslog, inklusive hvem der startede opdateringen.
+
+PLC-siden skal implementeres i PLC-projektet — se `PLC_OTA_INTEGRATION_PLAN.md`.
+
+---
+
 ## v0.29.1 — 2026-09-24 — Rettet: gemte indstillinger forsvandt efter genstart
 
 `save` gemte faktisk indstillingerne (fx `plc ip`), men på et board der aldrig havde haft en vellykket WiFi-`connect`, viste `show` dem som "(ikke sat)" efter en genstart — og det næste `save` eller `rest ...` slettede dem så reelt. Nu indlæses den gemte konfiguration altid ved opstart, uanset om WiFi er brugt.

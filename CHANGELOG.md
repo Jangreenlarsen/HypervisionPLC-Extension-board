@@ -4,6 +4,35 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.30.0 build 0047] — 2026-09-24 — PLC-styret OTA: identitetstjek, MD5, bekræftelse + automatisk rollback
+
+**Baggrund:** Jan: "kan vi implementere OTA så det kan styre og upload fra PLC, hvis ja og med en plan som jeg kan tag med over til PLC team" / "vi har firewall access regl for at kun PLC ip kan nå PLC expansions boardet så der for tænker jeg at hvis vi kan styre det fra plc". v0.12.0's `POST /api/ota` virkede, men havde intet sikkerhedsnet for en fjernstyret opdatering: PLC'ens egen `.bin` (også en ESP32-firmware, `0xE9`) ville være accepteret, og en ny firmware der ikke kom på nettet igen krævede fysisk USB-adgang.
+
+**`lib/ota_validation/`:**
+- Firmware-identitets-scanner (`mb_fwid_scanner_*`) — streaming-søgning efter `HVEXT-FWID:hypervisionplc-extension-board:<version>;` på tværs af bid-grænser.
+- `mb_ota_is_valid_md5_hex()` og `mb_ota_build_status_json()` (JSON-escaping af fejltekst; hellere tomt end halv JSON ved for lille buffer).
+
+**Ny `src/ota_manager.cpp/.h`** (tværgående, delt af REST og CLI):
+- Indlejret identitets-markør `g_mb_firmware_id` (`used` + volatile-læsning, så linkeren ikke fjerner den — verificeret i `firmware.bin`).
+- Overstyrer Arduino-corens `verifyRollbackLater()` (bootloaderen har `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y`): første opstart efter OTA (`ESP_OTA_IMG_PENDING_VERIFY`) godkendes IKKE automatisk. `ota_manager_confirm()` → `esp_ota_mark_app_valid_cancel_rollback()`; ellers ruller en deadline-task tilbage efter `kOtaConfirmTimeoutS` = 600 s (`esp_ota_mark_app_invalid_rollback_and_reboot()`). Crash/genstart inden bekræftelse → bootloaderen ruller selv tilbage.
+- `last_update_rolled_back` udledt af `esp_ota_get_last_invalid_partition()`.
+
+**`src/ota_handler.cpp`:**
+- `POST /api/ota`: `400 ota_wrong_firmware` hvis markøren mangler; valgfri `X-Firmware-MD5` (`Update.setMD5()`); `411 length_required` uden Content-Length; `413 ota_too_large` før noget skrives; `409 ota_pending_confirm` mens den kørende firmware afventer bekræftelse (et upload ville overskrive rollback-målet); svaret har `new_version` + `md5_verified`; chunk-buffer nu `static` (ikke 2 KB på httpd-stakken).
+- Nyt `POST /api/ota/confirm` (idempotent).
+- `GET /api/ota/status` udvidet med `running_version`, `new_version`, `pending_confirm`, `confirm_remaining_s`, `last_update_rolled_back` (bagudkompatibelt — de gamle felter er uændrede).
+- Syslog (facility SYSTEM) af upload start/succes/fejl med klient-IP, reboot-anmodninger, afventer-bekræftelse, bekræftelse og rollback (CLAUDE.md regel 11).
+
+**CLI:** `ota confirm` (manuel bekræftelse over USB); `status` viser `ota.firmware_id`, `ota.pending_confirm`, `ota.last_rolled_back`; nyt `help ota`. **`src/main.cpp`:** `ota_manager_begin()` tidligt i `setup()`.
+
+**Dokumentation:** ny **`PLC_OTA_INTEGRATION_PLAN.md`** — implementeringsplan til PLC-teamet (streaming-relay browser → PLC → board, async-kald, web-UI-forløb, fejltekster, acceptkriterier). `PLC_INTEGRATION_MANUAL.md` §4.7/§7, `ARCHITECTURE.md`, `CLAUDE.md` opdateret.
+
+**Tests:** 11 nye i `test_ota_validation` (markør over alle bid-grænser 1-64, fremmed firmware, prefix-literal alene, grænser for versionslængde, MD5-format inkl. tom/whitespace, status-JSON inkl. escaping og for lille buffer) + `test_ota_confirm_action` og `help ota`/`help ota.pending_confirm` i `test_provisioning_cli`.
+
+**Filer ændret:** `lib/ota_validation/*`, `src/ota_manager.cpp/.h` (ny), `src/ota_handler.cpp`, `src/main.cpp`, `src/provisioning.cpp`, `lib/provisioning_cli/*`, `test/test_ota_validation/*`, `test/test_provisioning_cli/*`, `PLC_OTA_INTEGRATION_PLAN.md` (ny), `PLC_INTEGRATION_MANUAL.md`, `ARCHITECTURE.md`, `CLAUDE.md`, `FEATURES.md`, `version.json`.
+
+**Status:** 317/317 native-tests grønne. Bygger for esp32dev. **Live-verificeret over Ethernet** (curl, samme kald som PLC'en skal lave): OTA 0.29.1→0.30.0, afventer-bekræftelse, 409 under pending, confirm (idempotent), 400 ota_wrong_firmware (image med ødelagt markør), 413 (PLC'ens firmware), bad_md5/forkert MD5, 411, automatisk rollback ved deadline, øjeblikkelig rollback ved reboot under pending — detaljer i PLC_OTA_INTEGRATION_PLAN.md §9. Boardet kører nu den endelige, bekræftede v0.30.0-b0047. **Ikke live-verificeret:** CLI `ota confirm`/`status`-linjerne (COM8 optaget).
+
 ## [0.29.1 build 0046] — 2026-09-24 — fix: gemt konfiguration forsvandt efter genstart (plc ip m.m.)
 
 **Baggrund:** Jan: "save fungere ikke som den skal plc ip bliver ikke save m.m." — se BUGS.md v0.29.1.

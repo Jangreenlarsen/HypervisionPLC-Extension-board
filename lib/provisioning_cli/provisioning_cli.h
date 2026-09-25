@@ -211,6 +211,10 @@ enum mb_provisioning_result_t {
   // modbus_channel_set_debug_level() for den/de valgte kanal(er)
   // (`state->debug_target`) — ren runtime-tilstand, ikke persisteret.
   PROV_ACTION_DEBUG_SET,
+  // v0.30.0 — "ota confirm": bekræft en ny, endnu ubekræftet OTA-firmware
+  // manuelt fra USB (samme som REST'ens POST /api/ota/confirm). Kaldstedet
+  // kalder ota_manager_confirm() og skriver selv resultatet.
+  PROV_ACTION_OTA_CONFIRM,
   PROV_EMPTY_LINE,             // tomt/whitespace-only input — kaldstedet kan ignorere stille
   PROV_UNKNOWN_COMMAND,
   PROV_MISSING_ARGUMENT,       // out_message forklarer hvilket felt der mangler
