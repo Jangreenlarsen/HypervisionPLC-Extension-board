@@ -397,6 +397,8 @@ static const help_topic_t kHelpTopics[] = {
      "  no syslog               fjern ALLE modtagere (samme som 'no syslog all')\r\n"
      "--- Vises i 'show' som ---\r\n"
      "  syslog.target1..4 (eller 'syslog.targets: (ingen konfigureret)')\r\n"
+     "  i 'status': syslog.sent / syslog.failed / syslog.queue_dropped - stiger\r\n"
+     "  syslog.failed, kan modtageren ikke naas (tjek IP og at serveren koerer)\r\n"
      "--- Traeder i kraft ---\r\n"
      "  efter 'save' - virker straks, ingen reboot\r\n"
      "--- Eksempel ---\r\n"
