@@ -10,13 +10,33 @@
 // Lag 2 (ARCHITECTURE.md) — kanal-eksekvering. ÉN FreeRTOS-task pr. kanal
 // (§3.2), egen kø, ingen delt tilstand mellem kanaler. GPIO-allokering:
 // EXPANSION_BOARD_DESIGN.md §2.0.1.
-enum class ModbusChannelId : uint8_t { kA = 0, kB = 1 };
+// v0.31.0: kC/kD = kanal C/D på CJMCU-752 (SC16IS752) — kun aktive når
+// EXP_SEL-jumperen siger at modulet er monteret (modbus_channel_active_count()).
+enum class ModbusChannelId : uint8_t { kA = 0, kB = 1, kC = 2, kD = 3 };
+
+// v0.31.0: UART-expanderens tilstand, afgjort ved boot.
+enum class ModbusExpanderStatus : uint8_t {
+  kNotFitted,  // EXP_SEL-jumper ikke sat — 2 kanaler
+  kOk,         // jumper sat og SC16IS752 fundet på I2C — 4 kanaler
+  kNotFound,   // jumper sat, men chippen svarer ikke — 4 kanaler, C/D afviser alt
+};
 
 // Opsætter begge kanalers UART/GPIO (fra persisteret config, §4.2) og
 // starter deres FreeRTOS-tasks. Kaldes én gang ved boot (fra main.cpp),
 // uafhængigt af WiFi-status — kanalerne er klar til brug så snart Modbus
 // TCP-serveren selv starter.
 void modbus_channel_init_all();
+
+// Antal aktive kanaler: 2 (A-B) eller 4 (A-D), afgjort af EXP_SEL ved boot.
+size_t modbus_channel_active_count();
+
+// false for kanal C/D når EXP_SEL siger monteret, men CJMCU-752 ikke svarer.
+bool modbus_channel_hardware_present(ModbusChannelId channel);
+ModbusExpanderStatus modbus_channel_expander_status();
+
+// Højeste baudrate kanalen kan levere (kanal C/D: krystallens grænse,
+// 115200 ved 1,8432 MHz). 0 for en inaktiv kanal.
+uint32_t modbus_channel_max_baudrate(ModbusChannelId channel);
 
 // Den ENESTE tilladte indgang fra Lag 1 (netværk/protokol) til Lag 2 —
 // lægger forespørgslen i kanalens kø og venter (blokerende, med timeout) på

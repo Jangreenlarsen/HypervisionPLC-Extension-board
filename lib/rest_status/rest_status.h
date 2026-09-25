@@ -44,6 +44,15 @@ struct mb_status_data_t {
   // kilde til strengene — duplikeres bevidst ikke her, kaldstedet
   // http_server.cpp overfører blot pointeren). ALDRIG nullptr.
   const char *eth_status;
+
+  // v0.31.0 (Jan: "board skal signalere til plc at det er et 4 x rs232 eller
+  // 4 x rs485, alt efter jumper") — UART-expanderens (CJMCU-752) tilstand:
+  // "not_fitted" (EXP_SEL ikke sat, 2 kanaler), "ok" (fundet, 4 kanaler) eller
+  // "not_found" (jumperen siger monteret, men chippen svarer ikke — kanal C/D
+  // afviser transaktioner). nullptr behandles som "not_fitted".
+  // JSON'en får desuden `board_type` = "<active_channels>x<RS485|RS232>",
+  // fx "4xRS485" — én streng PLC'en kan vise/validere direkte.
+  const char *expander_status;
 };
 
 // Bygger `GET /api/status`-JSON-svaret (EXPANSION_BOARD_DESIGN.md §4.2's

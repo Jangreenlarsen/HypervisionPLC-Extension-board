@@ -7,8 +7,11 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 
+#include "channel_port.h"
 #include "config.h"
 #include "syslog_sender.h"
+#include "uart_expander.h"
+#include "uart_port_native.h"
 
 namespace {
 
@@ -58,6 +61,22 @@ constexpr int kBoardModeSelPin = 4;
 // modbus_channel_get_config()) bruger denne, ALDRIG et gemt/PUT'et felt.
 mb_channel_mode_t g_hardware_mode = MB_CHANNEL_MODE_RS485;
 
+// v0.31.0 (Jan: "vi skal bruge et jumper mere til at fortælle at vi har den
+// ny chip ombord") — EXP_SEL: jumper til 3,3 V = CJMCU-752 (SC16IS752) er
+// monteret → kanal C+D aktive (4 kanaler i alt). GPIO36 er input-only UDEN
+// intern pull — boardet SKAL have en ekstern 10 kΩ pull-DOWN til GND
+// (GPIO_MAPPING.md). Polariteten er valgt så fejlen falder ud til den sikre
+// side: live-målt på et board UDEN modstand læste den flydende pin LAV,
+// dvs. "ikke monteret" = 2 kanaler som hidtil (med den omvendte polaritet
+// påstod det board fejlagtigt 4 kanaler). Læses ÉN gang ved boot, ligesom
+// MODE_SEL. Jumperen er den autoritative kilde: siger den "monteret", men
+// chippen svarer ikke på I2C, er kanal C+D stadig aktive — men afviser alle
+// transaktioner, så hardwarefejlen er synlig i stedet for skjult.
+constexpr int kExpanderSelPin = 36;
+
+size_t g_active_channels = 2;
+ModbusExpanderStatus g_expander_status = ModbusExpanderStatus::kNotFitted;
+
 mb_channel_mode_t read_board_mode_sel() {
   pinMode(kBoardModeSelPin, INPUT_PULLUP);
   delayMicroseconds(10);  // lad evt. parasitkapacitans paa linjen naa at settle efter pinMode-skiftet
@@ -86,12 +105,8 @@ struct ChannelRequest {
 
 struct ChannelContext {
   const char *name;
-  size_t config_index;  // 0=A, 1=B — index ind i mb_board_config_t::channel[]
-  HardwareSerial *serial;
-  int tx_pin;
-  int rx_pin;
-  int dir_pin;
-  int led_pin;
+  size_t config_index;  // 0=A, 1=B, 2=C, 3=D — index ind i mb_board_config_t::channel[]
+  ChannelPort *port;    // v0.31.0: ESP32-UART (A/B) eller SC16IS752 (C/D), se channel_port.h
   mb_channel_config_t config;
   mb_channel_stats_t stats;
   QueueHandle_t queue;
@@ -106,10 +121,17 @@ struct ChannelContext {
 HardwareSerial g_serialA(1);  // UART-periferi #1 (§2.0: udelukkende brugt her, ikke af CLI'en som ejer UART0)
 HardwareSerial g_serialB(2);  // UART-periferi #2
 
-ChannelContext g_channelA;
-ChannelContext g_channelB;
+NativeUartPort g_portA(g_serialA, kChannelATx, kChannelARx, kChannelADir, kChannelALedPin);
+NativeUartPort g_portB(g_serialB, kChannelBTx, kChannelBRx, kChannelBDir, kChannelBLedPin);
 
-ChannelContext &context_for(ModbusChannelId channel) { return (channel == ModbusChannelId::kA) ? g_channelA : g_channelB; }
+ChannelContext g_channels[MB_CHANNEL_COUNT];
+
+ChannelContext &context_for(ModbusChannelId channel) {
+  const size_t index = static_cast<size_t>(channel);
+  return g_channels[index < MB_CHANNEL_COUNT ? index : 0];
+}
+
+bool is_active(ModbusChannelId channel) { return static_cast<size_t>(channel) < g_active_channels; }
 
 // §BUGS.md v0.9.0.1: kanal-fejl skal logges struktureret via seriel konsol
 // (CLAUDE.md regel 11) — uden dette er en fejlende RTU-transaktion usynlig
@@ -254,25 +276,6 @@ void debug_decode(ChannelContext &ctx, uint8_t dbg, const char *direction, const
   syslog_logf(MB_SYSLOG_FACILITY_MODBUS, 1, "[%s] %s %s decode: %s", ts_str, ctx.name, direction, line);
 }
 
-// Mapper mb_channel_parity_t/stop_bits til Arduino/ESP32's SERIAL_8xx-config.
-// Altid 8 databits — hverken §4.2 eller Modbus RTU-praksis eksponerer andet.
-uint32_t serial_config_for(mb_channel_parity_t parity, uint8_t stop_bits) {
-  if (stop_bits == 2) {
-    switch (parity) {
-      case MB_CHANNEL_PARITY_EVEN: return SERIAL_8E2;
-      case MB_CHANNEL_PARITY_ODD: return SERIAL_8O2;
-      case MB_CHANNEL_PARITY_NONE:
-      default: return SERIAL_8N2;
-    }
-  }
-  switch (parity) {
-    case MB_CHANNEL_PARITY_EVEN: return SERIAL_8E1;
-    case MB_CHANNEL_PARITY_ODD: return SERIAL_8O1;
-    case MB_CHANNEL_PARITY_NONE:
-    default: return SERIAL_8N1;
-  }
-}
-
 // Anvender en (ny eller initial) config på kanalens rigtige UART/GPIO'er.
 // Kaldes UDELUKKENDE fra kanalens egen task (channel_task) — aldrig direkte
 // fra REST-/TCP-lagets tasks, jf. modbus_channel_apply_config()'s
@@ -282,12 +285,10 @@ uint32_t serial_config_for(mb_channel_parity_t parity, uint8_t stop_bits) {
 void apply_config_now(ChannelContext &ctx, const mb_channel_config_t &new_config) {
   ctx.config = new_config;
   ctx.config.mode = g_hardware_mode;
-
-  digitalWrite(ctx.dir_pin, LOW);
-
-  ctx.serial->end();
-  ctx.serial->begin(ctx.config.baudrate, serial_config_for(ctx.config.parity, ctx.config.stop_bits), ctx.rx_pin,
-                     ctx.tx_pin);
+  // v0.31.0: en fejl her (SC16IS752 svarer ikke) fanges pr. transaktion via
+  // port->present() i execute_transaction() — baudrate-grænsen håndhæves
+  // allerede i REST-laget (modbus_channel_max_baudrate()) før vi når hertil.
+  ctx.port->configure(ctx.config);
 }
 
 // Selve RTU-transaktionen — direkte portering af mønsteret i
@@ -329,7 +330,18 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
 
   debug_decode(ctx, dbg, kTxArrow, frame, frame_len, false, nullptr);
 
+  // v0.31.0: EXP_SEL-jumperen siger at CJMCU-752 er monteret, men chippen
+  // svarede ikke ved boot — afvis tydeligt i stedet for at "sende" ud i intet.
+  if (!ctx.port->present()) {
+    debug_line(ctx, dbg, 1, kTxArrow, "error", "%s (UART-expander CJMCU-752 ikke fundet paa I2C - tjek modul/ledninger)",
+               error_name(MB_CHANNEL_UNREACHABLE));
+    return MB_CHANNEL_UNREACHABLE;
+  }
+
   const bool is_rs485 = ctx.config.mode == MB_CHANNEL_MODE_RS485;
+  // SC16IS752 styrer selv DE/RE via sit RTS-ben (auto-RS485) — kun ESP32-
+  // UART'erne (A/B) skal have manuel retnings-toggling.
+  const bool manual_dir = is_rs485 && !ctx.port->handles_direction();
 
   // Tøm evt. støj fra bussen inden vi selv sender — TIDSBEGRÆNSET (§BUGS.md
   // v0.9.0.1): uden denne grænse kan en kontinuerligt støjende/floating
@@ -339,8 +351,8 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   {
     const uint32_t drain_start = millis();
     size_t drained = 0;
-    while (ctx.serial->available() && millis() - drain_start < 50) {
-      ctx.serial->read();
+    while (ctx.port->available() > 0 && millis() - drain_start < 50) {
+      ctx.port->read();
       drained++;
     }
     if (drained > 0) {
@@ -351,22 +363,30 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
   // RS485 (§2.2.1/§2.0.1): DE/RE toggles omkring selve sendingen. RS232:
   // fuld-duplex, dir-pinden røres slet ikke (§4.2's afklaring — mode er en
   // deployment-tids-beslutning, ikke noget der skifter live).
-  if (is_rs485) {
-    digitalWrite(ctx.dir_pin, HIGH);
+  if (manual_dir) {
+    ctx.port->set_direction_tx(true);
     debug_line(ctx, dbg, 3, kTxArrow, "dir", "DE/RE -> TX (dir_pin HIGH)");
     delayMicroseconds(50);
+  } else if (is_rs485) {
+    debug_line(ctx, dbg, 3, kTxArrow, "dir", "DE/RE styres automatisk af UART-expanderens RTS");
   }
 
   debug_packet(ctx, dbg, 7, kTxArrow, frame, frame_len);
 
-  ctx.serial->write(frame, frame_len);
-  ctx.serial->flush();
+  const size_t written = ctx.port->write(frame, frame_len);
+  ctx.port->flush_tx();
 
-  if (is_rs485) {
+  if (manual_dir) {
     const uint32_t byte_us = (11UL * 1000000UL) / ctx.config.baudrate;
     delayMicroseconds(byte_us + 100);
-    digitalWrite(ctx.dir_pin, LOW);
+    ctx.port->set_direction_tx(false);
     debug_line(ctx, dbg, 3, kRxArrow, "dir", "DE/RE -> RX (dir_pin LOW)");
+  }
+
+  if (written != frame_len) {
+    debug_line(ctx, dbg, 1, kTxArrow, "error", "%s (kun %u af %u byte(s) sendt)", error_name(MB_CHANNEL_UNREACHABLE),
+               static_cast<unsigned>(written), static_cast<unsigned>(frame_len));
+    return MB_CHANNEL_UNREACHABLE;
   }
 
   // To-fase timeout: fuld timeout til FØRSTE byte, kort inter-character-
@@ -399,10 +419,10 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
       timed_out = true;
       break;
     }
-    if (ctx.serial->available()) {
+    if (ctx.port->available() > 0) {
       const uint32_t wait_ms = millis() - last_byte_time;
       rx_wait_ms[received] = static_cast<uint8_t>(wait_ms > 255 ? 255 : wait_ms);
-      response[received++] = static_cast<uint8_t>(ctx.serial->read());
+      response[received++] = static_cast<uint8_t>(ctx.port->read());
       last_byte_time = millis();
       if (mb_pdu_response_frame_complete(pdu, pdu_len, response, received)) {
         break;
@@ -575,10 +595,10 @@ void channel_task(void *param) {
                     ts_str, ctx->name, req->slave_id, req->pdu_len > 0 ? req->pdu[0] : 0);
       }
     } else {
-      digitalWrite(ctx->led_pin, HIGH);
+      ctx->port->set_activity_led(true);
       req->result = execute_transaction(*ctx, req->slave_id, req->pdu, req->pdu_len, req->out_pdu, req->out_pdu_len,
                                          req->out_pdu_capacity);
-      digitalWrite(ctx->led_pin, LOW);
+      ctx->port->set_activity_led(false);
     }
 
     record_stats(*ctx, *req);
@@ -586,23 +606,13 @@ void channel_task(void *param) {
   }
 }
 
-void init_channel(ChannelContext &ctx, HardwareSerial &serial, size_t config_index, int tx_pin, int rx_pin,
-                   int dir_pin, int led_pin, const char *task_name, const mb_channel_config_t &initial_config) {
+void init_channel(ChannelContext &ctx, ChannelPort &port, size_t config_index, const char *task_name,
+                   const mb_channel_config_t &initial_config) {
   ctx.name = task_name;
   ctx.config_index = config_index;
-  ctx.serial = &serial;
-  ctx.tx_pin = tx_pin;
-  ctx.rx_pin = rx_pin;
-  ctx.dir_pin = dir_pin;
-  ctx.led_pin = led_pin;
+  ctx.port = &port;
   ctx.stats = mb_channel_stats_t{};
   ctx.debug_level = 0;  // v0.25.0: altid FRA ved boot, bevidst ikke persisteret
-
-  pinMode(ctx.dir_pin, OUTPUT);
-  digitalWrite(ctx.dir_pin, LOW);
-
-  pinMode(ctx.led_pin, OUTPUT);
-  digitalWrite(ctx.led_pin, LOW);
 
   apply_config_now(ctx, initial_config);
 
@@ -622,22 +632,69 @@ void modbus_channel_init_all() {
   Serial.print("MODE_SEL (GPIO4) laest ved boot: ");
   Serial.println(g_hardware_mode == MB_CHANNEL_MODE_RS485 ? "RS485" : "RS232");
 
-  mb_channel_config_t config_a = config_get().channel[0];  // §4.2: persisteret config, ikke hardkodet
-  mb_channel_config_t config_b = config_get().channel[1];
-  config_a.mode = g_hardware_mode;
-  config_b.mode = g_hardware_mode;
+  // v0.31.0: EXP_SEL (GPIO36) — se kExpanderSelPin. INPUT uden intern pull
+  // (GPIO34-39 har ingen) — den eksterne pull-down er påkrævet.
+  pinMode(kExpanderSelPin, INPUT);
+  delayMicroseconds(10);
+  const bool expander_fitted = digitalRead(kExpanderSelPin) == HIGH;
+  if (expander_fitted) {
+    const bool found = uart_expander_begin();
+    g_active_channels = 4;
+    g_expander_status = found ? ModbusExpanderStatus::kOk : ModbusExpanderStatus::kNotFound;
+    if (found) {
+      Serial.printf("EXP_SEL (GPIO36): CJMCU-752 monteret - fundet paa I2C-adresse 0x%02X, 4 kanaler (A-D)\r\n",
+                    uart_expander_i2c_address());
+    } else {
+      Serial.println("EXP_SEL (GPIO36): CJMCU-752 monteret ifoelge jumperen, men SVARER IKKE paa I2C (SDA=21, SCL=22) - "
+                     "kanal C/D afviser alle transaktioner");
+      syslog_log(MB_SYSLOG_FACILITY_MODBUS, 1,
+                 "UART-expander CJMCU-752 ikke fundet paa I2C selvom EXP_SEL-jumperen siger monteret - kanal C/D utilgaengelige");
+    }
+  } else {
+    g_active_channels = 2;
+    g_expander_status = ModbusExpanderStatus::kNotFitted;
+    Serial.println("EXP_SEL (GPIO36): ingen UART-expander - 2 kanaler (A-B)");
+  }
+
+  mb_channel_config_t configs[MB_CHANNEL_COUNT];
+  for (size_t i = 0; i < MB_CHANNEL_COUNT; i++) {
+    configs[i] = config_get().channel[i];  // §4.2: persisteret config, ikke hardkodet
+    configs[i].mode = g_hardware_mode;     // alle kanaler følger den ene MODE_SEL-jumper
+  }
 
   // v0.28.6 (Jan: "ændre i debug output tekst 'mb_ch_a' til 'mb_ch_A' det
   // samme for b til B") — samme streng bruges BÅDE som denne kanals navn i
   // alt debug-/syslog-output OG som selve FreeRTOS-task-navnet (se
   // init_channel()s xTaskCreate()-kald nedenfor) — et rent kosmetisk valg,
   // ingen kode andetsteds sammenligner disse strenge (kun til visning).
-  init_channel(g_channelA, g_serialA, 0, kChannelATx, kChannelARx, kChannelADir, kChannelALedPin, "mb_ch_A", config_a);
-  init_channel(g_channelB, g_serialB, 1, kChannelBTx, kChannelBRx, kChannelBDir, kChannelBLedPin, "mb_ch_B", config_b);
+  g_portA.init_pins();
+  g_portB.init_pins();
+  init_channel(g_channels[0], g_portA, 0, "mb_ch_A", configs[0]);
+  init_channel(g_channels[1], g_portB, 1, "mb_ch_B", configs[1]);
+  if (g_active_channels == 4) {
+    init_channel(g_channels[2], uart_expander_port(0), 2, "mb_ch_C", configs[2]);
+    init_channel(g_channels[3], uart_expander_port(1), 3, "mb_ch_D", configs[3]);
+  }
+}
+
+size_t modbus_channel_active_count() { return g_active_channels; }
+
+bool modbus_channel_hardware_present(ModbusChannelId channel) {
+  return is_active(channel) && context_for(channel).port->present();
+}
+
+ModbusExpanderStatus modbus_channel_expander_status() { return g_expander_status; }
+
+uint32_t modbus_channel_max_baudrate(ModbusChannelId channel) {
+  if (!is_active(channel)) return 0;
+  return context_for(channel).port->max_baud();
 }
 
 mb_error_code_t modbus_channel_submit(ModbusChannelId channel, uint8_t slave_id, const uint8_t *pdu, size_t pdu_len,
                                        uint8_t *out_pdu, size_t *out_pdu_len, size_t out_pdu_capacity) {
+  if (!is_active(channel)) {
+    return MB_CHANNEL_UNREACHABLE;  // v0.31.0: kanal C/D uden monteret UART-expander
+  }
   ChannelContext &ctx = context_for(channel);
 
   if (!ctx.config.enabled) {
@@ -701,6 +758,7 @@ bool apply_config_to_channel(ChannelContext &ctx, const mb_channel_config_t &new
 }  // namespace
 
 bool modbus_channel_apply_config(ModbusChannelId channel, const mb_channel_config_t &new_config) {
+  if (!is_active(channel)) return false;
   ChannelContext &ctx = context_for(channel);
   if (!apply_config_to_channel(ctx, new_config)) {
     return false;
@@ -720,6 +778,7 @@ mb_channel_config_t modbus_channel_get_config(ModbusChannelId channel) { return 
 mb_channel_stats_t modbus_channel_get_stats(ModbusChannelId channel) { return context_for(channel).stats; }
 
 void modbus_channel_set_debug_level(ModbusChannelId channel, uint8_t level) {
+  if (!is_active(channel)) return;
   context_for(channel).debug_level = level;
 }
 

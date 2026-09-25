@@ -75,6 +75,22 @@ void test_build_json_disabled_status_overrides_error(void) {
   TEST_ASSERT_NOT_NULL(strstr(buf, "\"parity\":\"even\""));
 }
 
+void test_build_json_unavailable_when_hardware_missing(void) {
+  // v0.31.0: kanal C/D uden svarende CJMCU-752 maa ikke fremstaa som "ok".
+  mb_channel_config_t cfg;
+  mb_channel_config_set_defaults(&cfg);
+  mb_channel_stats_t stats{};
+  char out[512];
+  TEST_ASSERT_TRUE(mb_channel_build_json(3, &cfg, &stats, out, sizeof(out), false) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"status\":\"unavailable\""));
+  cfg.enabled = false;  // ogsaa naar kanalen er slaaet fra - hardwarefejlen vinder
+  TEST_ASSERT_TRUE(mb_channel_build_json(3, &cfg, &stats, out, sizeof(out), false) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"status\":\"unavailable\""));
+  cfg.enabled = true;  // default-parameteren = hardware til stede
+  TEST_ASSERT_TRUE(mb_channel_build_json(3, &cfg, &stats, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"status\":\"ok\""));
+}
+
 void test_build_json_error_status(void) {
   mb_channel_config_t config{};
   config.enabled = true;
@@ -201,6 +217,7 @@ int main(int argc, char **argv) {
   RUN_TEST(test_build_json_ok_status);
   RUN_TEST(test_build_json_disabled_status_overrides_error);
   RUN_TEST(test_build_json_error_status);
+  RUN_TEST(test_build_json_unavailable_when_hardware_missing);
   RUN_TEST(test_build_json_rejects_undersized_buffer);
 
   RUN_TEST(test_parse_valid_full_json);

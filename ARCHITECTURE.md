@@ -91,7 +91,10 @@
 │   ├── main.cpp
 │   ├── provisioning.cpp/.h         # seriel CLI-I/O + rigtigt WiFi-connect (§3.4/§3.4.1)
 │   ├── config.cpp/.h               # NVS (ESP32 Preferences) omkring lib/board_config/
-│   ├── modbus_channel.cpp/.h       # Lag 2 — kanal-eksekvering, én FreeRTOS-task pr. kanal
+│   ├── modbus_channel.cpp/.h       # Lag 2 — kanal-eksekvering, én FreeRTOS-task pr. kanal (2 eller 4, EXP_SEL-jumper)
+│   ├── channel_port.h              # Lag 3 — fælles UART-interface (v0.31.0), så Lag 2 er ens for alle kanaler
+│   ├── uart_port_native.cpp/.h     # Lag 3 — kanal A/B: ESP32'ens egne UART'er + DIR/LED-GPIO
+│   ├── uart_expander.cpp/.h        # Lag 3 — kanal C/D: SC16IS752 (CJMCU-752) over I2C, auto-RS485-retning
 │   ├── modbus_tcp_server.cpp/.h    # Lag 1 — data-plan, port 502-503, plc_ip-permit (§4.3)
 │   ├── http_server.cpp/.h          # Lag 1 — REST management-API, port 8080 (§4.2)
 │   ├── http_helpers.h/.cpp         # require_auth()/send_json_error() — delt af http_server.cpp/ota_handler.cpp
@@ -107,6 +110,7 @@
 │   ├── channel_config/             # JSON build/parse for §4.2's kanal-config
 │   ├── diagnostic_modbus/          # JSON<->PDU for §4.2's diagnostiske read/write (FC01-06/15/16)
 │   ├── ota_validation/             # ESP32-magic-byte, firmware-identitets-scanner, MD5-format, OTA-status-JSON
+│   ├── sc16is75x/                  # SC16IS752-registerlogik: baud-divisor, LCR/EFCR/MCR, I2C-subadresse (v0.31.0)
 │   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — bruges af http_server.cpp
 │   ├── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — bruges af http_server.cpp
 │   └── syslog_client/              # RFC 3164-pakkeformatering (facility/severity), hardware-uafhængig

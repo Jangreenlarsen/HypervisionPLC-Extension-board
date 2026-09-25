@@ -2,6 +2,20 @@
 
 ---
 
+## v0.31.0 — 2026-09-25 — Op til 4 kanaler med CJMCU-752
+
+Boardet kan nu udvides med et CJMCU-752-modul (2 ekstra UART'er over I2C), så det får **kanal C og D** oveni A og B — 4 Modbus-kanaler i alt på port 502-505.
+
+- **Ny jumper (EXP_SEL, GPIO36):** til 3,3 V når modulet er monteret. Uden jumper kører boardet med 2 kanaler som hidtil. Kræver en 10 kΩ pull-down-modstand fra GPIO36 til GND.
+- **Boardet melder sin type til PLC'en:** `GET /api/status` viser fx `"board_type":"4xRS485"` — alle kanaler følger samme RS232/RS485-jumper.
+- **Tydelig fejl hvis modulet mangler:** siger jumperen "monteret", men modulet svarer ikke, vises det i status (`"expander":"not_found"`), og kanal C/D melder `unavailable`.
+- Kanal C/D styrer selv RS485-retningen via modulet, og kan køre 1200-115200 baud.
+- Eksisterende boards beholder al deres opsætning ved opdateringen.
+
+Kanal C og D er endnu ikke afprøvet med et rigtigt modul.
+
+---
+
 ## v0.30.1 — 2026-09-25 — Rettet: vildledende "WiFi"-fejl på konsollen
 
 Efter Modbus-læsninger kunne konsollen vise `[E][WiFiUdp.cpp:185] endPacket(): could not send data: 12` — også når WiFi var slået fra. Linjen havde intet med WiFi at gøre: den kom fra syslog-afsendelsen, når syslog-serveren ikke kunne nås på netværket.

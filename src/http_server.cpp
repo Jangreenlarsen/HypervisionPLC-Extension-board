@@ -19,16 +19,20 @@ namespace {
 
 httpd_handle_t g_server = nullptr;
 
+// v0.31.0: n=1..active_channels (2, eller 4 med CJMCU-752 — EXP_SEL).
 bool channel_id_from_number(int n, ModbusChannelId *out) {
-  if (n == 1) {
-    *out = ModbusChannelId::kA;
-    return true;
+  if (n < 1 || n > static_cast<int>(modbus_channel_active_count())) return false;
+  *out = static_cast<ModbusChannelId>(n - 1);
+  return true;
+}
+
+const char *expander_status_string() {
+  switch (modbus_channel_expander_status()) {
+    case ModbusExpanderStatus::kOk: return "ok";
+    case ModbusExpanderStatus::kNotFound: return "not_found";
+    case ModbusExpanderStatus::kNotFitted:
+    default: return "not_fitted";
   }
-  if (n == 2) {
-    *out = ModbusChannelId::kB;
-    return true;
-  }
-  return false;
 }
 
 // Udtrækker kanal-nummeret (1-baseret, §4.2) og om stien slutter på
@@ -169,7 +173,7 @@ esp_err_t status_handler(httpd_req_t *req) {
 #endif
       static_cast<uint32_t>(millis() / 1000),
       ESP.getFreeHeap(),
-      2,  // active_channels — fast for Variant A, §2.0
+      static_cast<uint8_t>(modbus_channel_active_count()),  // v0.31.0: 2 eller 4 (EXP_SEL-jumper)
       connected,
       ip_str.c_str(),
       connected ? static_cast<int8_t>(WiFi.RSSI()) : 0,
@@ -178,6 +182,7 @@ esp_err_t status_handler(httpd_req_t *req) {
       eth_connected,
       eth_driver_ip_string(),
       eth_driver_status_string(),  // v0.18.0: not_detected/link_down/waiting_dhcp/connected
+      expander_status_string(),    // v0.31.0: not_fitted/ok/not_found
   };
 
   char body[384];
@@ -202,21 +207,28 @@ esp_err_t channels_get_handler(httpd_req_t *req) {
   }
 
   if (channel_number == -1) {
-    char body[1024];
+    // v0.31.0: op til 4 kanaler — 2048 byte (httpd-worker-stakken er 10240).
+    char body[2048];
+    const int active = static_cast<int>(modbus_channel_active_count());
     size_t offset = 0;
     body[offset++] = '[';
-    for (int n = 1; n <= static_cast<int>(MB_CHANNEL_COUNT); n++) {
+    for (int n = 1; n <= active; n++) {
       ModbusChannelId id;
-      channel_id_from_number(n, &id);  // n er altid 1..MB_CHANNEL_COUNT her
+      channel_id_from_number(n, &id);  // n er altid 1..active her
       const mb_channel_config_t cfg = modbus_channel_get_config(id);
       const mb_channel_stats_t stats = modbus_channel_get_stats(id);
-      const size_t written = mb_channel_build_json(n, &cfg, &stats, body + offset, sizeof(body) - offset);
+      const size_t written = mb_channel_build_json(n, &cfg, &stats, body + offset, sizeof(body) - offset,
+                                                   modbus_channel_hardware_present(id));
       if (written == 0) {
         send_json_error(req, "500 Internal Server Error", -1, "internal_error", "Kunne ikke bygge kanal-listen");
         return ESP_OK;
       }
       offset += written;
-      if (n < static_cast<int>(MB_CHANNEL_COUNT)) {
+      if (offset + 2 >= sizeof(body)) {
+        send_json_error(req, "500 Internal Server Error", -1, "internal_error", "Kunne ikke bygge kanal-listen");
+        return ESP_OK;
+      }
+      if (n < active) {
         body[offset++] = ',';
       }
     }
@@ -235,7 +247,8 @@ esp_err_t channels_get_handler(httpd_req_t *req) {
   const mb_channel_config_t cfg = modbus_channel_get_config(id);
   const mb_channel_stats_t stats = modbus_channel_get_stats(id);
   char body[512];
-  const size_t body_len = mb_channel_build_json(channel_number, &cfg, &stats, body, sizeof(body));
+  const size_t body_len =
+      mb_channel_build_json(channel_number, &cfg, &stats, body, sizeof(body), modbus_channel_hardware_present(id));
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, body, body_len > 0 ? body_len : HTTPD_RESP_USE_STRLEN);
   return ESP_OK;
@@ -280,6 +293,17 @@ esp_err_t channel_config_put_handler(httpd_req_t *req) {
     return ESP_OK;
   }
 
+  // v0.31.0: kanal C/D (CJMCU-752, 1,8432 MHz-krystal) kan højst 115200 —
+  // afvis tydeligt i stedet for at gemme en baudrate hardwaren ikke kan lave.
+  const uint32_t max_baud = modbus_channel_max_baudrate(id);
+  if (new_config.baudrate > max_baud) {
+    char msg[128];
+    snprintf(msg, sizeof(msg), "Kanal %d understoetter hoejst %lu baud (UART-expanderens krystal)", channel_number,
+             static_cast<unsigned long>(max_baud));
+    send_json_error(req, "400 Bad Request", -1, "invalid_baudrate", msg);
+    return ESP_OK;
+  }
+
   // modbus_channel_apply_config() persisterer nu selv (§CHANGELOG.md 2026-09-14).
   // Persisterer EFTER kanalen selv er live-omkonfigureret — et strømudfald
   // midt i kaldet efterlader så i værste fald flash uændret (gammel config
@@ -296,7 +320,8 @@ esp_err_t channel_config_put_handler(httpd_req_t *req) {
   const mb_channel_config_t applied_config = modbus_channel_get_config(id);
   const mb_channel_stats_t stats = modbus_channel_get_stats(id);
   char resp_body[512];
-  const size_t resp_len = mb_channel_build_json(channel_number, &applied_config, &stats, resp_body, sizeof(resp_body));
+  const size_t resp_len = mb_channel_build_json(channel_number, &applied_config, &stats, resp_body, sizeof(resp_body),
+                                                modbus_channel_hardware_present(id));
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, resp_body, resp_len > 0 ? resp_len : HTTPD_RESP_USE_STRLEN);
   return ESP_OK;

@@ -12,13 +12,13 @@
 // testet på rigtig hardware, behold tallet og marker feltet
 // "reserveret, ubrugt" i stedet for at sænke det.
 //
-// Schema 7 (denne version): tilføjede persisteret `syslog_targets[]`
-// (`syslog add <ip> <port> <tag> <level>`/`syslog remove <tag>`, v0.26.0) —
-// se feltet nedenfor. `mb_board_config_v6_t`/`v5_t`/`v4_t`/`v3_t`/`v2_t`/
-// `v1_t` nedenfor er FROSSNE kopier af ældre schema-layouts, udelukkende til
-// migration af allerede-gemte blobs — ÆNDR DEM ALDRIG, de skal blive ved
-// med at matche hvad der faktisk blev udgivet.
-constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 7;
+// Schema 8 (denne version, v0.31.0): `channel[]` udvidet fra 2 til 4
+// (kanal C+D via CJMCU-752/SC16IS752). Schema 7 tilføjede persisteret
+// `syslog_targets[]` (v0.26.0). `mb_board_config_v7_t`/`v6_t`/`v5_t`/
+// `v4_t`/`v3_t`/`v2_t`/`v1_t` nedenfor er FROSSNE kopier af ældre schema-
+// layouts, udelukkende til migration af allerede-gemte blobs — ÆNDR DEM
+// ALDRIG, de skal blive ved med at matche hvad der faktisk blev udgivet.
+constexpr uint16_t MB_CONFIG_SCHEMA_VERSION = 8;
 
 // §4.2: RS485/RS232-modevalg pr. kanal (§2.2.1) — styrer både
 // MODE_SEL-GPIO'en og om kanal-tasken toggler DE/RE (kun RS485).
@@ -41,7 +41,15 @@ struct mb_channel_config_t {
 };
 #pragma pack(pop)
 
-constexpr size_t MB_CHANNEL_COUNT = 2;  // Variant A (§2.0) — fast 2 kanaler
+// v0.31.0: 4 kanal-pladser i den persisterede config (A+B på ESP32'ens egne
+// UART'er, C+D på CJMCU-752). Hvor mange der reelt er AKTIVE afgøres ved
+// boot af EXP_SEL-jumperen (src/modbus_channel.cpp), ikke af dette tal.
+constexpr size_t MB_CHANNEL_COUNT = 4;
+
+// FROSSEN: antallet af kanal-pladser i schema 3-7. De frosne structs
+// nedenfor SKAL bruge denne — aldrig MB_CHANNEL_COUNT — ellers ændres
+// deres layout, og allerede-gemte blobs kan ikke længere genkendes/migreres.
+constexpr size_t MB_CHANNEL_COUNT_SCHEMA_3_TO_7 = 2;
 
 // Defaults der matcher v0.9.0's tidligere HARDKODEDE adfærd i
 // modbus_channel.cpp — sikrer identisk opførsel for eksisterende boards
@@ -142,7 +150,7 @@ struct mb_board_config_v3_t {
   char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
   bool has_rest_pass;
   mb_rest_auth_mode_t rest_auth_mode;
-  mb_channel_config_t channel[MB_CHANNEL_COUNT];
+  mb_channel_config_t channel[MB_CHANNEL_COUNT_SCHEMA_3_TO_7];
   uint16_t checksum;
 };
 #pragma pack(pop)
@@ -176,7 +184,7 @@ struct mb_board_config_v4_t {
   char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
   bool has_rest_pass;
   mb_rest_auth_mode_t rest_auth_mode;
-  mb_channel_config_t channel[MB_CHANNEL_COUNT];
+  mb_channel_config_t channel[MB_CHANNEL_COUNT_SCHEMA_3_TO_7];
   bool eth_enabled;
   bool eth_static_ip;
   char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
@@ -218,7 +226,7 @@ struct mb_board_config_v5_t {
   char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
   bool has_rest_pass;
   mb_rest_auth_mode_t rest_auth_mode;
-  mb_channel_config_t channel[MB_CHANNEL_COUNT];
+  mb_channel_config_t channel[MB_CHANNEL_COUNT_SCHEMA_3_TO_7];
   bool eth_enabled;
   bool eth_static_ip;
   char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
@@ -260,7 +268,7 @@ struct mb_board_config_v6_t {
   char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
   bool has_rest_pass;
   mb_rest_auth_mode_t rest_auth_mode;
-  mb_channel_config_t channel[MB_CHANNEL_COUNT];
+  mb_channel_config_t channel[MB_CHANNEL_COUNT_SCHEMA_3_TO_7];
   bool eth_enabled;
   bool eth_static_ip;
   char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
@@ -278,7 +286,52 @@ struct mb_board_config_v6_t {
 // migration, se mb_config_load_from_blob().
 uint16_t mb_config_calc_checksum_v6(const mb_board_config_v6_t *config);
 
-// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 7. Rent
+// FROSSEN — schema 7's nøjagtige layout (identisk med `mb_board_config_t`
+// FØR schema 8 udvidede `channel[]` fra 2 til 4), kun til migration af
+// allerede-gemte v7-blobs. Ret ALDRIG denne struct.
+#pragma pack(push, 1)
+struct mb_board_config_v7_t {
+  uint16_t schema_version;
+  bool provisioned;  // true first efter et vellykket "connect" (§3.4.1)
+  bool wifi_enabled;
+  char wifi_ssid[MB_PROV_SSID_MAX_LEN + 1];
+  bool wifi_has_ssid;
+  char wifi_password[MB_PROV_PASSWORD_MAX_LEN + 1];
+  bool wifi_has_password;
+  bool wifi_open_network;
+  bool wifi_static_ip;
+  char wifi_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char wifi_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  char plc_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  bool has_plc_ip;
+  char mgmt_token[MB_MGMT_TOKEN_LEN + 1];
+  bool has_mgmt_token;
+  char rest_user[MB_PROV_REST_USER_MAX_LEN + 1];
+  bool has_rest_user;
+  char rest_pass[MB_PROV_REST_PASS_MAX_LEN + 1];
+  bool has_rest_pass;
+  mb_rest_auth_mode_t rest_auth_mode;
+  mb_channel_config_t channel[MB_CHANNEL_COUNT_SCHEMA_3_TO_7];
+  bool eth_enabled;
+  bool eth_static_ip;
+  char eth_ip[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_mask[MB_PROV_IPV4_MAX_LEN + 1];
+  char eth_gw[MB_PROV_IPV4_MAX_LEN + 1];
+  uint8_t eth_mac[6];
+  bool has_eth_mac;
+  char hostname[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool has_hostname;
+  mb_syslog_target_t syslog_targets[MB_SYSLOG_MAX_TARGETS];
+  uint16_t checksum;
+};
+#pragma pack(pop)
+
+// CRC16 over v7-structen — bruges KUN til at verificere en v7-blob under
+// migration, se mb_config_load_from_blob().
+uint16_t mb_config_calc_checksum_v7(const mb_board_config_v7_t *config);
+
+// Persisteret board-konfiguration (NVS, via src/config.cpp), schema 8. Rent
 // data — ingen hardware-afhængighed, se board_config.cpp for hvorfor det kan
 // native-testes. `schema_version` er bevidst FØRSTE felt (kan altid læses
 // uanset hvordan resten af structen ændrer sig i en senere schema-version),
@@ -326,7 +379,8 @@ struct mb_board_config_t {
   mb_rest_auth_mode_t rest_auth_mode;
 
   // Schema 3 (nyt felt): pr.-kanal-config (§4.2). index 0 = kanal A (n=1 i
-  // REST-API'et), index 1 = kanal B (n=2) — se MB_CHANNEL_COUNT.
+  // REST-API'et), index 1 = kanal B (n=2); schema 8: index 2/3 = kanal C/D
+  // (n=3/4, CJMCU-752) — se MB_CHANNEL_COUNT.
   mb_channel_config_t channel[MB_CHANNEL_COUNT];
 
   // Schema 4 (nye felter, v0.20.0): valgfri W5500-Ethernet enable/disable +

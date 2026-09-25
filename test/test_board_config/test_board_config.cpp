@@ -421,6 +421,85 @@ void test_load_migrates_v6_blob_without_data_loss(void) {
                              "nyt schema-7-felt skal faa default 'ingen konfigureret' (in_use=false)");
 }
 
+// v0.31.0: schema 8 udvidede channel[] fra 2 til 4 (kanal C+D). Et board
+// paa schema 7 (v0.26.0-v0.30.x) skal beholde AL sin config, inkl. A+B's
+// kanal-opsaetning og syslog-modtagere; C+D faar defaults.
+void test_load_migrates_v7_blob_to_four_channels(void) {
+  mb_board_config_v7_t v7{};
+  v7.schema_version = 7;
+  v7.provisioned = true;
+  strncpy(v7.plc_ip, "10.1.1.30", sizeof(v7.plc_ip) - 1);
+  v7.has_plc_ip = true;
+  strncpy(v7.mgmt_token, "0123456789abcdef0123456789abcdef", sizeof(v7.mgmt_token) - 1);
+  v7.has_mgmt_token = true;
+  v7.rest_auth_mode = MB_REST_AUTH_MODE_TOKEN_ONLY;
+  for (size_t i = 0; i < MB_CHANNEL_COUNT_SCHEMA_3_TO_7; i++) mb_channel_config_set_defaults(&v7.channel[i]);
+  v7.channel[0].baudrate = 19200;
+  v7.channel[1].baudrate = 38400;
+  v7.channel[1].parity = MB_CHANNEL_PARITY_EVEN;
+  v7.channel[1].enabled = false;
+  v7.eth_enabled = true;
+  v7.has_hostname = true;
+  strncpy(v7.hostname, "ExtensionB1", sizeof(v7.hostname) - 1);
+  v7.syslog_targets[0].in_use = true;
+  strncpy(v7.syslog_targets[0].ip, "10.1.1.75", sizeof(v7.syslog_targets[0].ip) - 1);
+  v7.syslog_targets[0].port = 514;
+  strncpy(v7.syslog_targets[0].tag, "expansionB1", sizeof(v7.syslog_targets[0].tag) - 1);
+  v7.syslog_targets[0].max_level = 1;
+  v7.checksum = mb_config_calc_checksum_v7(&v7);
+
+  mb_board_config_t migrated;
+  mb_config_load_from_blob(reinterpret_cast<const uint8_t *>(&v7), sizeof(v7), &migrated);
+
+  TEST_ASSERT_EQUAL(MB_CONFIG_SCHEMA_VERSION, migrated.schema_version);
+  TEST_ASSERT_EQUAL(8, MB_CONFIG_SCHEMA_VERSION);
+  TEST_ASSERT_TRUE(migrated.provisioned);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.30", migrated.plc_ip);
+  TEST_ASSERT_EQUAL_STRING("0123456789abcdef0123456789abcdef", migrated.mgmt_token);
+  TEST_ASSERT_EQUAL(MB_REST_AUTH_MODE_TOKEN_ONLY, migrated.rest_auth_mode);
+  TEST_ASSERT_EQUAL_STRING("ExtensionB1", migrated.hostname);
+  TEST_ASSERT_TRUE(migrated.syslog_targets[0].in_use);
+  TEST_ASSERT_EQUAL_STRING("expansionB1", migrated.syslog_targets[0].tag);
+  // A+B uaendret
+  TEST_ASSERT_EQUAL_UINT32(19200, migrated.channel[0].baudrate);
+  TEST_ASSERT_EQUAL_UINT32(38400, migrated.channel[1].baudrate);
+  TEST_ASSERT_EQUAL(MB_CHANNEL_PARITY_EVEN, migrated.channel[1].parity);
+  TEST_ASSERT_FALSE(migrated.channel[1].enabled);
+  // C+D = defaults
+  mb_channel_config_t def;
+  mb_channel_config_set_defaults(&def);
+  for (size_t i = 2; i < MB_CHANNEL_COUNT; i++) {
+    TEST_ASSERT_EQUAL_MEMORY(&def, &migrated.channel[i], sizeof(def));
+  }
+
+  // ...og en gemt v8-blob kan laeses igen uden tab.
+  uint8_t blob[sizeof(mb_board_config_t)];
+  const size_t len = mb_config_save_to_blob(&migrated, blob, sizeof(blob));
+  mb_board_config_t reloaded;
+  mb_config_load_from_blob(blob, len, &reloaded);
+  TEST_ASSERT_EQUAL_UINT32(38400, reloaded.channel[1].baudrate);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.30", reloaded.plc_ip);
+}
+
+// v0.31.0: de aeldre migreringsveje (v6/v5 -> aktuel) kopierede tidligere
+// sizeof(out->channel) bytes fra en 2-kanals kilde — med 4 kanaler ville det
+// have laest ud over kilde-arrayet. Kanal C+D skal vaere rene defaults.
+void test_load_migrates_v6_blob_gives_default_channels_c_d(void) {
+  mb_board_config_v6_t v6{};
+  v6.schema_version = 6;
+  for (size_t i = 0; i < MB_CHANNEL_COUNT_SCHEMA_3_TO_7; i++) mb_channel_config_set_defaults(&v6.channel[i]);
+  v6.channel[1].baudrate = 57600;
+  v6.checksum = mb_config_calc_checksum_v6(&v6);
+
+  mb_board_config_t migrated;
+  mb_config_load_from_blob(reinterpret_cast<const uint8_t *>(&v6), sizeof(v6), &migrated);
+  TEST_ASSERT_EQUAL_UINT32(57600, migrated.channel[1].baudrate);
+  mb_channel_config_t def;
+  mb_channel_config_set_defaults(&def);
+  TEST_ASSERT_EQUAL_MEMORY(&def, &migrated.channel[2], sizeof(def));
+  TEST_ASSERT_EQUAL_MEMORY(&def, &migrated.channel[3], sizeof(def));
+}
+
 void test_load_rejects_corrupt_v6_blob(void) {
   mb_board_config_v6_t v6{};
   v6.schema_version = 6;
@@ -765,6 +844,8 @@ int main(int argc, char **argv) {
   RUN_TEST(test_load_migrates_v5_blob_without_data_loss);
   RUN_TEST(test_load_rejects_corrupt_v5_blob);
   RUN_TEST(test_load_migrates_v6_blob_without_data_loss);
+  RUN_TEST(test_load_migrates_v7_blob_to_four_channels);
+  RUN_TEST(test_load_migrates_v6_blob_gives_default_channels_c_d);
   RUN_TEST(test_load_rejects_corrupt_v6_blob);
   RUN_TEST(test_load_rejects_future_schema_version);
 

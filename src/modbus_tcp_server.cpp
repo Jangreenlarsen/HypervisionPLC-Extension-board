@@ -12,8 +12,8 @@
 
 namespace {
 
-constexpr uint16_t kPortChannelA = 502;
-constexpr uint16_t kPortChannelB = 503;
+// §4.1: port 502 + (n-1) for kanal n — v0.31.0: 502-505 (A-D).
+constexpr uint16_t kPortFirst = 502;
 constexpr uint32_t kSocketReadTimeoutMs = 1000;
 
 // Standard Modbus-gateway-exceptions (§4.1) — sendes til PLC'en når selve
@@ -37,8 +37,12 @@ struct ServerContext {
   ModbusChannelId channel;
 };
 
-ServerContext g_channel_a_ctx{kPortChannelA, ModbusChannelId::kA};
-ServerContext g_channel_b_ctx{kPortChannelB, ModbusChannelId::kB};
+ServerContext g_contexts[MB_CHANNEL_COUNT] = {
+    {kPortFirst + 0, ModbusChannelId::kA},
+    {kPortFirst + 1, ModbusChannelId::kB},
+    {kPortFirst + 2, ModbusChannelId::kC},
+    {kPortFirst + 3, ModbusChannelId::kD},
+};
 bool g_started = false;
 
 // §4.3 (revideret): ÉT fast PLC-IP-permit, håndhævet FØR noget Modbus-indhold
@@ -189,8 +193,13 @@ void modbus_tcp_server_begin() {
   if (g_started) return;  // undgår dobbelt-lyttesockets ved gen-forbindelse (samme moenster som http_server_begin())
   g_started = true;
 
-  xTaskCreate(tcp_server_task, "mb_tcp_a", 4096, &g_channel_a_ctx, tskIDLE_PRIORITY + 1, nullptr);
-  xTaskCreate(tcp_server_task, "mb_tcp_b", 4096, &g_channel_b_ctx, tskIDLE_PRIORITY + 1, nullptr);
+  // v0.31.0: kun porte for AKTIVE kanaler (2 eller 4, EXP_SEL-jumperen).
+  static const char *const kTaskNames[MB_CHANNEL_COUNT] = {"mb_tcp_a", "mb_tcp_b", "mb_tcp_c", "mb_tcp_d"};
+  const size_t active = modbus_channel_active_count();
+  for (size_t i = 0; i < active && i < MB_CHANNEL_COUNT; i++) {
+    xTaskCreate(tcp_server_task, kTaskNames[i], 4096, &g_contexts[i], tskIDLE_PRIORITY + 1, nullptr);
+  }
 
-  Serial.println("Modbus TCP-server startet: port 502 (kanal A), port 503 (kanal B).");
+  Serial.printf("Modbus TCP-server startet: port 502-%u (kanal A-%c).\r\n", static_cast<unsigned>(kPortFirst + active - 1),
+                static_cast<char>('A' + active - 1));
 }

@@ -40,6 +40,34 @@ void test_status_json_board_mode_rs232(void) {
   TEST_ASSERT_NOT_NULL(strstr(out, "\"board_mode\":\"rs232\""));
 }
 
+// v0.31.0 (Jan: "board skal signalere til plc at det er et 4 x rs232 eller
+// 4 x rs485, alt efter jumper").
+void test_status_json_board_type_and_expander(void) {
+  struct {
+    uint8_t channels;
+    mb_channel_mode_t mode;
+    const char *expander;
+    const char *want_type;
+    const char *want_expander;
+  } cases[] = {
+      {4, MB_CHANNEL_MODE_RS485, "ok", "\"board_type\":\"4xRS485\"", "\"expander\":\"ok\""},
+      {4, MB_CHANNEL_MODE_RS232, "ok", "\"board_type\":\"4xRS232\"", "\"expander\":\"ok\""},
+      {4, MB_CHANNEL_MODE_RS485, "not_found", "\"board_type\":\"4xRS485\"", "\"expander\":\"not_found\""},
+      {2, MB_CHANNEL_MODE_RS232, "not_fitted", "\"board_type\":\"2xRS232\"", "\"expander\":\"not_fitted\""},
+      {2, MB_CHANNEL_MODE_RS485, nullptr, "\"board_type\":\"2xRS485\"", "\"expander\":\"not_fitted\""},
+  };
+  for (const auto &c : cases) {
+    const mb_status_data_t data = {
+        "0.31.0", "0049", 10, 300000, c.channels, false, nullptr, 0, true, c.mode, true, "10.1.1.26", "connected",
+        c.expander,
+    };
+    char out[512];
+    TEST_ASSERT_TRUE(mb_status_build_json(&data, out, sizeof(out)) > 0);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, c.want_type), c.want_type);
+    TEST_ASSERT_NOT_NULL_MESSAGE(strstr(out, c.want_expander), c.want_expander);
+  }
+}
+
 void test_status_json_when_disconnected_omits_ip_rssi(void) {
   const mb_status_data_t data = {
       "0.6.0", "0006", 10, 300000, 2, false, nullptr, 0, false, MB_CHANNEL_MODE_RS485,
@@ -201,6 +229,7 @@ int main(int argc, char **argv) {
 
   RUN_TEST(test_status_json_when_connected);
   RUN_TEST(test_status_json_board_mode_rs232);
+  RUN_TEST(test_status_json_board_type_and_expander);
   RUN_TEST(test_status_json_when_disconnected_omits_ip_rssi);
   RUN_TEST(test_status_json_ethernet_connected);
   RUN_TEST(test_status_json_ethernet_link_down_reports_status_while_disconnected);

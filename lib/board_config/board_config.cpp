@@ -31,6 +31,17 @@ void mb_config_set_defaults(mb_board_config_t *config) {
   // "intet hostname sat" (firmwaren har altid ET hostname).
 }
 
+// mb_config_load_from_blob() genkender et schema UDELUKKENDE på blob-
+// størrelsen — to layouts med samme størrelse ville give forkert migration.
+static_assert(sizeof(mb_board_config_t) != sizeof(mb_board_config_v7_t), "schema 8 og 7 skal have forskellig størrelse");
+static_assert(sizeof(mb_board_config_t) != sizeof(mb_board_config_v6_t), "schema 8 og 6 skal have forskellig størrelse");
+static_assert(sizeof(mb_board_config_t) != sizeof(mb_board_config_v5_t), "schema 8 og 5 skal have forskellig størrelse");
+static_assert(sizeof(mb_board_config_t) != sizeof(mb_board_config_v4_t), "schema 8 og 4 skal have forskellig størrelse");
+static_assert(sizeof(mb_board_config_t) != sizeof(mb_board_config_v3_t), "schema 8 og 3 skal have forskellig størrelse");
+static_assert(sizeof(mb_board_config_t) != sizeof(mb_board_config_v2_t), "schema 8 og 2 skal have forskellig størrelse");
+static_assert(sizeof(mb_board_config_t) != sizeof(mb_board_config_v1_t), "schema 8 og 1 skal have forskellig størrelse");
+static_assert(sizeof(mb_board_config_v7_t) != sizeof(mb_board_config_v6_t), "schema 7 og 6 skal have forskellig størrelse");
+
 namespace {
 uint16_t crc16(const uint8_t *bytes, size_t len) {
   uint16_t crc = 0xFFFF;
@@ -74,6 +85,10 @@ uint16_t mb_config_calc_checksum_v5(const mb_board_config_v5_t *config) {
 
 uint16_t mb_config_calc_checksum_v6(const mb_board_config_v6_t *config) {
   return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v6_t, checksum));
+}
+
+uint16_t mb_config_calc_checksum_v7(const mb_board_config_v7_t *config) {
+  return crc16(reinterpret_cast<const uint8_t *>(config), offsetof(mb_board_config_v7_t, checksum));
 }
 
 // Migrerer en verificeret v1-kandidat til v2-layout. Nye felter får deres
@@ -130,7 +145,7 @@ static void migrate_v2_to_v3(const mb_board_config_v2_t &v2, mb_board_config_v3_
   memcpy(out_config->rest_pass, v2.rest_pass, sizeof(out_config->rest_pass));
   out_config->has_rest_pass = v2.has_rest_pass;
   out_config->rest_auth_mode = v2.rest_auth_mode;
-  for (size_t i = 0; i < MB_CHANNEL_COUNT; i++) {
+  for (size_t i = 0; i < MB_CHANNEL_COUNT_SCHEMA_3_TO_7; i++) {
     mb_channel_config_set_defaults(&out_config->channel[i]);
   }
 }
@@ -232,7 +247,7 @@ static void migrate_v5_to_current(const mb_board_config_v5_t &v5, mb_board_confi
   memcpy(out_config->rest_pass, v5.rest_pass, sizeof(out_config->rest_pass));
   out_config->has_rest_pass = v5.has_rest_pass;
   out_config->rest_auth_mode = v5.rest_auth_mode;
-  memcpy(out_config->channel, v5.channel, sizeof(out_config->channel));
+  memcpy(out_config->channel, v5.channel, sizeof(v5.channel));  // schema 8: kun A+B; C+D beholder defaults
   out_config->eth_enabled = v5.eth_enabled;
   out_config->eth_static_ip = v5.eth_static_ip;
   memcpy(out_config->eth_ip, v5.eth_ip, sizeof(out_config->eth_ip));
@@ -269,7 +284,7 @@ static void migrate_v6_to_current(const mb_board_config_v6_t &v6, mb_board_confi
   memcpy(out_config->rest_pass, v6.rest_pass, sizeof(out_config->rest_pass));
   out_config->has_rest_pass = v6.has_rest_pass;
   out_config->rest_auth_mode = v6.rest_auth_mode;
-  memcpy(out_config->channel, v6.channel, sizeof(out_config->channel));
+  memcpy(out_config->channel, v6.channel, sizeof(v6.channel));  // schema 8: kun A+B; C+D beholder defaults
   out_config->eth_enabled = v6.eth_enabled;
   out_config->eth_static_ip = v6.eth_static_ip;
   memcpy(out_config->eth_ip, v6.eth_ip, sizeof(out_config->eth_ip));
@@ -280,6 +295,45 @@ static void migrate_v6_to_current(const mb_board_config_v6_t &v6, mb_board_confi
   out_config->has_hostname = v6.has_hostname;
   memcpy(out_config->hostname, v6.hostname, sizeof(out_config->hostname));
   // out_config->syslog_targets beholder de defaults mb_config_set_defaults() satte ovenfor (ingen konfigureret).
+}
+
+// Migrerer en verificeret v7-kandidat til nuværende (v8) layout. Ændring:
+// `channel[]` udvidet fra 2 til 4 (v0.31.0, kanal C+D via CJMCU-752) — A+B
+// kopieres uændret, C+D får defaults (samme som et fabriksnyt board).
+static void migrate_v7_to_current(const mb_board_config_v7_t &v7, mb_board_config_t *out_config) {
+  mb_config_set_defaults(out_config);
+
+  out_config->provisioned = v7.provisioned;
+  out_config->wifi_enabled = v7.wifi_enabled;
+  memcpy(out_config->wifi_ssid, v7.wifi_ssid, sizeof(out_config->wifi_ssid));
+  out_config->wifi_has_ssid = v7.wifi_has_ssid;
+  memcpy(out_config->wifi_password, v7.wifi_password, sizeof(out_config->wifi_password));
+  out_config->wifi_has_password = v7.wifi_has_password;
+  out_config->wifi_open_network = v7.wifi_open_network;
+  out_config->wifi_static_ip = v7.wifi_static_ip;
+  memcpy(out_config->wifi_ip, v7.wifi_ip, sizeof(out_config->wifi_ip));
+  memcpy(out_config->wifi_mask, v7.wifi_mask, sizeof(out_config->wifi_mask));
+  memcpy(out_config->wifi_gw, v7.wifi_gw, sizeof(out_config->wifi_gw));
+  memcpy(out_config->plc_ip, v7.plc_ip, sizeof(out_config->plc_ip));
+  out_config->has_plc_ip = v7.has_plc_ip;
+  memcpy(out_config->mgmt_token, v7.mgmt_token, sizeof(out_config->mgmt_token));
+  out_config->has_mgmt_token = v7.has_mgmt_token;
+  memcpy(out_config->rest_user, v7.rest_user, sizeof(out_config->rest_user));
+  out_config->has_rest_user = v7.has_rest_user;
+  memcpy(out_config->rest_pass, v7.rest_pass, sizeof(out_config->rest_pass));
+  out_config->has_rest_pass = v7.has_rest_pass;
+  out_config->rest_auth_mode = v7.rest_auth_mode;
+  memcpy(out_config->channel, v7.channel, sizeof(v7.channel));  // A+B; C+D beholder defaults
+  out_config->eth_enabled = v7.eth_enabled;
+  out_config->eth_static_ip = v7.eth_static_ip;
+  memcpy(out_config->eth_ip, v7.eth_ip, sizeof(out_config->eth_ip));
+  memcpy(out_config->eth_mask, v7.eth_mask, sizeof(out_config->eth_mask));
+  memcpy(out_config->eth_gw, v7.eth_gw, sizeof(out_config->eth_gw));
+  memcpy(out_config->eth_mac, v7.eth_mac, sizeof(out_config->eth_mac));
+  out_config->has_eth_mac = v7.has_eth_mac;
+  out_config->has_hostname = v7.has_hostname;
+  memcpy(out_config->hostname, v7.hostname, sizeof(out_config->hostname));
+  memcpy(out_config->syslog_targets, v7.syslog_targets, sizeof(out_config->syslog_targets));
 }
 
 void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_board_config_t *out_config) {
@@ -300,6 +354,19 @@ void mb_config_load_from_blob(const uint8_t *stored_blob, size_t stored_len, mb_
     // gør ikke — korruption, eller en fremtidig schema-version koden (i
     // strid med §3.5) er blevet nedgraderet i forhold til. Fald sikkert
     // til defaults.
+    mb_config_set_defaults(out_config);
+    return;
+  }
+
+  if (stored_len == sizeof(mb_board_config_v7_t)) {
+    mb_board_config_v7_t v7_candidate;
+    memcpy(&v7_candidate, stored_blob, sizeof(v7_candidate));
+    if (v7_candidate.checksum == mb_config_calc_checksum_v7(&v7_candidate) && v7_candidate.schema_version == 7) {
+      migrate_v7_to_current(v7_candidate, out_config);
+      return;
+    }
+    // Størrelsen matcher v7, men checksum eller schema_version gør ikke —
+    // korrupt v7-blob, ikke en gyldig ældre version. Fald til defaults.
     mb_config_set_defaults(out_config);
     return;
   }
