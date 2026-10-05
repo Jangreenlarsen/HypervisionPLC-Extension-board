@@ -4,6 +4,15 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.32.1 build 0051] — 2026-10-05 — Rettet: tilfældigt reboot-loop ved opstart (syslog før netværk)
+
+**Fundet:** Ved OTA af v0.32.0 gik boardet i reboot-loop. Seriel log: `assert failed: tcpip_send_msg_wait_sem ... (Invalid mbox)`, backtrace (addr2line) → `syslog_sender.cpp` `send_packet()` → `socket()` i `sender_task`. Et syslog-kald tidligt i `setup()` — her "CJMCU-752 monteret ifølge jumperen, men svarer ikke" — fik sender-tasken til at oprette en UDP-socket, FØR TCP/IP-stakken var startet. Udløst tilfældigt, fordi EXP_SEL (GPIO36) svæver på testboardet (den påkrævede 10 kΩ pull-down mangler; GPIO34-39 har ingen interne pull-modstande). Fejlen findes også i v0.31.0 — den var ikke forårsaget af v0.32.0's hostname-ændring.
+
+**`src/syslog_sender.cpp`:** `sender_task` venter nu med at sende, til et interface har en IP (`eth_driver_status() == ETH_STATUS_CONNECTED` eller WiFi forbundet). Beskeder bliver liggende i køen imens.
+
+**Verificeret på hardware:** 6 genstarter i træk via USB, heraf 2 hvor EXP_SEL blev læst høj (den situation der før crashede) — alle bootede normalt og fik IP.
+
+
 ## [0.32.0 build 0050] — 2026-10-05 — Hostname sat fra PLC'en (`POST /api/hostname`)
 
 **Baggrund:** Jan: "expansion board skal have deres hostname opdateret fra plc system med det navn som de er oprettet med i I/O expansion board config del på plc". Hidtil kunne hostnamet kun sættes over den serielle CLI (`hostname <navn>`, v0.22.0) — i strid med "single pane of glass".

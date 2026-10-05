@@ -2,6 +2,14 @@
 
 ---
 
+## v0.32.1 — 2026-10-05 — Rettet: tilfældigt reboot-loop ved opstart
+
+Boardet kunne gå i reboot-loop lige efter opstart, typisk efter en firmwareopdatering. Det skete, når boardet prøvede at sende en syslog-besked, før netværket var startet. Nu venter beskederne, til netværket er oppe.
+
+- **Hardware:** EXP_SEL-pinden (GPIO36) skal have en 10 kΩ pull-down-modstand til GND, når der ikke er monteret et CJMCU-752-modul. Uden den svæver pinden, og boardet tror tilfældigt, at modulet er monteret. Det er ufarligt nu, men giver en forkert advarsel i loggen.
+
+---
+
 ## v0.32.0 — 2026-10-05 — Hostname styres fra PLC'en
 
 Boardets netværksnavn (hostname) kan nu sættes fra PLC'en. PLC'en bruger det navn, boardet er oprettet med under I/O → Expansion Boards, så boardet dukker op under samme navn i routeren/DHCP-serveren.

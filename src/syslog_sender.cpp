@@ -1,6 +1,7 @@
 #include "syslog_sender.h"
 
 #include <Arduino.h>
+#include <WiFi.h>
 #include <lwip/sockets.h>
 #include <cerrno>
 #include <cstdarg>
@@ -13,6 +14,7 @@
 
 #include "board_config.h"
 #include "config.h"
+#include "eth_driver.h"
 
 // BUGS.md v0.30.1: syslog sendes ikke længere direkte fra den kaldende task
 // (fx en Modbus-kanal-task midt i en transaktion) via Arduino's WiFiUDP.
@@ -87,6 +89,16 @@ bool send_packet(const char *ip_str, uint16_t port, const char *packet, size_t l
   return false;
 }
 
+// v0.32.1 (BUGS.md): et syslog-kald tidligt i opstarten (fx "CJMCU-752
+// monteret ifoelge jumperen, men svarer ikke") fik sender-tasken til at kalde
+// socket() FOER TCP/IP-stakken var startet -> assert "tcpip_send_msg_wait_sem
+// (Invalid mbox)" -> genstart, og med en svaevende EXP_SEL-pin et tilfaeldigt
+// reboot-loop. Vent derfor med at sende, til et interface har en IP. Beskeder
+// bliver liggende i koeen imens (fuld koe -> queue_dropped som hidtil).
+bool network_ready() {
+  return eth_driver_status() == ETH_STATUS_CONNECTED || WiFi.status() == WL_CONNECTED;
+}
+
 void sender_task(void *param) {
   (void)param;
   static SyslogItem item;
@@ -94,6 +106,7 @@ void sender_task(void *param) {
 
   for (;;) {
     if (xQueueReceive(g_queue, &item, portMAX_DELAY) != pdTRUE) continue;
+    while (!network_ready()) vTaskDelay(pdMS_TO_TICKS(500));
 
     mb_syslog_target_t targets[MB_SYSLOG_MAX_TARGETS];
     char hostname[sizeof(g_hostname)];
