@@ -105,7 +105,7 @@ CJMCU-752 er et modul med NXP SC16IS752 (2× UART med 64 byte FIFO) og en **1,84
 | GPIO0 | Kanal C's aktivitets-LED (via modstand) | Tændt under en transaktion |
 | GPIO1 | Kanal D's aktivitets-LED (via modstand) | |
 
-- **EXP_SEL (GPIO36) til 3,3 V** fortæller firmwaren, at modulet er monteret. Siger jumperen "monteret", men chippen svarer ikke på I2C, melder boardet stadig 4 kanaler, men kanal C/D har `"status":"unavailable"`, `/api/status` viser `"expander":"not_found"`, og alle transaktioner afvises — så hardwarefejlen er synlig.
+- **EXP_SEL (GPIO36) til 3,3 V** fortæller firmwaren, at modulet er monteret. Pinden læses 5 gange ved boot og skal være høj hver gang. Siger jumperen "monteret", men chippen svarer ikke på I2C, kører boardet videre med **2 kanaler** (A-B) siden v0.33.0, og `/api/status` viser `"expander":"not_found"`, så hardwarefejlen er synlig.
 - **Alle 4 kanaler følger samme MODE_SEL-jumper (GPIO4)** — boardet er enten 4×RS485 eller 4×RS232 (`board_type` i `/api/status`).
 - **Baudrate på kanal C/D: 1200-115200** (krystallens grænse). Højere afvises af `PUT /api/channels/{3,4}/config` med `400 invalid_baudrate`.
 - **I RS232-mode** holder chippen RTS-benet lavt, så en evt. monteret SP3485's driver er slukket.
