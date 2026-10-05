@@ -636,19 +636,28 @@ void modbus_channel_init_all() {
   // (GPIO34-39 har ingen) — den eksterne pull-down er påkrævet.
   pinMode(kExpanderSelPin, INPUT);
   delayMicroseconds(10);
-  const bool expander_fitted = digitalRead(kExpanderSelPin) == HIGH;
+  // v0.33.0 (PLC FEAT-459): læst 5 gange — HØJ alle gange kræves. En svævende
+  // pin (manglende pull-down) giver ellers tilfældigt "monteret".
+  bool expander_fitted = true;
+  for (int i = 0; i < 5 && expander_fitted; i++) {
+    if (digitalRead(kExpanderSelPin) != HIGH) expander_fitted = false;
+    delay(1);
+  }
   if (expander_fitted) {
     const bool found = uart_expander_begin();
-    g_active_channels = 4;
+    // v0.33.0 (PLC FEAT-459): svarer modulet ikke, bliver boardet på 2
+    // kanaler (A-B) — i stedet for 4, hvor C/D afviser alt. `expander` i
+    // GET /api/status siger stadig "not_found", så fejlen er synlig.
+    g_active_channels = found ? 4 : 2;
     g_expander_status = found ? ModbusExpanderStatus::kOk : ModbusExpanderStatus::kNotFound;
     if (found) {
       Serial.printf("EXP_SEL (GPIO36): CJMCU-752 monteret - fundet paa I2C-adresse 0x%02X, 4 kanaler (A-D)\r\n",
                     uart_expander_i2c_address());
     } else {
       Serial.println("EXP_SEL (GPIO36): CJMCU-752 monteret ifoelge jumperen, men SVARER IKKE paa I2C (SDA=21, SCL=22) - "
-                     "kanal C/D afviser alle transaktioner");
+                     "koerer med 2 kanaler (A-B). Mangler 10 kOhm pull-down paa GPIO36, hvis modulet ikke er monteret?");
       syslog_log(MB_SYSLOG_FACILITY_MODBUS, 1,
-                 "UART-expander CJMCU-752 ikke fundet paa I2C selvom EXP_SEL-jumperen siger monteret - kanal C/D utilgaengelige");
+                 "UART-expander CJMCU-752 ikke fundet paa I2C selvom EXP_SEL siger monteret - koerer med 2 kanaler (tjek modul eller pull-down paa GPIO36)");
     }
   } else {
     g_active_channels = 2;

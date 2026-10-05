@@ -2,6 +2,13 @@
 
 ---
 
+## v0.33.0 — 2026-10-05 — Færre falske "4 kanaler"
+
+- Siger EXP_SEL-jumperen "modul monteret", men CJMCU-752 svarer ikke, kører boardet nu med 2 kanaler (A-B) i stedet for at melde 4 kanaler, hvor C og D ikke virker. Status viser stadig `"expander":"not_found"`, så fejlen er synlig.
+- EXP_SEL læses flere gange ved opstart, så en svævende pin sjældnere tolkes som "monteret". 10 kΩ pull-down på GPIO36 er stadig påkrævet uden modul.
+
+---
+
 ## v0.32.1 — 2026-10-05 — Rettet: tilfældigt reboot-loop ved opstart
 
 Boardet kunne gå i reboot-loop lige efter opstart, typisk efter en firmwareopdatering. Det skete, når boardet prøvede at sende en syslog-besked, før netværket var startet. Nu venter beskederne, til netværket er oppe.

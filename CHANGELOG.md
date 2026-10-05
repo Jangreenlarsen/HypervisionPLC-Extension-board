@@ -4,6 +4,13 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.33.0 build 0052] — 2026-10-05 — EXP_SEL-robusthed: 2 kanaler hvis CJMCU-752 ikke svarer
+
+**Baggrund:** PLC FEAT-459 (Jan: "lav den liste af forbedringer"). På testboardet uden pull-down på GPIO36 læste EXP_SEL tilfældigt "monteret", og boardet meldte så 4 kanaler med C/D `unavailable` — PLC'en så et 4-kanals board, der reelt kun havde 2.
+
+**`src/modbus_channel.cpp`:** EXP_SEL læses 5 gange (1 ms imellem) og skal være HØJ hver gang. Svarer CJMCU-752 ikke på I2C, bliver `active_channels` 2 (A-B) i stedet for 4; `expander` i `GET /api/status` er fortsat `not_found`, og boot-/syslog-beskeden nævner den manglende pull-down som mulig årsag.
+
+
 ## [0.32.1 build 0051] — 2026-10-05 — Rettet: tilfældigt reboot-loop ved opstart (syslog før netværk)
 
 **Fundet:** Ved OTA af v0.32.0 gik boardet i reboot-loop. Seriel log: `assert failed: tcpip_send_msg_wait_sem ... (Invalid mbox)`, backtrace (addr2line) → `syslog_sender.cpp` `send_packet()` → `socket()` i `sender_task`. Et syslog-kald tidligt i `setup()` — her "CJMCU-752 monteret ifølge jumperen, men svarer ikke" — fik sender-tasken til at oprette en UDP-socket, FØR TCP/IP-stakken var startet. Udløst tilfældigt, fordi EXP_SEL (GPIO36) svæver på testboardet (den påkrævede 10 kΩ pull-down mangler; GPIO34-39 har ingen interne pull-modstande). Fejlen findes også i v0.31.0 — den var ikke forårsaget af v0.32.0's hostname-ændring.
