@@ -252,3 +252,9 @@ bool mb_provisioning_parse_hostname_request(const char *json, char *out_hostname
 // RFC 3164 TAG-felt: 1-MB_SYSLOG_TAG_MAX_LEN tegn, kun [A-Za-z0-9_-] (ingen
 // mellemrum/kolon — kolonet er selve feltets afgrænser i RFC 3164-formatet).
 bool mb_provisioning_validate_syslog_tag(const char *tag);
+
+// v0.34.0: POST /api/plc-ip-body {"plc_ip":"a.b.c.d"} -> valideret IPv4.
+bool mb_provisioning_parse_plc_ip_request(const char *json, char *out_ip, size_t out_capacity);
+// v0.34.0: POST /api/syslog-body {"targets":[{"ip","port"(valgfri, 514),"tag","level"(1-8)}, ...]}
+// (højst MB_SYSLOG_MAX_TARGETS; tom liste = ryd alle). false ved ugyldigt input.
+bool mb_provisioning_parse_syslog_request(const char *json, mb_syslog_target_t *out_targets, size_t *out_count);

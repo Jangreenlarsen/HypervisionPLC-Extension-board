@@ -125,6 +125,91 @@ bool mb_provisioning_parse_hostname_request(const char *json, char *out_hostname
   return mb_provisioning_validate_hostname(out_hostname);
 }
 
+// v0.34.0: små, allokeringsfri JSON-hjælpere til PLC-styrede REST-kald
+// (POST /api/plc-ip, POST /api/syslog). Kun det format PLC'en selv sender —
+// ingen escapes (gyldige IP'er/tags indeholder hverken '\\' eller '"').
+static const char *json_find_key(const char *begin, const char *end, const char *key) {
+  char pat[40];
+  snprintf(pat, sizeof(pat), "\"%s\"", key);
+  const size_t plen = strlen(pat);
+  for (const char *p = begin; p && p + plen <= end; p++) {
+    if (memcmp(p, pat, plen) == 0) {
+      const char *q = p + plen;
+      while (q < end && (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n')) q++;
+      if (q < end && *q == ':') {
+        q++;
+        while (q < end && (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n')) q++;
+        return q;
+      }
+    }
+  }
+  return nullptr;
+}
+
+static bool json_get_string(const char *begin, const char *end, const char *key, char *out, size_t cap) {
+  const char *v = json_find_key(begin, end, key);
+  if (!v || v >= end || *v != '"') return false;
+  v++;
+  const char *q = static_cast<const char *>(memchr(v, '"', static_cast<size_t>(end - v)));
+  if (!q) return false;
+  const size_t len = static_cast<size_t>(q - v);
+  if (len >= cap) return false;
+  memcpy(out, v, len);
+  out[len] = '\0';
+  return true;
+}
+
+static bool json_get_uint(const char *begin, const char *end, const char *key, uint32_t *out) {
+  const char *v = json_find_key(begin, end, key);
+  if (!v || v >= end || *v < '0' || *v > '9') return false;
+  uint32_t n = 0;
+  while (v < end && *v >= '0' && *v <= '9') {
+    n = n * 10 + static_cast<uint32_t>(*v - '0');
+    if (n > 100000) return false;
+    v++;
+  }
+  *out = n;
+  return true;
+}
+
+bool mb_provisioning_parse_plc_ip_request(const char *json, char *out_ip, size_t out_capacity) {
+  if (!json || !out_ip || out_capacity == 0) return false;
+  const char *end = json + strlen(json);
+  if (!json_get_string(json, end, "plc_ip", out_ip, out_capacity)) return false;
+  return mb_provisioning_validate_ipv4(out_ip);
+}
+
+bool mb_provisioning_parse_syslog_request(const char *json, mb_syslog_target_t *out_targets, size_t *out_count) {
+  if (!json || !out_targets || !out_count) return false;
+  *out_count = 0;
+  const char *end = json + strlen(json);
+  const char *arr = json_find_key(json, end, "targets");
+  if (!arr || *arr != '[') return false;
+  const char *p = arr + 1;
+  for (;;) {
+    while (p < end && (*p == ' ' || *p == ',' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
+    if (p >= end) return false;
+    if (*p == ']') return true;
+    if (*p != '{') return false;
+    const char *obj_end = static_cast<const char *>(memchr(p, '}', static_cast<size_t>(end - p)));
+    if (!obj_end) return false;
+    if (*out_count >= MB_SYSLOG_MAX_TARGETS) return false;
+    mb_syslog_target_t t;
+    memset(&t, 0, sizeof(t));
+    uint32_t port = MB_SYSLOG_DEFAULT_PORT, level = 0;
+    if (!json_get_string(p, obj_end, "ip", t.ip, sizeof(t.ip)) || !mb_provisioning_validate_ipv4(t.ip)) return false;
+    json_get_uint(p, obj_end, "port", &port);
+    if (port == 0 || port > 65535) return false;
+    if (!json_get_string(p, obj_end, "tag", t.tag, sizeof(t.tag)) || !mb_provisioning_validate_syslog_tag(t.tag)) return false;
+    if (!json_get_uint(p, obj_end, "level", &level) || level < 1 || level > 8) return false;
+    t.in_use = true;
+    t.port = static_cast<uint16_t>(port);
+    t.max_level = static_cast<uint8_t>(level);
+    out_targets[(*out_count)++] = t;
+    p = obj_end + 1;
+  }
+}
+
 // Splitter `buf` (muteres in-place) i op til `max_tokens` tokens. Et token er
 // enten et "citeret" segment (mellemrum tilladt indeni — nødvendigt for SSID'er
 // som "My Home Network", jf. §3.4.1) eller et almindeligt whitespace-afgrænset ord.

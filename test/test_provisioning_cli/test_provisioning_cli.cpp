@@ -1108,6 +1108,53 @@ void test_hostname_request_rejects_invalid(void) {
   TEST_ASSERT_FALSE(mb_provisioning_parse_hostname_request("{\"hostname\":\"abc", h, sizeof(h), &is_auto));
 }
 
+// v0.34.0: POST /api/plc-ip og POST /api/syslog
+void test_plc_ip_request(void) {
+  char ip[MB_PROV_IPV4_MAX_LEN + 1];
+  TEST_ASSERT_TRUE(mb_provisioning_parse_plc_ip_request("{\"plc_ip\":\"10.1.1.30\"}", ip, sizeof(ip)));
+  TEST_ASSERT_EQUAL_STRING("10.1.1.30", ip);
+  TEST_ASSERT_FALSE(mb_provisioning_parse_plc_ip_request("{\"plc_ip\":\"10.1.1.300\"}", ip, sizeof(ip)));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_plc_ip_request("{\"ip\":\"10.1.1.30\"}", ip, sizeof(ip)));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_plc_ip_request("{\"plc_ip\":30}", ip, sizeof(ip)));
+}
+
+void test_syslog_request_two_targets(void) {
+  mb_syslog_target_t t[MB_SYSLOG_MAX_TARGETS];
+  size_t n = 99;
+  TEST_ASSERT_TRUE(mb_provisioning_parse_syslog_request(
+      "{\"targets\":[{\"ip\":\"10.1.1.75\",\"port\":514,\"tag\":\"skab7\",\"level\":6},"
+      "{\"ip\":\"10.1.1.76\",\"tag\":\"b\",\"level\":3}]}", t, &n));
+  TEST_ASSERT_EQUAL_UINT(2, n);
+  TEST_ASSERT_EQUAL_STRING("10.1.1.75", t[0].ip);
+  TEST_ASSERT_EQUAL_UINT16(514, t[0].port);
+  TEST_ASSERT_EQUAL_STRING("skab7", t[0].tag);
+  TEST_ASSERT_EQUAL_UINT8(6, t[0].max_level);
+  TEST_ASSERT_TRUE(t[0].in_use);
+  TEST_ASSERT_EQUAL_UINT16(MB_SYSLOG_DEFAULT_PORT, t[1].port);  // port udeladt -> 514
+}
+
+void test_syslog_request_empty_clears(void) {
+  mb_syslog_target_t t[MB_SYSLOG_MAX_TARGETS];
+  size_t n = 99;
+  TEST_ASSERT_TRUE(mb_provisioning_parse_syslog_request("{\"targets\":[]}", t, &n));
+  TEST_ASSERT_EQUAL_UINT(0, n);
+}
+
+void test_syslog_request_rejects_invalid(void) {
+  mb_syslog_target_t t[MB_SYSLOG_MAX_TARGETS];
+  size_t n;
+  TEST_ASSERT_FALSE(mb_provisioning_parse_syslog_request("{\"targets\":[{\"ip\":\"x\",\"tag\":\"a\",\"level\":6}]}", t, &n));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_syslog_request("{\"targets\":[{\"ip\":\"10.1.1.1\",\"tag\":\"a b\",\"level\":6}]}", t, &n));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_syslog_request("{\"targets\":[{\"ip\":\"10.1.1.1\",\"tag\":\"a\",\"level\":9}]}", t, &n));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_syslog_request("{\"targets\":[{\"ip\":\"10.1.1.1\",\"tag\":\"a\"}]}", t, &n));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_syslog_request("{\"targets\":[{\"ip\":\"10.1.1.1\",\"tag\":\"a\",\"level\":6,\"port\":70000}]}", t, &n));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_syslog_request(
+      "{\"targets\":[{\"ip\":\"1.1.1.1\",\"tag\":\"a\",\"level\":1},{\"ip\":\"1.1.1.2\",\"tag\":\"b\",\"level\":1},"
+      "{\"ip\":\"1.1.1.3\",\"tag\":\"c\",\"level\":1},{\"ip\":\"1.1.1.4\",\"tag\":\"d\",\"level\":1},"
+      "{\"ip\":\"1.1.1.5\",\"tag\":\"e\",\"level\":1}]}", t, &n));  // 5 > MB_SYSLOG_MAX_TARGETS
+  TEST_ASSERT_FALSE(mb_provisioning_parse_syslog_request("{\"x\":[]}", t, &n));
+}
+
 int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -1262,6 +1309,10 @@ int main(int argc, char **argv) {
   RUN_TEST(test_hostname_request_whitespace_around_colon);
   RUN_TEST(test_hostname_request_auto);
   RUN_TEST(test_hostname_request_rejects_invalid);
+  RUN_TEST(test_plc_ip_request);
+  RUN_TEST(test_syslog_request_two_targets);
+  RUN_TEST(test_syslog_request_empty_clears);
+  RUN_TEST(test_syslog_request_rejects_invalid);
 
   return UNITY_END();
 }
