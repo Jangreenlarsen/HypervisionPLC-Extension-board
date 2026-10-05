@@ -4,7 +4,21 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
-## [0.31.0 build 0049] — 2026-09-25 — Kanal C+D via CJMCU-752 (SC16IS752 over I2C), board_type og EXP_SEL-jumper
+## [0.32.0 build 0050] — 2026-10-05 — Hostname sat fra PLC'en (`POST /api/hostname`)
+
+**Baggrund:** Jan: "expansion board skal have deres hostname opdateret fra plc system med det navn som de er oprettet med i I/O expansion board config del på plc". Hidtil kunne hostnamet kun sættes over den serielle CLI (`hostname <navn>`, v0.22.0) — i strid med "single pane of glass".
+
+**`lib/provisioning_cli/`:** ny `mb_provisioning_parse_hostname_request()` — parser `{"hostname":"<navn>"}` / `{"hostname":"auto"}` og validerer med den eksisterende `mb_provisioning_validate_hostname()` (RFC 1123, 1-32 tegn). 4 nye native-tests (gyldigt navn, whitespace, `auto`, afviste input inkl. mellemrum, for langt, manglende felt, ikke-streng, uafsluttet).
+
+**`src/config.cpp/.h`:** ny `config_set_hostname()` (nullptr = auto) — persisterer straks.
+
+**`src/provisioning.cpp/.h`:** ny `provisioning_sync_hostname()` — holder CLI'ens arbejdskopi (`g_state`) i sync, så et senere `save` i den serielle CLI ikke skriver det gamle navn tilbage (samme klasse som v0.29.1).
+
+**`src/http_server.cpp`:** nyt `POST /api/hostname` (kræver Bearer-token) — svarer `{"ok":true,"hostname":"<faktisk>","auto":bool,"reboot_required":true}`; `syslog_sender_refresh()` + syslog-hændelse. Ethernet-hostnamet sættes kun ved boot (`eth_driver_begin()`), derfor `reboot_required`.
+
+**Status:** 333/333 native-tests (inkl. 4 nye), bygger for esp32dev. Ikke verificeret på hardware endnu (kræver OTA via PLC'en).
+
+ — 2026-09-25 — Kanal C+D via CJMCU-752 (SC16IS752 over I2C), board_type og EXP_SEL-jumper
 
 **Baggrund:** Jan: "jeg har det her uart board med 2xuart model cjmcu-752 hvordan kan vi implementere det". Afklaret: kanal C+D OVENI A+B (4 kanaler, port 502-505), I2C på GPIO21/22, 1,8432 MHz-krystal. Undervejs: "board skal signalere til plc at det er et 4 x rs232 eller 4 x rs485, alt efter jumper" og "vi skal bruge et jumper mere til at fortælle at vi har den ny chip ombord".
 

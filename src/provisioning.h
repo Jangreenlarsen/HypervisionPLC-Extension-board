@@ -6,3 +6,8 @@
 // "connect". Kaldes fra main.cpp's setup()/loop().
 void provisioning_begin();
 void provisioning_poll();
+
+// v0.32.0: holder CLI'ens arbejdskopi (g_state) i sync, når hostnamet
+// ændres udefra (POST /api/hostname) — ellers ville et senere 'save' i den
+// serielle CLI skrive det gamle navn tilbage (samme klasse som v0.29.1).
+void provisioning_sync_hostname(const char *hostname);

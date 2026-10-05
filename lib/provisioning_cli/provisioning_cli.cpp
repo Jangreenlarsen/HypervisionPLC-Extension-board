@@ -92,6 +92,39 @@ bool mb_provisioning_validate_hostname(const char *hostname) {
   return true;
 }
 
+// v0.32.0 (Jan: "expansion board skal have deres hostname opdateret fra plc
+// system med det navn som de er oprettet med") — parser body'en til
+// POST /api/hostname: {"hostname":"<navn>"} eller {"hostname":"auto"}.
+// Bevidst minimal (ingen escapes): et gyldigt hostname indeholder kun
+// [A-Za-z0-9-], så et '\\' eller '"' i værdien er under alle omstændigheder
+// ugyldigt. Returnerer false ved manglende felt eller ugyldigt navn.
+bool mb_provisioning_parse_hostname_request(const char *json, char *out_hostname, size_t out_capacity,
+                                            bool *out_auto) {
+  if (json == nullptr || out_hostname == nullptr || out_capacity == 0 || out_auto == nullptr) return false;
+  *out_auto = false;
+  out_hostname[0] = '\0';
+  const char *key = strstr(json, "\"hostname\"");
+  if (key == nullptr) return false;
+  const char *p = key + strlen("\"hostname\"");
+  while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+  if (*p != ':') return false;
+  p++;
+  while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+  if (*p != '"') return false;
+  p++;
+  const char *end = strchr(p, '"');
+  if (end == nullptr) return false;
+  const size_t len = static_cast<size_t>(end - p);
+  if (len == 0 || len >= out_capacity) return false;
+  memcpy(out_hostname, p, len);
+  out_hostname[len] = '\0';
+  if (strcmp(out_hostname, "auto") == 0) {
+    *out_auto = true;
+    return true;
+  }
+  return mb_provisioning_validate_hostname(out_hostname);
+}
+
 // Splitter `buf` (muteres in-place) i op til `max_tokens` tokens. Et token er
 // enten et "citeret" segment (mellemrum tilladt indeni — nødvendigt for SSID'er
 // som "My Home Network", jf. §3.4.1) eller et almindeligt whitespace-afgrænset ord.

@@ -244,6 +244,11 @@ bool mb_provisioning_validate_ipv4(const char *ip);
 // afviser eller mistolker ellers navnet).
 bool mb_provisioning_validate_hostname(const char *hostname);
 
+// v0.32.0: POST /api/hostname-body {"hostname":"<navn>"|"auto"} -> navn eller
+// *out_auto=true. false ved manglende felt eller ugyldigt navn.
+bool mb_provisioning_parse_hostname_request(const char *json, char *out_hostname, size_t out_capacity,
+                                            bool *out_auto);
+
 // RFC 3164 TAG-felt: 1-MB_SYSLOG_TAG_MAX_LEN tegn, kun [A-Za-z0-9_-] (ingen
 // mellemrum/kolon — kolonet er selve feltets afgrænser i RFC 3164-formatet).
 bool mb_provisioning_validate_syslog_tag(const char *tag);

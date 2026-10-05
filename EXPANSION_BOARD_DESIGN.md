@@ -485,6 +485,7 @@ Expansion-boardets kanal-task modtager PDU'en + det udpakkede `Unit ID` (→ RTU
 | PUT | `/api/channels/{n}/config` | Sæt kanalens fulde konfiguration **atomisk** (RS232/RS485-mode, baudrate, parity, stop-bits, timeout, §2.2.1) — hele objektet skal med i ét kald (samme "aldrig felt-for-felt"-princip som tidligere, nu håndhævet ved at endpointet kræver alle felter, ikke PATCH-semantik) |
 | POST | `/api/channels/{n}/read` | **Diagnostisk Modbus-læsning** (function code, slave-ID, adresse, quantity i request-body) — udfører ÉN synkron Modbus RTU-transaktion på kanal `n` og returnerer resultatet som JSON. IKKE data-planet — Modbus TCP (§4.1) forbliver den høj-frekvente vej for PLC'ens drift. Til ad-hoc test/diagnose (curl/Postman) uden at skulle åbne en Modbus TCP-forbindelse. Genbruger `lib/modbus_pdu/` til selve PDU'en. |
 | POST | `/api/channels/{n}/write` | **Diagnostisk Modbus-skrivning** — samme princip som `/read`, for FC05/06/15/16 |
+| POST | `/api/hostname` | **v0.32.0.** `{"hostname":"<navn>"\|"auto"}` — DHCP-hostname sat fra PLC'en (samme regler som CLI'ens `hostname`, §3.4.1). Persisteres straks; svar `{"ok":true,"hostname","auto","reboot_required":true}` (Ethernet-hostname gælder efter genstart) |
 | POST | `/api/channels/{n}/reset-stats` | Nulstil én kanals tællere |
 | POST | `/api/stats/reset` | Nulstil alle aktive kanalers tællere |
 | POST | `/api/reboot` | Blødt, kontrolleret reboot |

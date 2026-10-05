@@ -2,6 +2,16 @@
 
 ---
 
+## v0.32.0 — 2026-10-05 — Hostname styres fra PLC'en
+
+Boardets netværksnavn (hostname) kan nu sættes fra PLC'en. PLC'en bruger det navn, boardet er oprettet med under I/O → Expansion Boards, så boardet dukker op under samme navn i routeren/DHCP-serveren.
+
+- Nyt REST-kald `POST /api/hostname` (kræver boardets token). `"auto"` vender tilbage til det automatiske navn.
+- Navnet gælder for Ethernet efter en genstart. PLC'en genstarter boardet efter en advarsel.
+- Den serielle `hostname`-kommando virker som før, og de to holdes i sync.
+
+---
+
 ## v0.31.0 — 2026-09-25 — Op til 4 kanaler med CJMCU-752
 
 Boardet kan nu udvides med et CJMCU-752-modul (2 ekstra UART'er over I2C), så det får **kanal C og D** oveni A og B — 4 Modbus-kanaler i alt på port 502-505.
