@@ -14,6 +14,10 @@
 #include "modbus_channel.h"
 #include "ota_handler.h"
 #include "rest_status.h"
+#include "provisioning.h"
+#include "provisioning_cli.h"
+#include "board_config.h"
+#include "syslog_sender.h"
 
 namespace {
 
@@ -440,6 +444,53 @@ esp_err_t channel_read_write_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+// POST /api/hostname (v0.32.0) — PLC'en sætter boardets DHCP-hostname til det
+// navn, boardet er oprettet med på PLC'en ("single pane of glass"). Body:
+// {"hostname":"<navn>"} eller {"hostname":"auto"}. Persisteres straks; WiFi
+// bruger det ved næste connect, Ethernet først efter genstart — svaret siger
+// derfor reboot_required, og PLC'en beslutter selv om den genstarter boardet.
+esp_err_t hostname_post_handler(httpd_req_t *req) {
+  if (!require_auth(req)) return ESP_OK;
+
+  if (req->content_len == 0 || req->content_len >= 128) {
+    send_json_error(req, "400 Bad Request", -1, "bad_request", "Tom eller for stor request-body (maks 127 bytes)");
+    return ESP_OK;
+  }
+  char body[128];
+  const int received = httpd_req_recv(req, body, static_cast<size_t>(req->content_len));
+  if (received <= 0) {
+    send_json_error(req, "400 Bad Request", -1, "bad_request", "Kunne ikke læse request-body");
+    return ESP_OK;
+  }
+  body[received] = '\0';
+
+  char hostname[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool is_auto = false;
+  if (!mb_provisioning_parse_hostname_request(body, hostname, sizeof(hostname), &is_auto)) {
+    send_json_error(req, "400 Bad Request", -1, "invalid_hostname",
+                     "Ugyldigt hostname: 1-32 tegn, kun bogstaver/tal/'-', ikke '-' forrest/bagerst (eller \"auto\")");
+    return ESP_OK;
+  }
+
+  config_set_hostname(is_auto ? nullptr : hostname);
+  // Samme klasse som v0.29.1: CLI'ens arbejdskopi (g_state) skal følge med,
+  // ellers ville et senere 'save' i den serielle CLI skrive det gamle navn tilbage.
+  provisioning_sync_hostname(is_auto ? nullptr : hostname);
+
+  const mb_board_config_t &cfg = config_get();
+  char effective[40];
+  mb_config_build_hostname(cfg.has_hostname, cfg.hostname, cfg.eth_mac, effective, sizeof(effective));
+  syslog_sender_refresh();  // syslog-pakkerne bærer hostnamet
+  syslog_logf(MB_SYSLOG_FACILITY_SYSTEM, 2, "hostname sat via REST: %s", effective);
+
+  char resp[160];
+  const int n = snprintf(resp, sizeof(resp), "{\"ok\":true,\"hostname\":\"%s\",\"auto\":%s,\"reboot_required\":true}",
+                         effective, is_auto ? "true" : "false");
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, resp, n > 0 ? n : HTTPD_RESP_USE_STRLEN);
+  return ESP_OK;
+}
+
 }  // namespace
 
 void http_server_begin() {
@@ -502,7 +553,15 @@ void http_server_begin() {
   };
   httpd_register_uri_handler(g_server, &channel_read_write_uri);
 
+  const httpd_uri_t hostname_post_uri = {
+      .uri = "/api/hostname",
+      .method = HTTP_POST,
+      .handler = hostname_post_handler,
+      .user_ctx = nullptr,
+  };
+  httpd_register_uri_handler(g_server, &hostname_post_uri);
+
   ota_handler_register(g_server);
 
-  Serial.println("REST management-API startet paa port 8080 (status/capabilities/channels/diagnostic read-write/ota).");
+  Serial.println("REST management-API startet paa port 8080 (status/capabilities/channels/diagnostic read-write/hostname/ota).");
 }

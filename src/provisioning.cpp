@@ -438,6 +438,17 @@ void print_boot_banner() {
 
 }  // namespace
 
+void provisioning_sync_hostname(const char *hostname) {
+  if (hostname == nullptr || hostname[0] == '\0') {
+    g_state.has_hostname = false;
+    g_state.hostname[0] = '\0';
+  } else {
+    strncpy(g_state.hostname, hostname, sizeof(g_state.hostname) - 1);
+    g_state.hostname[sizeof(g_state.hostname) - 1] = '\0';
+    g_state.has_hostname = true;
+  }
+}
+
 void provisioning_begin() {
   mb_provisioning_state_init(&g_state);
   g_line_len = 0;

@@ -114,6 +114,18 @@ void config_mark_provisioned() {
   save_current_config();
 }
 
+void config_set_hostname(const char *hostname) {
+  if (hostname == nullptr || hostname[0] == '\0') {
+    g_config.has_hostname = false;
+    g_config.hostname[0] = '\0';
+  } else {
+    strncpy(g_config.hostname, hostname, sizeof(g_config.hostname) - 1);
+    g_config.hostname[sizeof(g_config.hostname) - 1] = '\0';
+    g_config.has_hostname = true;
+  }
+  save_current_config();
+}
+
 void config_set_channel(size_t index, const mb_channel_config_t &cfg) {
   if (index >= MB_CHANNEL_COUNT) return;
   g_config.channel[index] = cfg;

@@ -4,7 +4,30 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
-## [0.31.0 build 0049] — 2026-09-25 — Kanal C+D via CJMCU-752 (SC16IS752 over I2C), board_type og EXP_SEL-jumper
+## [0.32.1 build 0051] — 2026-10-05 — Rettet: tilfældigt reboot-loop ved opstart (syslog før netværk)
+
+**Fundet:** Ved OTA af v0.32.0 gik boardet i reboot-loop. Seriel log: `assert failed: tcpip_send_msg_wait_sem ... (Invalid mbox)`, backtrace (addr2line) → `syslog_sender.cpp` `send_packet()` → `socket()` i `sender_task`. Et syslog-kald tidligt i `setup()` — her "CJMCU-752 monteret ifølge jumperen, men svarer ikke" — fik sender-tasken til at oprette en UDP-socket, FØR TCP/IP-stakken var startet. Udløst tilfældigt, fordi EXP_SEL (GPIO36) svæver på testboardet (den påkrævede 10 kΩ pull-down mangler; GPIO34-39 har ingen interne pull-modstande). Fejlen findes også i v0.31.0 — den var ikke forårsaget af v0.32.0's hostname-ændring.
+
+**`src/syslog_sender.cpp`:** `sender_task` venter nu med at sende, til et interface har en IP (`eth_driver_status() == ETH_STATUS_CONNECTED` eller WiFi forbundet). Beskeder bliver liggende i køen imens.
+
+**Verificeret på hardware:** 6 genstarter i træk via USB, heraf 2 hvor EXP_SEL blev læst høj (den situation der før crashede) — alle bootede normalt og fik IP.
+
+
+## [0.32.0 build 0050] — 2026-10-05 — Hostname sat fra PLC'en (`POST /api/hostname`)
+
+**Baggrund:** Jan: "expansion board skal have deres hostname opdateret fra plc system med det navn som de er oprettet med i I/O expansion board config del på plc". Hidtil kunne hostnamet kun sættes over den serielle CLI (`hostname <navn>`, v0.22.0) — i strid med "single pane of glass".
+
+**`lib/provisioning_cli/`:** ny `mb_provisioning_parse_hostname_request()` — parser `{"hostname":"<navn>"}` / `{"hostname":"auto"}` og validerer med den eksisterende `mb_provisioning_validate_hostname()` (RFC 1123, 1-32 tegn). 4 nye native-tests (gyldigt navn, whitespace, `auto`, afviste input inkl. mellemrum, for langt, manglende felt, ikke-streng, uafsluttet).
+
+**`src/config.cpp/.h`:** ny `config_set_hostname()` (nullptr = auto) — persisterer straks.
+
+**`src/provisioning.cpp/.h`:** ny `provisioning_sync_hostname()` — holder CLI'ens arbejdskopi (`g_state`) i sync, så et senere `save` i den serielle CLI ikke skriver det gamle navn tilbage (samme klasse som v0.29.1).
+
+**`src/http_server.cpp`:** nyt `POST /api/hostname` (kræver Bearer-token) — svarer `{"ok":true,"hostname":"<faktisk>","auto":bool,"reboot_required":true}`; `syslog_sender_refresh()` + syslog-hændelse. Ethernet-hostnamet sættes kun ved boot (`eth_driver_begin()`), derfor `reboot_required`.
+
+**Status:** 333/333 native-tests (inkl. 4 nye), bygger for esp32dev. Ikke verificeret på hardware endnu (kræver OTA via PLC'en).
+
+ — 2026-09-25 — Kanal C+D via CJMCU-752 (SC16IS752 over I2C), board_type og EXP_SEL-jumper
 
 **Baggrund:** Jan: "jeg har det her uart board med 2xuart model cjmcu-752 hvordan kan vi implementere det". Afklaret: kanal C+D OVENI A+B (4 kanaler, port 502-505), I2C på GPIO21/22, 1,8432 MHz-krystal. Undervejs: "board skal signalere til plc at det er et 4 x rs232 eller 4 x rs485, alt efter jumper" og "vi skal bruge et jumper mere til at fortælle at vi har den ny chip ombord".
 

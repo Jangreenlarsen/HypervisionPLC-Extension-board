@@ -42,6 +42,10 @@ void config_ensure_eth_mac(uint8_t *out_mac);
 
 void config_mark_provisioned();
 
+// v0.32.0: sætter (hostname) eller rydder (nullptr = auto) DHCP-hostname-
+// override og persisterer straks. Kaldes fra POST /api/hostname.
+void config_set_hostname(const char *hostname);
+
 // §4.2: persisterer ét kanals config (index 0=kanal A, 1=kanal B) — kaldes
 // efter en vellykket `PUT /api/channels/{n}/config` (src/http_server.cpp),
 // EFTER kanalen selv er live-omkonfigureret (modbus_channel_apply_config()),

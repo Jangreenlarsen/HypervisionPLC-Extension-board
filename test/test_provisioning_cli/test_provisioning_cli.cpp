@@ -1072,6 +1072,42 @@ void test_factory_reset_rejects_wrong_argument(void) {
   TEST_ASSERT_EQUAL(PROV_MISSING_ARGUMENT, r);
 }
 
+// v0.32.0: POST /api/hostname-body
+void test_hostname_request_valid_name(void) {
+  char h[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool is_auto = true;
+  TEST_ASSERT_TRUE(mb_provisioning_parse_hostname_request("{\"hostname\":\"ExpansionB1\"}", h, sizeof(h), &is_auto));
+  TEST_ASSERT_FALSE(is_auto);
+  TEST_ASSERT_EQUAL_STRING("ExpansionB1", h);
+}
+
+void test_hostname_request_whitespace_around_colon(void) {
+  char h[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool is_auto = true;
+  TEST_ASSERT_TRUE(mb_provisioning_parse_hostname_request("{ \"hostname\" : \"skab3-gw\" }", h, sizeof(h), &is_auto));
+  TEST_ASSERT_EQUAL_STRING("skab3-gw", h);
+}
+
+void test_hostname_request_auto(void) {
+  char h[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool is_auto = false;
+  TEST_ASSERT_TRUE(mb_provisioning_parse_hostname_request("{\"hostname\":\"auto\"}", h, sizeof(h), &is_auto));
+  TEST_ASSERT_TRUE(is_auto);
+}
+
+void test_hostname_request_rejects_invalid(void) {
+  char h[MB_PROV_HOSTNAME_MAX_LEN + 1];
+  bool is_auto = false;
+  TEST_ASSERT_FALSE(mb_provisioning_parse_hostname_request("{\"hostname\":\"Expansion B1\"}", h, sizeof(h), &is_auto));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_hostname_request("{\"hostname\":\"-start\"}", h, sizeof(h), &is_auto));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_hostname_request("{\"hostname\":\"\"}", h, sizeof(h), &is_auto));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_hostname_request("{\"name\":\"x\"}", h, sizeof(h), &is_auto));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_hostname_request("{\"hostname\":42}", h, sizeof(h), &is_auto));
+  TEST_ASSERT_FALSE(mb_provisioning_parse_hostname_request(
+      "{\"hostname\":\"abcdefghijklmnopqrstuvwxyz0123456789\"}", h, sizeof(h), &is_auto));  // 36 > 32
+  TEST_ASSERT_FALSE(mb_provisioning_parse_hostname_request("{\"hostname\":\"abc", h, sizeof(h), &is_auto));
+}
+
 int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -1221,6 +1257,11 @@ int main(int argc, char **argv) {
   RUN_TEST(test_factory_reset_requires_confirm);
   RUN_TEST(test_factory_reset_confirm_triggers_action);
   RUN_TEST(test_factory_reset_rejects_wrong_argument);
+
+  RUN_TEST(test_hostname_request_valid_name);
+  RUN_TEST(test_hostname_request_whitespace_around_colon);
+  RUN_TEST(test_hostname_request_auto);
+  RUN_TEST(test_hostname_request_rejects_invalid);
 
   return UNITY_END();
 }
