@@ -46,6 +46,10 @@ void config_mark_provisioned();
 // override og persisterer straks. Kaldes fra POST /api/hostname.
 void config_set_hostname(const char *hostname);
 
+// v0.34.0: PLC-styret via REST — persisterer straks.
+void config_set_plc_ip(const char *ip);
+void config_set_syslog_targets(const mb_syslog_target_t *targets, size_t count);
+
 // §4.2: persisterer ét kanals config (index 0=kanal A, 1=kanal B) — kaldes
 // efter en vellykket `PUT /api/channels/{n}/config` (src/http_server.cpp),
 // EFTER kanalen selv er live-omkonfigureret (modbus_channel_apply_config()),

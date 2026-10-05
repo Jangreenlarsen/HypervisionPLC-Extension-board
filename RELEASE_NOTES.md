@@ -2,6 +2,14 @@
 
 ---
 
+## v0.34.0 — 2026-10-05 — Mere styres fra PLC'en
+
+- PLC'en kan nu sætte boardets **PLC-IP** (den eneste adresse, der må hente data fra boardet). Skifter PLC'en IP, fx efter et modulskift, kan det rettes fra PLC'en uden USB.
+- PLC'en kan sætte boardets **syslog-modtagere**.
+- PLC'en kan hente boardets **opsætning** (kanaler, PLC-IP, hostname og syslog) og tage den med i sin backup. Token og kodeord sendes ikke.
+
+---
+
 ## v0.33.0 — 2026-10-05 — Færre falske "4 kanaler"
 
 - Siger EXP_SEL-jumperen "modul monteret", men CJMCU-752 svarer ikke, kører boardet nu med 2 kanaler (A-B) i stedet for at melde 4 kanaler, hvor C og D ikke virker. Status viser stadig `"expander":"not_found"`, så fejlen er synlig.

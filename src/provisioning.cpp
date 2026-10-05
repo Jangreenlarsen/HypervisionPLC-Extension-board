@@ -449,6 +449,17 @@ void provisioning_sync_hostname(const char *hostname) {
   }
 }
 
+void provisioning_sync_plc_ip(const char *ip) {
+  strncpy(g_state.plc_ip, ip, sizeof(g_state.plc_ip) - 1);
+  g_state.plc_ip[sizeof(g_state.plc_ip) - 1] = '\0';
+  g_state.has_plc_ip = true;
+}
+
+void provisioning_sync_syslog(const mb_syslog_target_t *targets, size_t count) {
+  memset(g_state.syslog_targets, 0, sizeof(g_state.syslog_targets));
+  for (size_t i = 0; i < count && i < MB_SYSLOG_MAX_TARGETS; i++) g_state.syslog_targets[i] = targets[i];
+}
+
 void provisioning_begin() {
   mb_provisioning_state_init(&g_state);
   g_line_len = 0;

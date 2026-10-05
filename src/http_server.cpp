@@ -491,6 +491,109 @@ esp_err_t hostname_post_handler(httpd_req_t *req) {
   return ESP_OK;
 }
 
+// v0.34.0: læs en lille JSON-body (maks cap-1 bytes) til en null-termineret buffer.
+static bool read_small_body(httpd_req_t *req, char *buf, size_t cap) {
+  if (req->content_len == 0 || req->content_len >= cap) {
+    send_json_error(req, "400 Bad Request", -1, "bad_request", "Tom eller for stor request-body");
+    return false;
+  }
+  size_t got = 0;
+  while (got < req->content_len) {
+    const int r = httpd_req_recv(req, buf + got, req->content_len - got);
+    if (r <= 0) {
+      send_json_error(req, "400 Bad Request", -1, "bad_request", "Kunne ikke læse request-body");
+      return false;
+    }
+    got += static_cast<size_t>(r);
+  }
+  buf[got] = '\0';
+  return true;
+}
+
+// GET /api/config (v0.34.0) — boardets IKKE-hemmelige opsætning, så PLC'en kan
+// tage den med i sin backup og genskabe et udskiftet board ("single pane of
+// glass"). Token, WiFi-/REST-kodeord udelades bevidst.
+esp_err_t config_get_handler(httpd_req_t *req) {
+  if (!require_auth(req)) return ESP_OK;
+  const mb_board_config_t &cfg = config_get();
+  static char body[1536];  // httpd-tasken kører handlers serielt
+  int n = snprintf(body, sizeof(body), "{\"plc_ip\":\"%s\",\"hostname\":\"%s\",\"hostname_auto\":%s,\"syslog\":[",
+                   cfg.has_plc_ip ? cfg.plc_ip : "", cfg.has_hostname ? cfg.hostname : "",
+                   cfg.has_hostname ? "false" : "true");
+  bool first = true;
+  for (size_t i = 0; i < MB_SYSLOG_MAX_TARGETS && n > 0 && n < (int)sizeof(body); i++) {
+    const mb_syslog_target_t &t = cfg.syslog_targets[i];
+    if (!t.in_use) continue;
+    n += snprintf(body + n, sizeof(body) - n, "%s{\"ip\":\"%s\",\"port\":%u,\"tag\":\"%s\",\"level\":%u}",
+                  first ? "" : ",", t.ip, (unsigned)t.port, t.tag, (unsigned)t.max_level);
+    first = false;
+  }
+  if (n > 0 && n < (int)sizeof(body)) n += snprintf(body + n, sizeof(body) - n, "],\"channels\":[");
+  for (size_t c = 0; c < MB_CHANNEL_COUNT && n > 0 && n < (int)sizeof(body); c++) {
+    const mb_channel_config_t &ch = cfg.channel[c];
+    n += snprintf(body + n, sizeof(body) - n,
+                  "%s{\"channel\":%u,\"enabled\":%s,\"baudrate\":%lu,\"parity\":\"%s\",\"stop_bits\":%u,"
+                  "\"timeout_ms\":%lu,\"inter_frame_delay_ms\":%lu}",
+                  c ? "," : "", (unsigned)(c + 1), ch.enabled ? "true" : "false", (unsigned long)ch.baudrate,
+                  ch.parity == MB_CHANNEL_PARITY_EVEN ? "even" : ch.parity == MB_CHANNEL_PARITY_ODD ? "odd" : "none",
+                  (unsigned)ch.stop_bits, (unsigned long)ch.timeout_ms, (unsigned long)ch.inter_frame_delay_ms);
+  }
+  if (n > 0 && n < (int)sizeof(body)) n += snprintf(body + n, sizeof(body) - n, "]}");
+  if (n <= 0 || n >= (int)sizeof(body)) {
+    send_json_error(req, "500 Internal Server Error", -1, "too_large", "Config-svaret blev for stort");
+    return ESP_OK;
+  }
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, body, n);
+  return ESP_OK;
+}
+
+// POST /api/plc-ip (v0.34.0) — {"plc_ip":"a.b.c.d"}: den ENESTE IP, der må tale
+// Modbus TCP med boardet (§4.3). PLC'en sætter sin egen IP, fx efter et
+// modul-skift. REST forbliver token-beskyttet, så en forkert IP kan altid rettes.
+esp_err_t plc_ip_post_handler(httpd_req_t *req) {
+  if (!require_auth(req)) return ESP_OK;
+  char body[96];
+  if (!read_small_body(req, body, sizeof(body))) return ESP_OK;
+  char ip[MB_PROV_IPV4_MAX_LEN + 1];
+  if (!mb_provisioning_parse_plc_ip_request(body, ip, sizeof(ip))) {
+    send_json_error(req, "400 Bad Request", -1, "invalid_plc_ip", "Ugyldig plc_ip (forventede {\"plc_ip\":\"a.b.c.d\"})");
+    return ESP_OK;
+  }
+  config_set_plc_ip(ip);
+  provisioning_sync_plc_ip(ip);
+  syslog_logf(MB_SYSLOG_FACILITY_SYSTEM, 2, "plc ip sat via REST: %s", ip);
+  char resp[80];
+  const int n = snprintf(resp, sizeof(resp), "{\"ok\":true,\"plc_ip\":\"%s\"}", ip);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, resp, n);
+  return ESP_OK;
+}
+
+// POST /api/syslog (v0.34.0) — {"targets":[{"ip","port","tag","level"}, ...]}
+// erstatter ALLE modtagere (tom liste = ingen). Gælder straks.
+esp_err_t syslog_post_handler(httpd_req_t *req) {
+  if (!require_auth(req)) return ESP_OK;
+  char body[640];
+  if (!read_small_body(req, body, sizeof(body))) return ESP_OK;
+  mb_syslog_target_t targets[MB_SYSLOG_MAX_TARGETS];
+  size_t count = 0;
+  if (!mb_provisioning_parse_syslog_request(body, targets, &count)) {
+    send_json_error(req, "400 Bad Request", -1, "invalid_syslog",
+                     "Ugyldig syslog-liste (højst 4; ip, tag [A-Za-z0-9_-], level 1-8, port 1-65535)");
+    return ESP_OK;
+  }
+  config_set_syslog_targets(targets, count);
+  provisioning_sync_syslog(targets, count);
+  syslog_sender_refresh();
+  syslog_logf(MB_SYSLOG_FACILITY_SYSTEM, 2, "syslog-modtagere sat via REST: %u", (unsigned)count);
+  char resp[64];
+  const int n = snprintf(resp, sizeof(resp), "{\"ok\":true,\"targets\":%u}", (unsigned)count);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_send(req, resp, n);
+  return ESP_OK;
+}
+
 }  // namespace
 
 void http_server_begin() {
@@ -561,7 +664,14 @@ void http_server_begin() {
   };
   httpd_register_uri_handler(g_server, &hostname_post_uri);
 
+  const httpd_uri_t config_get_uri = {.uri = "/api/config", .method = HTTP_GET, .handler = config_get_handler, .user_ctx = nullptr};
+  httpd_register_uri_handler(g_server, &config_get_uri);
+  const httpd_uri_t plc_ip_post_uri = {.uri = "/api/plc-ip", .method = HTTP_POST, .handler = plc_ip_post_handler, .user_ctx = nullptr};
+  httpd_register_uri_handler(g_server, &plc_ip_post_uri);
+  const httpd_uri_t syslog_post_uri = {.uri = "/api/syslog", .method = HTTP_POST, .handler = syslog_post_handler, .user_ctx = nullptr};
+  httpd_register_uri_handler(g_server, &syslog_post_uri);
+
   ota_handler_register(g_server);
 
-  Serial.println("REST management-API startet paa port 8080 (status/capabilities/channels/diagnostic read-write/hostname/ota).");
+  Serial.println("REST management-API startet paa port 8080 (status/capabilities/channels/diagnostic read-write/hostname/config/plc-ip/syslog/ota).");
 }

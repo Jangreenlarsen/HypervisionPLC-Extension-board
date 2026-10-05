@@ -126,6 +126,19 @@ void config_set_hostname(const char *hostname) {
   save_current_config();
 }
 
+void config_set_plc_ip(const char *ip) {
+  strncpy(g_config.plc_ip, ip, sizeof(g_config.plc_ip) - 1);
+  g_config.plc_ip[sizeof(g_config.plc_ip) - 1] = '\0';
+  g_config.has_plc_ip = true;
+  save_current_config();
+}
+
+void config_set_syslog_targets(const mb_syslog_target_t *targets, size_t count) {
+  memset(g_config.syslog_targets, 0, sizeof(g_config.syslog_targets));
+  for (size_t i = 0; i < count && i < MB_SYSLOG_MAX_TARGETS; i++) g_config.syslog_targets[i] = targets[i];
+  save_current_config();
+}
+
 void config_set_channel(size_t index, const mb_channel_config_t &cfg) {
   if (index >= MB_CHANNEL_COUNT) return;
   g_config.channel[index] = cfg;

@@ -4,6 +4,20 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.34.0 build 0053] — 2026-10-05 — PLC-styret plc ip, syslog og config-udtræk
+
+**Baggrund:** PLC FEAT-462/463/465 (Jan: "lav den liste af forbedringer"). `plc ip` (boardets eneste tilladte Modbus TCP-peer, §4.3) og syslog-modtagere kunne kun sættes over den serielle CLI — efter et PLC-modulskift (ny IP) ville boardet afvise PLC'ens data uden fysisk adgang.
+
+**Nye REST-kald (Bearer-token):**
+- `GET /api/config` — ikke-hemmelig opsætning: `plc_ip`, `hostname`/`hostname_auto`, `syslog[]`, `channels[]` (til PLC-backup og genskabelse). Token og kodeord udelades.
+- `POST /api/plc-ip` — `{"plc_ip":"a.b.c.d"}`.
+- `POST /api/syslog` — `{"targets":[{"ip","port","tag","level"}]}` erstatter alle modtagere (tom liste = ingen); gælder straks (`syslog_sender_refresh()`).
+
+**`lib/provisioning_cli/`:** `mb_provisioning_parse_plc_ip_request()`, `mb_provisioning_parse_syslog_request()` (allokeringsfri; validerer IPv4, tag, level 1-8, port, maks 4). 4 nye native-tests.
+
+**`src/config.cpp`, `src/provisioning.cpp`:** `config_set_plc_ip()`/`config_set_syslog_targets()` + `provisioning_sync_*()` (CLI-arbejdskopien følger med, v0.29.1-klassen).
+
+
 ## [0.33.0 build 0052] — 2026-10-05 — EXP_SEL-robusthed: 2 kanaler hvis CJMCU-752 ikke svarer
 
 **Baggrund:** PLC FEAT-459 (Jan: "lav den liste af forbedringer"). På testboardet uden pull-down på GPIO36 læste EXP_SEL tilfældigt "monteret", og boardet meldte så 4 kanaler med C/D `unavailable` — PLC'en så et 4-kanals board, der reelt kun havde 2.
