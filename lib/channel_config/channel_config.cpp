@@ -121,7 +121,7 @@ size_t mb_channel_build_json(int channel_number, const mb_channel_config_t *conf
                               char *out, size_t out_capacity, bool hardware_present) {
   const char *status = !hardware_present  ? "unavailable"
                        : !config->enabled ? "disabled"
-                       : stats->has_last_error ? "error"
+                       : (stats->has_last_error && !stats->last_result_ok) ? "error"
                                                : "ok";
 
   int written = snprintf(

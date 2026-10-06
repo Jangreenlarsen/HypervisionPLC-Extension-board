@@ -2,6 +2,12 @@
 
 ---
 
+## v0.34.2 — 2026-10-06 — Kanalstatus viser den aktuelle tilstand
+
+En kanal stod som "error", hvis der var sket én enkelt fejl siden opstart, også selv om den kørte fint bagefter. Nu viser status, hvordan den seneste transaktion gik: "error" kun hvis den fejlede. Fejltællerne viser stadig historikken.
+
+---
+
 ## v0.34.1 — 2026-10-06 — LED'er på kanal C/D slukket ved opstart
 
 Aktivitets-LED'erne på kanal C og D (CJMCU-752) lyste fra opstart, indtil den første Modbus-transaktion på en af kanalerne. Nu er de slukket fra opstart og blinker kun under trafik.

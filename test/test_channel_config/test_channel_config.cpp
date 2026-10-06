@@ -205,6 +205,24 @@ void test_parse_rejects_zero_timeout(void) {
   TEST_ASSERT_FALSE(mb_channel_parse_config_json(json, strlen(json), &config));
 }
 
+// v0.35.0: en gammel fejl efterfulgt af succes giver "ok" (ikke klæbende "error")
+void test_status_ok_after_recovery(void) {
+  mb_channel_config_t config{};
+  config.enabled = true;
+  config.baudrate = 9600;
+  config.stop_bits = 1;
+  config.timeout_ms = 500;
+  mb_channel_stats_t stats{};
+  stats.has_last_error = true;
+  stats.last_error_at_uptime_s = 100;
+  stats.last_result_ok = true;
+  stats.last_success_at_uptime_s = 200;
+  char buf[512];
+  mb_channel_build_json(3, &config, &stats, buf, sizeof(buf));
+  TEST_ASSERT_NOT_NULL(strstr(buf, "\"status\":\"ok\""));
+  TEST_ASSERT_NOT_NULL(strstr(buf, "\"last_error_at_uptime_s\":100"));
+}
+
 int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -228,5 +246,6 @@ int main(int argc, char **argv) {
   RUN_TEST(test_parse_rejects_invalid_stop_bits);
   RUN_TEST(test_parse_rejects_zero_timeout);
 
+  RUN_TEST(test_status_ok_after_recovery);
   return UNITY_END();
 }

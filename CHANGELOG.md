@@ -4,6 +4,13 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.34.2 build 0055] — 2026-10-06 — Rettet: kanalstatus "error" var klæbende
+
+**Fundet:** Jan: "hvorfor står Kanal C — error under kanal config når jeg kan se den fungere perfekt". `status` blev "error" ved første fejl siden boot (`has_last_error`) og forblev det — også efter tusindvis af vellykkede transaktioner (kanal A stod som error med 1160 timeouts af 720.000).
+
+**`lib/channel_config/`, `src/modbus_channel.cpp`:** nye felter `last_result_ok`/`last_success_at_uptime_s` i `mb_channel_stats_t`; `status` er nu "error" kun hvis den SENESTE transaktion fejlede. Tællerne og `last_error_*` viser stadig historikken. Ingen nye JSON-felter (kanallisten med 4 kanaler er ~1,4 KB — tæt på PLC'ens 1,5 KB svarbuffer). 1 ny native-test.
+
+
 ## [0.34.1 build 0054] — 2026-10-06 — Rettet: LED på kanal C/D tændt fra boot til første transaktion
 
 **Fundet:** Jan: "de 2 led på C og D skal init til low ved boot, de er high nu indtil en modbus transaktion mod en af de kanaler". `uart_expander_begin()` skrev IOSTATE=0, mens GPIO0/1 stadig var indgange, og satte først IODIR bagefter — det lave niveau blev ikke husket, så udgangene stod høje, indtil den første transaktion skrev IOSTATE igen.
