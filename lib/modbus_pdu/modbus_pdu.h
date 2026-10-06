@@ -22,7 +22,11 @@ enum mb_error_code_t {
   // implementeret af boardets gateway", adskilt fra MB_INVALID_ADDRESS
   // (som nu KUN dækker "ugyldig adresse/quantity for en ELLERS kendt FC").
   // Værdien 10 er eksplicit foreslået i designdokumentet.
-  MB_UNSUPPORTED_FUNCTION = 10
+  MB_UNSUPPORTED_FUNCTION = 10,
+  // v0.34.3: slaven svarede gyldigt (CRC/adresse OK), men FC05/FC06-svaret er
+  // ikke et ekko af forespoergslen — kommandoen er ikke udfoert (set paa et
+  // Relay Board-4, der svarer "coil 4 = OFF" paa "coil 4 = ON").
+  MB_RESPONSE_MISMATCH = 11
 };
 
 constexpr size_t MB_PDU_MAX_LEN = 253;                          // Modbus-spec: FC + op til 252 databytes
@@ -33,6 +37,13 @@ constexpr size_t MB_RTU_EXCEPTION_FRAME_LEN = 5;                 // adresse + (f
 // byte-for-byte identisk med reference-plc-source/src/modbus_master.cpp's
 // modbus_master_calc_crc(), verificeret mod spec-eksemplet i test/test_modbus_pdu.
 uint16_t mb_pdu_calc_crc16(const uint8_t *buffer, size_t len);
+
+// v0.34.3: FC05/FC06 skal besvares med et praecist ekko af forespoergslen
+// (Modbus-spec). Returnerer false hvis request er FC05/FC06 og response-PDU'en
+// afviger; true for alle andre function codes og for exception-svar (fc|0x80),
+// som haandteres separat.
+bool mb_pdu_write_echo_ok(const uint8_t *request_pdu, size_t request_len, const uint8_t *response_pdu,
+                          size_t response_len);
 
 // Bygger en RTU-forespørgsels-frame (adresse + pdu + CRC) for `slave_id` ud
 // fra en allerede opbygget PDU (function code + data, modtaget fra TCP-laget,

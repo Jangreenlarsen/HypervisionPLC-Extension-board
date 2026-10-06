@@ -4,6 +4,12 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.34.3 build 0056] — 2026-10-06 — Rettet: FC05/FC06-svar uden korrekt ekko blev godtaget
+
+**Fundet:** Jans debug-log på kanal D: Relay Board-4 svarer `Addr: 4, Value: OFF` på `Addr: 4, Value: ON` (relæ 1-3 svarer korrekt) — boardet meldte `MB_OK`, så PLC'en troede relæ 4 var tændt.
+
+**`lib/modbus_pdu/`:** ny `mb_pdu_write_echo_ok()` + fejlkode `MB_RESPONSE_MISMATCH = 11`. **`src/modbus_channel.cpp`:** efter et gyldigt svar på FC05/FC06 tjekkes ekkoet; afvigelse → `MB_RESPONSE_MISMATCH` (vist i debug/syslog, talt som exception). **`src/modbus_tcp_server.cpp`:** mappes til exception 0x04 (Slave Device Failure). 3 nye native-tests (341/341 grønne).
+
 ## [0.34.2 build 0055] — 2026-10-06 — Rettet: kanalstatus "error" var klæbende
 
 **Fundet:** Jan: "hvorfor står Kanal C — error under kanal config når jeg kan se den fungere perfekt". `status` blev "error" ved første fejl siden boot (`has_last_error`) og forblev det — også efter tusindvis af vellykkede transaktioner (kanal A stod som error med 1160 timeouts af 720.000).

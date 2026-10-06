@@ -338,3 +338,17 @@ size_t mb_pdu_decode(const uint8_t *pdu, size_t pdu_len, bool is_response, char 
       return 0;  // ukendt FC — kaldstedet har sin egen MB_UNSUPPORTED_FUNCTION-håndtering
   }
 }
+
+bool mb_pdu_write_echo_ok(const uint8_t *request_pdu, size_t request_len, const uint8_t *response_pdu,
+                          size_t response_len) {
+  if (request_pdu == nullptr || request_len < 1) return true;
+  const uint8_t fc = request_pdu[0];
+  if (fc != 0x05 && fc != 0x06) return true;
+  if (response_pdu == nullptr || response_len < 1) return false;
+  if (response_pdu[0] & 0x80) return true;  // exception — ikke et ekko-spoergsmaal
+  if (response_len != request_len) return false;
+  for (size_t i = 0; i < request_len; i++) {
+    if (response_pdu[i] != request_pdu[i]) return false;
+  }
+  return true;
+}

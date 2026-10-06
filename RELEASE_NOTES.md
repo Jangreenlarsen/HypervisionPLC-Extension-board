@@ -2,6 +2,12 @@
 
 ---
 
+## v0.34.3 — 2026-10-06 — Skrivninger, der ikke bliver udført, meldes som fejl
+
+Når PLC'en skriver en coil eller et register (FC05/FC06), skal slaven svare med præcis samme besked. Et relæmodul svarede "relæ 4 = fra" på "relæ 4 = til", men boardet meldte alligevel OK. Nu opdager boardet det og melder fejl til PLC'en (Modbus-exception 04), så PLC'en ved, at kommandoen ikke blev udført.
+
+---
+
 ## v0.34.2 — 2026-10-06 — Kanalstatus viser den aktuelle tilstand
 
 En kanal stod som "error", hvis der var sket én enkelt fejl siden opstart, også selv om den kørte fint bagefter. Nu viser status, hvordan den seneste transaktion gik: "error" kun hvis den fejlede. Fejltællerne viser stadig historikken.

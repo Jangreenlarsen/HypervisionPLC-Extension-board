@@ -31,6 +31,7 @@ constexpr uint8_t kGatewayTargetFailedToRespond = 0x0B;   // slaven svarede ikke
 // standard Modbus TCP-master/PLC forventer netop 0x01 for "ukendt FC", ikke
 // en gateway-specifik "sti util-gaengelig"-kode.
 constexpr uint8_t kIllegalFunction = 0x01;
+constexpr uint8_t kSlaveDeviceFailure = 0x04;  // v0.34.3: FC05/06-ekko afviger (kommando ikke udfoert)
 
 struct ServerContext {
   uint16_t port;
@@ -64,6 +65,8 @@ uint8_t gateway_exception_for(mb_error_code_t error) {
   switch (error) {
     case MB_UNSUPPORTED_FUNCTION:  // v0.28.0: ADSKILT fra kGatewayPathUnavailable, se kIllegalFunction ovenfor
       return kIllegalFunction;
+    case MB_RESPONSE_MISMATCH:
+      return kSlaveDeviceFailure;
     case MB_CHANNEL_UNREACHABLE:
     case MB_BUS_BUSY:
     case MB_INVALID_ADDRESS:

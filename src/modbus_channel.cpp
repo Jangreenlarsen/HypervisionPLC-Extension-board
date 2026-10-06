@@ -148,6 +148,7 @@ const char *error_name(mb_error_code_t error) {
     case MB_INVALID_ADDRESS: return "MB_INVALID_ADDRESS";
     case MB_BUS_BUSY: return "MB_BUS_BUSY";
     case MB_CHANNEL_UNREACHABLE: return "MB_CHANNEL_UNREACHABLE";
+    case MB_RESPONSE_MISMATCH: return "MB_RESPONSE_MISMATCH";
     case MB_UNSUPPORTED_FUNCTION: return "MB_UNSUPPORTED_FUNCTION";
     default: return "?";
   }
@@ -491,6 +492,10 @@ mb_error_code_t execute_transaction(ChannelContext &ctx, uint8_t slave_id, const
       // ikke en transportfejl) — out_pdu er allerede udfyldt med
       // exception-PDU'en, og TCP-laget skal blot relaye den uændret.
       final_result = MB_OK;
+      // v0.34.3: FC05/FC06 skal svare med et ekko — ellers er kommandoen ikke udfoert
+      if (parse_result == MB_PDU_RESULT_OK && !mb_pdu_write_echo_ok(pdu, pdu_len, out_pdu, *out_pdu_len)) {
+        final_result = MB_RESPONSE_MISMATCH;
+      }
       break;
     case MB_PDU_RESULT_CRC_ERROR:
       final_result = MB_CRC_ERROR;
@@ -542,6 +547,7 @@ void record_stats(ChannelContext &ctx, const ChannelRequest &req) {
       ctx.stats.crc_errors++;
       break;
     case MB_EXCEPTION:
+    case MB_RESPONSE_MISMATCH:  // v0.34.3: slaven udfoerte ikke skrivningen
       ctx.stats.exception_errors++;
       break;
     default:
