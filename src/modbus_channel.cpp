@@ -528,8 +528,11 @@ void record_stats(ChannelContext &ctx, const ChannelRequest &req) {
   ctx.stats.total_requests++;
   if (req.result == MB_OK) {
     ctx.stats.successful_requests++;
+    ctx.stats.last_result_ok = true;  // v0.35.0: status følger seneste transaktion
+    ctx.stats.last_success_at_uptime_s = millis() / 1000;
     return;
   }
+  ctx.stats.last_result_ok = false;
 
   switch (req.result) {
     case MB_TIMEOUT:

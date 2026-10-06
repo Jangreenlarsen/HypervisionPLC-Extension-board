@@ -23,6 +23,10 @@ struct mb_channel_stats_t {
   uint16_t last_error_address;
   uint8_t last_error_type;
   uint32_t last_error_at_uptime_s;
+  // v0.35.0: status følger den SENESTE transaktion — før var "error" klæbende
+  // fra første fejl siden boot, også efter tusindvis af vellykkede kald.
+  bool last_result_ok;                // seneste transaktion lykkedes
+  uint32_t last_success_at_uptime_s;  // 0 = ingen succes endnu
 };
 
 // Bygger JSON for GET /api/channels/{n} (EXPANSION_BOARD_DESIGN.md §4.2's
