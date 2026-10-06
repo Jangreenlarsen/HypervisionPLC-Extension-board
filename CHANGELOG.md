@@ -4,6 +4,13 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.34.1 build 0054] — 2026-10-06 — Rettet: LED på kanal C/D tændt fra boot til første transaktion
+
+**Fundet:** Jan: "de 2 led på C og D skal init til low ved boot, de er high nu indtil en modbus transaktion mod en af de kanaler". `uart_expander_begin()` skrev IOSTATE=0, mens GPIO0/1 stadig var indgange, og satte først IODIR bagefter — det lave niveau blev ikke husket, så udgangene stod høje, indtil den første transaktion skrev IOSTATE igen.
+
+**`src/uart_expander.cpp`:** IODIR (udgange) skrives FØR IOSTATE=0; IOSTATE læses tilbage, og begge skrives igen én gang, hvis LED-bittene ikke er 0.
+
+
 ## [0.34.0 build 0053] — 2026-10-05 — PLC-styret plc ip, syslog og config-udtræk
 
 **Baggrund:** PLC FEAT-462/463/465 (Jan: "lav den liste af forbedringer"). `plc ip` (boardets eneste tilladte Modbus TCP-peer, §4.3) og syslog-modtagere kunne kun sættes over den serielle CLI — efter et PLC-modulskift (ny IP) ville boardet afvise PLC'ens data uden fysisk adgang.

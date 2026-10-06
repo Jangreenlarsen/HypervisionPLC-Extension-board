@@ -183,9 +183,19 @@ bool uart_expander_begin() {
   // på selve skrivningen, derfor ignoreres resultatet), derefter LED-GPIO'er.
   write_reg(0, SC16_REG_IOCONTROL, SC16_IOCONTROL_SOFT_RESET);
   delay(5);
+  // v0.34.1: IODIR FØRST, derefter IOSTATE=0 — skrevet mens benene stadig
+  // var indgange, blev det lave niveau ikke husket, og LED'erne på kanal C/D
+  // stod tændt fra boot til den første transaktion. Læses tilbage og
+  // skrives igen én gang, hvis det ikke tog.
   g_io_state = 0;
-  write_reg(0, SC16_REG_IOSTATE, g_io_state);
   write_reg(0, SC16_REG_IODIR, 0x03);  // GPIO0+GPIO1 = udgange (LED'er)
+  write_reg(0, SC16_REG_IOSTATE, g_io_state);
+  uint8_t io = 0xFF;
+  if (!read_reg(0, SC16_REG_IOSTATE, &io) || (io & 0x03) != 0) {
+    delay(2);
+    write_reg(0, SC16_REG_IODIR, 0x03);
+    write_reg(0, SC16_REG_IOSTATE, g_io_state);
+  }
   return true;
 }
 

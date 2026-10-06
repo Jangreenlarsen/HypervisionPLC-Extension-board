@@ -2,6 +2,12 @@
 
 ---
 
+## v0.34.1 — 2026-10-06 — LED'er på kanal C/D slukket ved opstart
+
+Aktivitets-LED'erne på kanal C og D (CJMCU-752) lyste fra opstart, indtil den første Modbus-transaktion på en af kanalerne. Nu er de slukket fra opstart og blinker kun under trafik.
+
+---
+
 ## v0.34.0 — 2026-10-05 — Mere styres fra PLC'en
 
 - PLC'en kan nu sætte boardets **PLC-IP** (den eneste adresse, der må hente data fra boardet). Skifter PLC'en IP, fx efter et modulskift, kan det rettes fra PLC'en uden USB.
