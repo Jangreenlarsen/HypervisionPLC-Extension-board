@@ -4,6 +4,12 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.35.0 build 0057] — 2026-10-07 — Nyt: årsag til sidste genstart i `/api/status`
+
+**Ønske:** Jan, efter en genstart der lignede tabt trafik: boardet skal melde status til PLC'en om, hvorfor det genstartede.
+
+**`lib/rest_status/`:** nyt felt `reset_reason` i `mb_status_data_t` og JSON'en (additivt, ingen `api_version`-bump) + `mb_status_reset_reason_string()`, der oversætter `esp_reset_reason_t` til `power_on`/`external`/`software`/`panic`/`int_wdt`/`task_wdt`/`wdt`/`deep_sleep`/`brownout`/`sdio`/`unknown`. **`src/http_server.cpp`:** udfylder feltet fra `esp_reset_reason()`; svarbuffer 384→448 byte. 2 nye native-tests (343/343 grønne). PLC-siden (v7.9.68.119, FEAT-482) viser det under "Test forbindelse".
+
 ## [0.34.3 build 0056] — 2026-10-06 — Rettet: FC05/FC06-svar uden korrekt ekko blev godtaget
 
 **Fundet:** Jans debug-log på kanal D: Relay Board-4 svarer `Addr: 4, Value: OFF` på `Addr: 4, Value: ON` (relæ 1-3 svarer korrekt) — boardet meldte `MB_OK`, så PLC'en troede relæ 4 var tændt.

@@ -2,6 +2,12 @@
 
 ---
 
+## v0.35.0 — 2026-10-07 — Boardet fortæller, hvorfor det sidst genstartede
+
+Boardets status indeholder nu årsagen til den seneste genstart: strøm tilsluttet, reset-knap, genstart via kommando eller firmwareopdatering, crash, watchdog eller spændingsfald. PLC'en (v7.9.68.119+) viser den sammen med oppetiden, når man trykker **Test forbindelse**. Så kan man se, om boardet er gået ned af sig selv.
+
+---
+
 ## v0.34.3 — 2026-10-06 — Skrivninger, der ikke bliver udført, meldes som fejl
 
 Når PLC'en skriver en coil eller et register (FC05/FC06), skal slaven svare med præcis samme besked. Et relæmodul svarede "relæ 4 = fra" på "relæ 4 = til", men boardet meldte alligevel OK. Nu opdager boardet det og melder fejl til PLC'en (Modbus-exception 04), så PLC'en ved, at kommandoen ikke blev udført.

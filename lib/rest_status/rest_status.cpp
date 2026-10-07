@@ -70,10 +70,34 @@ size_t mb_status_build_json(const mb_status_data_t *data, char *out, size_t out_
   }
   offset += static_cast<size_t>(eth_written);
 
+  const int reset_written = snprintf(out + offset, out_capacity - offset, ",\"reset_reason\":\"%s\"",
+                                      data->reset_reason != nullptr ? data->reset_reason : "unknown");
+  if (reset_written <= 0 || static_cast<size_t>(reset_written) >= out_capacity - offset) {
+    return 0;
+  }
+  offset += static_cast<size_t>(reset_written);
+
   if (offset + 2 >= out_capacity) return 0;
   out[offset++] = '}';
   out[offset] = '\0';
   return offset;
+}
+
+const char *mb_status_reset_reason_string(int esp_reset_reason) {
+  // Værdierne følger esp_reset_reason_t (ESP-IDF esp_system.h).
+  switch (esp_reset_reason) {
+    case 1: return "power_on";
+    case 2: return "external";
+    case 3: return "software";
+    case 4: return "panic";
+    case 5: return "int_wdt";
+    case 6: return "task_wdt";
+    case 7: return "wdt";
+    case 8: return "deep_sleep";
+    case 9: return "brownout";
+    case 10: return "sdio";
+    default: return "unknown";
+  }
 }
 
 namespace {
