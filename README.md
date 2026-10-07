@@ -2,7 +2,7 @@
 
 Firmware til en selvstændig Modbus RTU-gateway ("expansion board") på ESP32. Boardet giver en Hypervision PLC ekstra RS485/RS232-feltbus-kanaler over netværk — Modbus TCP til data og REST/JSON til administration — uden at røre PLC'ens egen chip.
 
-**Status (v0.34.2, 2026-10-06):** I drift og hardware-verificeret sammen med PLC-firmware v7.9.68.x.
+**Status (v0.34.3, 2026-10-06):** I drift og hardware-verificeret sammen med PLC-firmware v7.9.68.x.
 
 - **2 eller 4 kanaler:**
   - Kanal A+B kører på ESP32'ens egne UART'er.
@@ -25,7 +25,7 @@ Boardet har bevidst ingen egen driftsbrugerflade, kun en seriel CLI over USB til
 | Område | Indhold |
 |---|---|
 | **Kanaler** | 2 (A, B) eller 4 (A–D med CJMCU-752). RS485 eller RS232 for hele boardet (MODE_SEL-jumper). Baudrate 1200–115200, paritet, stopbits, timeout og inter-frame delay pr. kanal |
-| **Modbus TCP (data)** | Én port pr. kanal: 502 (A), 503 (B), 504 (C), 505 (D). FC01–06, FC15, FC16. Kun PLC-IP'en har adgang (allowlist) |
+| **Modbus TCP (data)** | Én port pr. kanal: 502 (A), 503 (B), 504 (C), 505 (D). FC01–06, FC15, FC16. Kun PLC-IP'en har adgang (allowlist). Et FC05/FC06-svar, der ikke er et præcist ekko af forespørgslen, meldes til PLC'en som exception 0x04 (`MB_RESPONSE_MISMATCH`) i stedet for en falsk succes |
 | **REST (administration, port 8080)** | Status, kanalopsætning, diagnostisk læs/skriv, `GET /api/capabilities` (understøttede function codes uden bustrafik), hostname, PLC-IP, syslog, config-udtræk til PLC-backup, OTA. Bearer-token eller Basic Auth |
 | **Hardware-signalering** | `board_type` (fx `4xRS485`) og antal aktive kanaler i `/api/status`, så PLC'en viser det rigtige kanaltal |
 | **Firmwareopdatering** | Via PLC'en: identitetstjek af image, MD5, bekræftelse efter opstart og automatisk rollback, hvis den ikke bekræftes |

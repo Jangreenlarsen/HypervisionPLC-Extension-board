@@ -453,6 +453,27 @@ void test_decode_rejects_undersized_buffer(void) {
   TEST_ASSERT_EQUAL_size_t(0, len);
 }
 
+// v0.34.3: FC05/FC06-ekko
+void test_write_echo_ok_matching(void) {
+  const uint8_t req[] = {0x05, 0x00, 0x04, 0xFF, 0x00};
+  TEST_ASSERT_TRUE(mb_pdu_write_echo_ok(req, 5, req, 5));
+}
+void test_write_echo_detects_mismatch(void) {
+  const uint8_t req[] = {0x05, 0x00, 0x04, 0xFF, 0x00};
+  const uint8_t resp[] = {0x05, 0x00, 0x04, 0x00, 0x00};  // Relay Board-4: coil 4 ON -> svar OFF
+  TEST_ASSERT_FALSE(mb_pdu_write_echo_ok(req, 5, resp, 5));
+}
+void test_write_echo_ignores_other_fc_and_exceptions(void) {
+  const uint8_t rd[] = {0x03, 0x00, 0x00, 0x00, 0x01};
+  const uint8_t rd_resp[] = {0x03, 0x02, 0x12, 0x34};
+  TEST_ASSERT_TRUE(mb_pdu_write_echo_ok(rd, 5, rd_resp, 4));
+  const uint8_t wr[] = {0x06, 0x00, 0x01, 0x00, 0x05};
+  const uint8_t ex[] = {0x86, 0x02};
+  TEST_ASSERT_TRUE(mb_pdu_write_echo_ok(wr, 5, ex, 2));
+  const uint8_t wr_bad[] = {0x06, 0x00, 0x01, 0x00, 0x06};
+  TEST_ASSERT_FALSE(mb_pdu_write_echo_ok(wr, 5, wr_bad, 5));
+}
+
 int main(int argc, char **argv) {
   (void)argc;
   (void)argv;
@@ -507,6 +528,9 @@ int main(int argc, char **argv) {
   RUN_TEST(test_decode_rejects_unknown_function);
   RUN_TEST(test_decode_truncates_long_value_list);
   RUN_TEST(test_decode_rejects_undersized_buffer);
+  RUN_TEST(test_write_echo_ok_matching);
+  RUN_TEST(test_write_echo_detects_mismatch);
+  RUN_TEST(test_write_echo_ignores_other_fc_and_exceptions);
 
   return UNITY_END();
 }
