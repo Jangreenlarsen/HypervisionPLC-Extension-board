@@ -53,7 +53,18 @@ struct mb_status_data_t {
   // JSON'en får desuden `board_type` = "<active_channels>x<RS485|RS232>",
   // fx "4xRS485" — én streng PLC'en kan vise/validere direkte.
   const char *expander_status;
+
+  // v0.35.0 (Jan: "status til plc" om hvorfor boardet sidst genstartede) —
+  // streng fra mb_status_reset_reason_string() nedenfor. nullptr = "unknown".
+  const char *reset_reason;
 };
+
+// v0.35.0: oversætter ESP-IDF's esp_reset_reason_t (som int, så biblioteket
+// forbliver native-testbart uden esp_system.h) til en stabil JSON-streng:
+// "power_on", "external", "software" (inkl. /api/reboot og OTA), "panic",
+// "int_wdt", "task_wdt", "wdt", "deep_sleep", "brownout", "sdio" eller
+// "unknown". ALDRIG nullptr.
+const char *mb_status_reset_reason_string(int esp_reset_reason);
 
 // Bygger `GET /api/status`-JSON-svaret (EXPANSION_BOARD_DESIGN.md §4.2's
 // eksempel-skema, udvidet med wifi/provisioned-felter). Returnerer antal

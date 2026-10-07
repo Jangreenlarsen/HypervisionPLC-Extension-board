@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_http_server.h>
+#include <esp_system.h>  // v0.35.0: esp_reset_reason()
 
 #include <cstdlib>
 #include <cstring>
@@ -187,9 +188,10 @@ esp_err_t status_handler(httpd_req_t *req) {
       eth_driver_ip_string(),
       eth_driver_status_string(),  // v0.18.0: not_detected/link_down/waiting_dhcp/connected
       expander_status_string(),    // v0.31.0: not_fitted/ok/not_found
+      mb_status_reset_reason_string(static_cast<int>(esp_reset_reason())),  // v0.35.0
   };
 
-  char body[384];
+  char body[448];
   const size_t body_len = mb_status_build_json(&data, body, sizeof(body));
 
   httpd_resp_set_type(req, "application/json");

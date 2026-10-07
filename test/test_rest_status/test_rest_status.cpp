@@ -29,6 +29,30 @@ void test_status_json_when_connected(void) {
   TEST_ASSERT_NOT_NULL(strstr(out, "\"ethernet\":{\"connected\":false,\"status\":\"not_detected\"}"));
 }
 
+// v0.35.0: genstartsårsag
+void test_status_json_reset_reason(void) {
+  mb_status_data_t data = {
+      "0.35.0", "0057", 10, 123456, 4, false, nullptr, 0, true, MB_CHANNEL_MODE_RS485,
+      true, "10.1.1.25", "connected", "ok", "panic",
+  };
+  char out[512];
+  TEST_ASSERT_TRUE(mb_status_build_json(&data, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, ",\"reset_reason\":\"panic\"}"));
+  data.reset_reason = nullptr;
+  TEST_ASSERT_TRUE(mb_status_build_json(&data, out, sizeof(out)) > 0);
+  TEST_ASSERT_NOT_NULL(strstr(out, "\"reset_reason\":\"unknown\""));
+}
+
+void test_reset_reason_string_mapping(void) {
+  TEST_ASSERT_EQUAL_STRING("power_on", mb_status_reset_reason_string(1));
+  TEST_ASSERT_EQUAL_STRING("software", mb_status_reset_reason_string(3));
+  TEST_ASSERT_EQUAL_STRING("panic", mb_status_reset_reason_string(4));
+  TEST_ASSERT_EQUAL_STRING("task_wdt", mb_status_reset_reason_string(6));
+  TEST_ASSERT_EQUAL_STRING("brownout", mb_status_reset_reason_string(9));
+  TEST_ASSERT_EQUAL_STRING("unknown", mb_status_reset_reason_string(0));
+  TEST_ASSERT_EQUAL_STRING("unknown", mb_status_reset_reason_string(99));
+}
+
 void test_status_json_board_mode_rs232(void) {
   const mb_status_data_t data = {
       "0.14.0", "0017", 3661, 123456, 2, true, "192.168.1.50", -47, true, MB_CHANNEL_MODE_RS232,
@@ -229,6 +253,8 @@ int main(int argc, char **argv) {
 
   RUN_TEST(test_status_json_when_connected);
   RUN_TEST(test_status_json_board_mode_rs232);
+  RUN_TEST(test_status_json_reset_reason);
+  RUN_TEST(test_reset_reason_string_mapping);
   RUN_TEST(test_status_json_board_type_and_expander);
   RUN_TEST(test_status_json_when_disconnected_omits_ip_rssi);
   RUN_TEST(test_status_json_ethernet_connected);
