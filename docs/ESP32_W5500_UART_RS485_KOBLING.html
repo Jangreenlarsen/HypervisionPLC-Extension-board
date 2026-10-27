@@ -88,7 +88,7 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
 
   <h2 id="v1">Variant 1: 2 kanaler (A og B)</h2>
   <figure>
-    <svg class="v1" viewBox="0 0 840 950" role="img" aria-label="Variant 1, to kanaler: ESP32 forbundet direkte til RS485-kort 1 og 2 (DI, RO og en fælles DE og /RE-ledning pr. kort), til W5500 via SPI, mode-kontakt SW1 på D4, EXP_SEL-jumper JP1 åben på VP med 10 kilo-ohm pull-ned, og to aktivitets-LED'er.">
+    <svg class="v1" viewBox="0 0 840 950" role="img" aria-label="Variant 1, to kanaler: ESP32 forbundet direkte til RS485-kort 1 og 2 (DI, RO og en fælles DE og /RE-ledning pr. kort), til W5500 via SPI, mode-kontakt JP2 på D4, EXP_SEL-jumper JP1 åben på VP med 10 kilo-ohm pull-ned, og to aktivitets-LED'er.">
       
       <rect class="box" x="14" y="40" width="150" height="56" rx="3"/>
       <text x="26" y="62" class="t-title">Strøm ind</text>
@@ -152,8 +152,8 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
       <g transform="translate(210,330)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
       <g transform="translate(210,440)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
       <rect class="box" x="110" y="500" width="140" height="40" rx="3"/>
-      <text x="122" y="525" class="t-title">SW1</text>
-      <text x="164" y="525" class="t-muted">1-polet DIP</text>
+      <text x="122" y="525" class="t-title">JP2</text>
+      <text x="164" y="525" class="t-muted">jumper</text>
       <text x="110" y="478">Mode: åben = RS485</text>
       <text x="110" y="492">sluttet = RS232</text>
       <path class="w ctrl" d="M250 520 H340"/>
@@ -294,8 +294,8 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
       <g transform="translate(210,330)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
       <g transform="translate(210,440)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
       <rect class="box" x="110" y="500" width="140" height="40" rx="3"/>
-      <text x="122" y="525" class="t-title">SW1</text>
-      <text x="164" y="525" class="t-muted">1-polet DIP</text>
+      <text x="122" y="525" class="t-title">JP2</text>
+      <text x="164" y="525" class="t-muted">jumper</text>
       <text x="110" y="478">Mode: åben = RS485</text>
       <text x="110" y="492">sluttet = RS232</text>
       <path class="w ctrl" d="M250 520 H340"/>
@@ -464,7 +464,7 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
     </svg>
     <figcaption>
       <p><b>Retning (DE + /RE):</b> på hvert RS485-kort forbindes DE og /RE med hinanden og går til ét signal. Høj = sender, lav = modtager. På kort 1 og 2 styrer ESP32 signalet (D27 og D25). På kort 3 og 4 styrer CJMCU-752 selv signalet fra sine RTS-ben (RTSA og RTSB), så der bruges ingen ESP32-ben til dem. Bind ikke /RE til GND.</p>
-      <p><b>Mode:</b> SW1 på D4 vælger RS232 eller RS485 for hele boardet. Med RS485-kort skal SW1 være åben (D4 høj). <b>JP1</b> på VP (GPIO36) fortæller firmwaren, at CJMCU-752 er monteret; R4 trækker pinden lavt, når JP1 er åben.</p>
+      <p><b>Mode:</b> JP2 på D4 vælger RS232 eller RS485 for hele boardet. Med RS485-kort skal JP2 være åben (D4 høj). <b>JP1</b> på VP (GPIO36) fortæller firmwaren, at CJMCU-752 er monteret; R4 trækker pinden lavt, når JP1 er åben.</p>
       <p><b>Pull-ups og forsyning:</b> D35 (MISO) er kun indgang. R1 trækker INT på VN op til 3,3 V. IRQ fra CJMCU-752 bruges ikke af firmwaren og er valgfri; forbindes den, kræver databladet R5 på 1 kΩ til 3,3 V. SDA og SCL skal have pull-ups til 3,3 V (typisk 4,7 kΩ); tjek om CJMCU-modulet har dem. Brug 3,3 V-moduler til RS485 (SP3485/MAX3485), og sæt 120 Ω terminering i begge ender af hver bus.</p>
       <p>LED1 og LED2 sidder på ESP32 (D26, D33). LED3 og LED4 sidder på CJMCU-752's GPIO0 og GPIO1 og er tændt under en transaktion på kanal C og D.</p>
     </figcaption>

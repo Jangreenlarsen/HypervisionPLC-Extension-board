@@ -23,14 +23,14 @@ flowchart LR
     ETH["W5500"]
     RS1["RS485-kort 1<br/>kanal A"]
     RS2["RS485-kort 2<br/>kanal B"]
-    SW1["SW1 mode-vælger<br/>åben = RS485, sluttet = RS232"]
+    JP2["JP2 mode-vælger<br/>åben = RS485, sluttet = RS232"]
     LED["LED1 og LED2<br/>hver via 1k til GND"]
     EXP["JP1 åben<br/>R4 10k pull-ned"]
 
     ESP ---|"D17 til DI<br/>D16 fra RO<br/>D27 til DE + /RE"| RS1
     ESP ---|"D18 til DI<br/>D19 fra RO<br/>D25 til DE + /RE"| RS2
     ESP ---|"SPI: D13 MOSI, D35 MISO, D14 SCK, D32 CS<br/>D23 RST<br/>VN INT med R1 10k til 3,3 V"| ETH
-    ESP ---|"D4"| SW1
+    ESP ---|"D4"| JP2
     ESP ---|"D26 = LED1<br/>D33 = LED2"| LED
     ESP ---|"VP (GPIO36)"| EXP
 ```
@@ -46,7 +46,7 @@ flowchart LR
     RS2["RS485-kort 2<br/>kanal B"]
     RS3["RS485-kort 3<br/>kanal C"]
     RS4["RS485-kort 4<br/>kanal D"]
-    SW1["SW1 mode-vælger<br/>åben = RS485, sluttet = RS232"]
+    JP2["JP2 mode-vælger<br/>åben = RS485, sluttet = RS232"]
     LED["LED1 og LED2<br/>hver via 1k til GND"]
     LEDCD["LED3 og LED4<br/>hver via 1k til GND"]
     EXP["JP1 lukket til 3,3 V<br/>R4 10k pull-ned"]
@@ -58,7 +58,7 @@ flowchart LR
     CJ ---|"TXA til DI<br/>RXA fra RO<br/>RTSA til DE + /RE"| RS3
     CJ ---|"TXB til DI<br/>RXB fra RO<br/>RTSB til DE + /RE"| RS4
     CJ ---|"GPIO0 = LED3<br/>GPIO1 = LED4"| LEDCD
-    ESP ---|"D4"| SW1
+    ESP ---|"D4"| JP2
     ESP ---|"D26 = LED1<br/>D33 = LED2"| LED
     ESP ---|"VP (GPIO36)"| EXP
 ```
@@ -81,7 +81,7 @@ flowchart LR
 | ESP32 D14 | W5500 SCK | SPI (clock) |
 | ESP32 D32 | W5500 CS | SPI (chip select) |
 | ESP32 VN | W5500 INT og R1 10k til 3,3 V | Afbrydelse fra W5500 med pull-up |
-| ESP32 D4 | SW1 til GND | Mode-vælger: åben = RS485, sluttet = RS232 |
+| ESP32 D4 | JP2 til GND | Mode-vælger: åben = RS485, sluttet = RS232 |
 | ESP32 D26 | LED1, R2 1k, GND | Aktivitet kanal A |
 | ESP32 D33 | LED2, R3 1k, GND | Aktivitet kanal B |
 | ESP32 VP (GPIO36) | R4 10k til GND, og JP1 til 3,3 V | EXP_SEL: JP1 lukket = CJMCU-752 monteret |
@@ -106,7 +106,7 @@ flowchart LR
 
 - På hvert RS485-kort forbindes DE og /RE med hinanden og går til ét signal. Høj = sender, lav = modtager. **Bind ikke /RE til GND**, ellers hører kortet sin egen afsendelse.
 - Retningen styres af ESP32 (D27, D25) for kanal A og B, og af CJMCU-752's RTS-ben for kanal C og D.
-- SW1 skal være åben (D4 høj) med RS485-kort. I RS232-mode rører firmwaren aldrig retningen.
+- JP2 skal være åben (D4 høj) med RS485-kort. I RS232-mode rører firmwaren aldrig retningen.
 - R4 trækker VP (GPIO36) lavt. GPIO34-39 har ingen intern pull, så modstanden er nødvendig i begge varianter.
 - R1 trækker INT på VN op til 3,3 V. D35 er kun indgang på ESP32 og passer til MISO.
 - SDA og SCL skal have pull-ups til 3,3 V (typisk 4,7 kΩ); tjek om CJMCU-modulet har dem. IRQ kræver 1 kΩ til 3,3 V, hvis den forbindes.
