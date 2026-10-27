@@ -11,7 +11,7 @@ Denne manual dokumenterer expansion-boardets **fulde, faktisk implementerede** g
 1. [Arkitektur i korte træk](#1-arkitektur-i-korte-træk)
 2. [Første opsætning (provisionering)](#2-første-opsætning-provisionering)
 3. [Modbus TCP — data-planet (høj-frekvent drift)](#3-modbus-tcp--data-planet-høj-frekvent-drift)
-4. [REST management-API (port 8080)](#4-rest-management-api-port-8080) (inkl. 4.8 `GET /api/capabilities`)
+4. [REST management-API (port 8080)](#4-rest-management-api-port-8080) (inkl. 4.7 OTA, 4.8 `GET /api/capabilities` og 4.9 den offentlige statusside)
 5. [Fejlkoder-reference](#5-fejlkoder-reference)
 6. [Anbefalet PLC-side-integrationsflow](#6-anbefalet-plc-side-integrationsflow)
 7. [Kendte begrænsninger lige nu](#7-kendte-begrænsninger-lige-nu)
