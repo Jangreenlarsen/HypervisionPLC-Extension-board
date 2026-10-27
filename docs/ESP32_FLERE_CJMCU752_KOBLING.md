@@ -1,6 +1,6 @@
 # Flere CJMCU-752 på samme I2C-bus: 6 kanaler (plan)
 
-**Dette er en plan.** Firmwaren understøtter i dag kun ét CJMCU-752-modul (kanal C og D). Her vises et board med **to moduler** på samme I2C-bus (D21 og D22). Hvert modul giver to UART'er, så der kommer fire ekstra kanaler (C til F) oveni A og B på ESP32, i alt **6 kanaler**. To moduler er det, I2C-bussen realistisk kan klare ved 115200 baud med den nuværende aflæsning. Hver UART kører højst 115200 baud. Kanal E og F og port 506 og 507 er forslag. Det tegnede diagram står i [ESP32_FLERE_CJMCU752_KOBLING.html](ESP32_FLERE_CJMCU752_KOBLING.html). Resten af boardet (W5500, JP1, JP2, LED1 og LED2, RS485-kort 1 og 2) er som i [variant 2](ESP32_W5500_UART_RS485_KOBLING.md).
+**Dette er en plan.** Firmwaren understøtter i dag kun ét CJMCU-752-modul (kanal C og D). Her vises et board med **to moduler** på samme I2C-bus (D21 og D22). Hvert modul giver to UART'er, så der kommer fire ekstra kanaler (C til F) oveni A og B på ESP32, i alt **6 kanaler**. To moduler er det, I2C-bussen realistisk kan klare ved 115200 baud med den nuværende aflæsning. Hver UART kører højst 115200 baud. Kanal E og F og port 506 og 507 er forslag. Det tegnede diagram står i [ESP32_FLERE_CJMCU752_KOBLING.html](ESP32_FLERE_CJMCU752_KOBLING.html). Resten af boardet (W5500, JP1, JP2, LED1 og LED2, watchdog-LED0, RS485-kort 1 og 2) er som i [variant 2](ESP32_W5500_UART_RS485_KOBLING.md).
 
 ```mermaid
 flowchart LR
@@ -58,8 +58,8 @@ På hvert RS485-kort forbindes DE og /RE med hinanden. Høj = sender, lav = modt
 
 ## Det skal ændres i firmwaren
 
-- **Flere moduler (ny UART-chip):** i dag findes kun én global chip (`g_address`) og to porte. Der skal bruges en liste af SC16IS752-chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57) og sin egen skygge-kopi af IOSTATE (bus-lås pr. chip eller fælles for bussen).
-- **LED-status:** kanal-LED'erne følger chippens GPIO0 og GPIO1 pr. modul (modul 1: kanal C/D, modul 2: kanal E/F), og IODIR/IOSTATE skal sættes pr. chip ved start (som i v0.34.1). **Watchdog-LED** (v0.37.0, GPIO2, 1 blink i sekundet) er allerede implementeret og uafhængig af antallet af moduler; blinker den ikke, hænger hovedløkken.
+- **Flere moduler (ny UART-chip):** i dag findes kun én global chip (`g_address`) og to porte. Der skal bruges en liste af SC16IS752-chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57) og sin egen skygge-kopi af IOSTATE.
+- **LED-status:** kanal-LED'erne følger chippens GPIO0 og GPIO1 pr. modul (modul 1: kanal C/D, modul 2: kanal E/F), initialiseret pr. chip ved start. Watchdog-LED'en på GPIO2 (v0.37.0, 1 blink i sekundet) er allerede implementeret; blinker den ikke, hænger hovedløkken.
 - **Kanaler:** kanal-ID'er og konfiguration udvides fra 4 til 6 pladser. Det er klogt at gå direkte til 8 (designets loft), så et tredje modul senere ikke kræver endnu en konfigurationsversion. Der skal være migrering af gemt konfiguration. Modbus TCP-porte 504 til 507, REST (`/api/channels/1` til `6`) og CLI (`test 1-6`, `debug modbus a-f`).
 - **Aflæsning:** brug chippens FIFO-trigger og den fælles IRQ-linje i stedet for at spørge hvert millisekund, og læs længere stykker ad gangen, så bussen ikke bliver fyldt, og 64-bytes-bufferen ikke løber over ved lange svar.
 - **Status og PLC:** `board_type` og antal aktive kanaler (op til 6) i `/api/status`, og PLC'en skal kunne vise kanal E og F.

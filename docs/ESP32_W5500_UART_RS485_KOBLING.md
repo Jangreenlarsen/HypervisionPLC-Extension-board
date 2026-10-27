@@ -25,14 +25,14 @@ flowchart LR
     RS1["RS485-kort 1<br/>kanal A"]
     RS2["RS485-kort 2<br/>kanal B"]
     JP2["JP2 mode-vælger<br/>lukket til 3,3 V = RS485, åben = RS232<br/>R8 4,7k pull-ned"]
-    LED["LED1 og LED2<br/>hver via 1k til GND"]
+    LED["LED1, LED2 og LED0 (watchdog)<br/>hver via 1k til GND"]
     EXP["JP1 åben<br/>R4 10k pull-ned"]
 
     ESP ---|"D17 til DI<br/>D16 fra RO<br/>D27 til DE + /RE"| RS1
     ESP ---|"D18 til DI<br/>D19 fra RO<br/>D25 til DE + /RE"| RS2
     ESP ---|"SPI: D13 MOSI, D35 MISO, D14 SCK, D32 CS<br/>D23 RST<br/>VN INT med R1 10k til 3,3 V"| ETH
     ESP ---|"D4"| JP2
-    ESP ---|"D26 = LED1<br/>D33 = LED2"| LED
+    ESP ---|"D26 = LED1<br/>D33 = LED2<br/>D2 = LED0 watchdog"| LED
     ESP ---|"VP (GPIO36)"| EXP
 ```
 
@@ -48,7 +48,7 @@ flowchart LR
     RS3["RS485-kort 3<br/>kanal C"]
     RS4["RS485-kort 4<br/>kanal D"]
     JP2["JP2 mode-vælger<br/>lukket til 3,3 V = RS485, åben = RS232<br/>R8 4,7k pull-ned"]
-    LED["LED1 og LED2<br/>hver via 1k til GND"]
+    LED["LED1, LED2 og LED0 (watchdog)<br/>hver via 1k til GND"]
     LEDCD["LED3 og LED4<br/>hver via 1k til GND"]
     EXP["JP1 lukket til 3,3 V<br/>R4 10k pull-ned"]
     ADR["A0 og A1 til GND<br/>I2C-adresse 0x4D"]
@@ -62,7 +62,7 @@ flowchart LR
     CJ ---|"TXB til DI<br/>RXB fra RO<br/>RTSB til DE + /RE"| RS4
     CJ ---|"GPIO0 = LED3<br/>GPIO1 = LED4"| LEDCD
     ESP ---|"D4"| JP2
-    ESP ---|"D26 = LED1<br/>D33 = LED2"| LED
+    ESP ---|"D26 = LED1<br/>D33 = LED2<br/>D2 = LED0 watchdog"| LED
     ESP ---|"VP (GPIO36)"| EXP
 ```
 
@@ -84,7 +84,7 @@ flowchart LR
     RS5["RS485-kort 5<br/>kanal E"]
     RS6["RS485-kort 6<br/>kanal F"]
     JP2["JP2 mode-vælger<br/>lukket til 3,3 V = RS485, åben = RS232<br/>R8 4,7k pull-ned"]
-    LED["LED1 og LED2<br/>hver via 1k til GND"]
+    LED["LED1, LED2 og LED0 (watchdog)<br/>hver via 1k til GND"]
     LEDCJ["LED3 til LED6<br/>på modulernes GPIO0 og GPIO1, hver via 1k"]
     EXP["JP1 lukket til 3,3 V<br/>R4 10k pull-ned"]
 
@@ -101,7 +101,7 @@ flowchart LR
     CJ1 --- LEDCJ
     CJ2 --- LEDCJ
     ESP ---|"D4"| JP2
-    ESP ---|"D26 = LED1<br/>D33 = LED2"| LED
+    ESP ---|"D26 = LED1<br/>D33 = LED2<br/>D2 = LED0 watchdog"| LED
     ESP ---|"VP (GPIO36)"| EXP
 ```
 
@@ -126,6 +126,7 @@ flowchart LR
 | ESP32 D4 | JP2 til 3,3 V, og R8 4,7k til GND | Mode-vælger: lukket = RS485, åben = RS232 |
 | ESP32 D26 | LED1, R2 1k, GND | Aktivitet kanal A |
 | ESP32 D33 | LED2, R3 1k, GND | Aktivitet kanal B |
+| ESP32 D2 | LED0, R13 1k, GND | Watchdog-status: blinker 1 gang i sekundet, slukket hvis firmwaren hænger |
 | ESP32 VP (GPIO36) | R4 10k til GND, og JP1 til 3,3 V | EXP_SEL: JP1 lukket = CJMCU-752 monteret |
 
 ## Ekstra forbindelser i variant 2 (CJMCU-752)
@@ -171,8 +172,8 @@ Variant 3 bygger på variant 2, men to moduler deler I2C-bussen.
 
 **Det skal ændres i firmwaren:**
 
-- **Flere moduler (ny UART-chip):** en liste af SC16IS752-chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57) og egen IOSTATE-skygge, i stedet for én global chip.
-- **LED-status:** kanal-LED'erne følger chippens GPIO0/GPIO1 pr. modul (kanal C til F), initialiseret pr. chip ved start. Watchdog-LED'en på GPIO2 (v0.37.0, 1 blink i sekundet) er allerede implementeret.
+- **Flere moduler (ny UART-chip):** i dag findes kun én global chip (`g_address`) og to porte. Der skal bruges en liste af SC16IS752-chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57) og sin egen skygge-kopi af IOSTATE.
+- **LED-status:** kanal-LED'erne følger chippens GPIO0 og GPIO1 pr. modul (modul 1: kanal C/D, modul 2: kanal E/F), initialiseret pr. chip ved start. Watchdog-LED'en på GPIO2 (v0.37.0, 1 blink i sekundet) er allerede implementeret; blinker den ikke, hænger hovedløkken.
 - **Kanaler:** kanal-ID'er og konfiguration fra 4 til 6 pladser (klogt: direkte til 8), med migrering af gemt konfiguration; Modbus TCP-porte 504 til 507, REST (`/api/channels/1` til `6`) og CLI (`test 1-6`, `debug modbus a-f`).
 - **Aflæsning:** chippens FIFO-trigger og den fælles IRQ-linje i stedet for at spørge hvert millisekund; nødvendigt ved flere end to moduler.
 - **Status og PLC:** `board_type` og antal aktive kanaler (op til 6) i `/api/status`; PLC'en skal kunne vise kanal E og F.
