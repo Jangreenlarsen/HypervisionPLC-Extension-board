@@ -80,7 +80,7 @@ Fuld pin-oversigt: [GPIO_MAPPING.md](GPIO_MAPPING.md).
 
 - **API-reference (det der faktisk virker):** [PLC_INTEGRATION_MANUAL.md](PLC_INTEGRATION_MANUAL.md)
 - **GPIO-tilslutning:** [GPIO_MAPPING.md](GPIO_MAPPING.md)
-- **Kablingsdiagram (to varianter af samme board, 2 eller 4 kanaler):** [docs/ESP32_W5500_UART_RS485_KOBLING.html](docs/ESP32_W5500_UART_RS485_KOBLING.html) (tegning med alle ben) og [docs/ESP32_W5500_UART_RS485_KOBLING.md](docs/ESP32_W5500_UART_RS485_KOBLING.md) (tabeller og oversigt)
+- **Kablingsdiagram (tre varianter af samme board: 2 kanaler, 4 kanaler med ét CJMCU-752, og plan for 6 kanaler med to):** [docs/ESP32_W5500_UART_RS485_KOBLING.html](docs/ESP32_W5500_UART_RS485_KOBLING.html) (tegning med alle ben) og [docs/ESP32_W5500_UART_RS485_KOBLING.md](docs/ESP32_W5500_UART_RS485_KOBLING.md) (tabeller og oversigt)
 - **Plan: 6 kanaler med to CJMCU-752 på samme I2C-bus** (firmwaren understøtter i dag kun ét modul): [docs/ESP32_FLERE_CJMCU752_KOBLING.html](docs/ESP32_FLERE_CJMCU752_KOBLING.html) og [docs/ESP32_FLERE_CJMCU752_KOBLING.md](docs/ESP32_FLERE_CJMCU752_KOBLING.md)
 - **Function code-support (design):** [DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md](DESIGN_GUIDE_MODBUS_EXPANSION_FC_CAPABILITIES.md)
 - **OTA fra PLC'en (plan og kontrakt):** [PLC_OTA_INTEGRATION_PLAN.md](PLC_OTA_INTEGRATION_PLAN.md)

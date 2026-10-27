@@ -223,7 +223,7 @@ GPIO-nummeret er det autoritative — det står trykt direkte på kredsløbskort
 
 ## Se også
 
-- [docs/ESP32_W5500_UART_RS485_KOBLING.html](docs/ESP32_W5500_UART_RS485_KOBLING.html) — kablingsdiagram med alle ben for de to varianter af boardet (2 kanaler, og 4 kanaler med CJMCU-752)
+- [docs/ESP32_W5500_UART_RS485_KOBLING.html](docs/ESP32_W5500_UART_RS485_KOBLING.html) — kablingsdiagram med alle ben for tre varianter af boardet (2 kanaler, 4 kanaler med ét CJMCU-752, og plan for 6 kanaler med to)
 - [docs/ESP32_FLERE_CJMCU752_KOBLING.html](docs/ESP32_FLERE_CJMCU752_KOBLING.html) — plan for to CJMCU-752 på samme I2C-bus (6 kanaler, adresse 0x4D og 0x4C); kræver firmwareændring
 - [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) §2.0.1 — den fulde begrundelse, AND-gate-logik og hardware-revisionshistorik
 - [PLC_INTEGRATION_MANUAL.md](PLC_INTEGRATION_MANUAL.md) — REST-API'et der konfigurerer kanalerne

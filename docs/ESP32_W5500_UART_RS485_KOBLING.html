@@ -39,6 +39,11 @@ figure { margin: 0; overflow-x: auto; background: var(--panel); border: 1px soli
 figure svg { display: block; width: 100%; height: auto; }
 figure svg.v1 { min-width: 700px; max-width: 840px; }
 figure svg.v2 { min-width: 900px; }
+figure svg.v3 { min-width: 1000px; max-width: 1280px; }
+.plan { border: 1px solid var(--ctrl); background: var(--panel); border-radius: 6px; padding: 10px 14px; max-width: 90ch; line-height: 1.5; }
+ul { margin: 0; padding-left: 1.2em; max-width: 90ch; line-height: 1.55; }
+svg .frame { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 8 6; }
+svg .dot.i2cdot { fill: var(--i2c); }
 figcaption { font-size: 0.85rem; color: var(--muted); padding: 8px 4px 2px; max-width: 95ch; line-height: 1.55; }
 figcaption p { margin: 0 0 6px; }
 table { border-collapse: collapse; font-size: 0.9rem; background: var(--panel); border: 1px solid var(--line); }
@@ -60,8 +65,8 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
 </head>
 <body>
 <main>
-  <h1>ESP32 med W5500 og RS485-kort: to varianter af samme board</h1>
-  <p class="sub">Det er samme print og samme firmware. Variant 1 har 2 kanaler. Variant 2 har desuden CJMCU-752 (SC16IS752, 2 × UART over I2C) og to RS485-kort mere, så boardet får 4 kanaler. Alle komponenter forsynes med 3,3 V. Symbolerne 3V3 og GND er samme net overalt.</p>
+  <h1>ESP32 med W5500 og RS485-kort: varianter af samme board</h1>
+  <p class="sub">Det er samme print. Variant 1 har 2 kanaler. Variant 2 har desuden CJMCU-752 (SC16IS752, 2 × UART over I2C) og to RS485-kort mere, så boardet får 4 kanaler. Variant 3 er en plan med to CJMCU-752 på samme I2C-bus, så boardet får 6 kanaler; den kræver en ændret firmware. Alle komponenter forsynes med 3,3 V. Symbolerne 3V3 og GND er samme net overalt.</p>
   <div class="legend">
     <span><i style="background:var(--uart)"></i>Seriel (UART): DI / RO</span>
     <span><i style="background:var(--ctrl)"></i>Retning DE + /RE, reset, afbryder, valg</span>
@@ -71,19 +76,19 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
     <span><i style="background:var(--bus)"></i>RS485-bus (A / B)</span>
   </div>
 
-  <h2>Forskel på de to varianter</h2>
+  <h2>Forskel på varianterne</h2>
   <div class="tw"><table>
-    <thead><tr><th></th><th>Variant 1</th><th>Variant 2</th></tr></thead>
+    <thead><tr><th></th><th>Variant 1</th><th>Variant 2</th><th>Variant 3 (plan)</th></tr></thead>
     <tbody>
-      <tr><th>Kanaler</th><td>2 (A, B)</td><td>4 (A, B, C, D)</td></tr>
-      <tr><th>Modbus TCP-porte</th><td>502, 503</td><td>502, 503, 504, 505</td></tr>
-      <tr><th>Boardtype i status</th><td><code>2xRS485</code></td><td><code>4xRS485</code></td></tr>
-      <tr><th>RS485-kort</th><td>1 og 2, direkte på ESP32</td><td>1 og 2 direkte på ESP32, 3 og 4 på CJMCU-752</td></tr>
-      <tr><th>CJMCU-752 (I2C på D21 og D22)</th><td>ikke monteret</td><td>monteret, A0 og A1 på GND (I2C-adresse 0x4D)</td></tr>
-      <tr><th>JP1 (EXP_SEL på VP / GPIO36)</th><td>åben</td><td>lukket (til 3,3 V)</td></tr>
-      <tr><th>JP2 (mode på D4)</th><td colspan="2">lukket (til 3,3 V) = RS485, åben = RS232. Skal være lukket med RS485-kort.</td></tr>
-      <tr><th>Aktivitets-LED'er</th><td>LED1 og LED2 på ESP32</td><td>LED1 og LED2 på ESP32, LED3 og LED4 på CJMCU-752</td></tr>
-      <tr><th>Firmware</th><td colspan="2">Samme firmware. Den læser JP1 ved opstart og tjekker, at CJMCU-752 svarer på I2C.</td></tr>
+      <tr><th>Kanaler</th><td>2 (A, B)</td><td>4 (A til D)</td><td>6 (A til F)</td></tr>
+      <tr><th>Modbus TCP-porte</th><td>502, 503</td><td>502 til 505</td><td>502 til 507 (kanal E og F er forslag)</td></tr>
+      <tr><th>Boardtype i status</th><td><code>2xRS485</code></td><td><code>4xRS485</code></td><td><code>6xRS485</code> (forslag)</td></tr>
+      <tr><th>RS485-kort</th><td>1 og 2, direkte på ESP32</td><td>1 og 2 direkte på ESP32, 3 og 4 på CJMCU-752</td><td>1 og 2 direkte på ESP32, 3 og 4 på CJMCU-752 nr. 1, 5 og 6 på nr. 2</td></tr>
+      <tr><th>CJMCU-752 (I2C på D21 og D22)</th><td>ikke monteret</td><td>ét modul, A0 og A1 på GND (adresse 0x4D)</td><td>to moduler på samme bus: 0x4D (A1 = GND, A0 = GND) og 0x4C (A1 = GND, A0 = 3,3 V)</td></tr>
+      <tr><th>JP1 (EXP_SEL på VP / GPIO36)</th><td>åben</td><td>lukket (til 3,3 V)</td><td>lukket (til 3,3 V)</td></tr>
+      <tr><th>JP2 (mode på D4)</th><td colspan="3">lukket (til 3,3 V) = RS485, åben = RS232. Skal være lukket med RS485-kort.</td></tr>
+      <tr><th>Aktivitets-LED'er</th><td>LED1 og LED2 på ESP32</td><td>LED1 og LED2 på ESP32, LED3 og LED4 på CJMCU-752</td><td>LED1 og LED2 på ESP32, LED3 til LED6 på de to CJMCU-752</td></tr>
+      <tr><th>Firmware</th><td colspan="2">Samme firmware. Den læser JP1 ved opstart og tjekker, at CJMCU-752 svarer på I2C.</td><td>Kræver ændret firmware: i dag understøttes kun ét modul.</td></tr>
     </tbody>
   </table></div>
 
@@ -425,6 +430,7 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
       <circle class="dot ctrldot" cx="895" cy="510" r="4"/>
       <rect class="box" x="930" y="430" width="140" height="110" rx="3"/>
       <text x="1126" y="422" text-anchor="end" class="t-title">RS485-kort 3</text>
+      <text x="1062" y="534" text-anchor="end" class="t-muted">kanal C</text>
       <rect class="box" x="1096" y="450" width="30" height="44" rx="2"/>
       <path class="w bus" d="M1070 464 H1111"/>
       <circle class="sym" cx="1111" cy="464" r="3.5"/>
@@ -447,6 +453,7 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
       <circle class="dot ctrldot" cx="895" cy="680" r="4"/>
       <rect class="box" x="930" y="600" width="140" height="110" rx="3"/>
       <text x="1126" y="592" text-anchor="end" class="t-title">RS485-kort 4</text>
+      <text x="1062" y="704" text-anchor="end" class="t-muted">kanal D</text>
       <rect class="box" x="1096" y="620" width="30" height="44" rx="2"/>
       <path class="w bus" d="M1070 634 H1111"/>
       <circle class="sym" cx="1111" cy="634" r="3.5"/>
@@ -490,6 +497,379 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
       <p>LED1 og LED2 sidder på ESP32 (D26, D33). LED3 og LED4 sidder på CJMCU-752's GPIO0 og GPIO1 og er tændt under en transaktion på kanal C og D.</p>
     </figcaption>
   </figure>
+
+  <h2 id="v3">Variant 3: 6 kanaler (A til F) med to CJMCU-752 (plan)</h2>
+  <div class="plan"><b>Dette er en plan.</b> Firmwaren understøtter i dag kun ét CJMCU-752-modul. To moduler er det, I2C-bussen realistisk kan klare ved 115200 baud med den nuværende aflæsning (beregnet, ikke målt). Kanal E og F og port 506 og 507 er forslag.</div>
+  <figure>
+    <svg class="v3" viewBox="0 0 1280 1440" role="img" aria-label="Variant 3, seks kanaler (plan): som variant 2, men ESP32 er forbundet via en fælles I2C-bus (SDA, SCL og en fælles IRQ-linje med pull-ups for enden) til to CJMCU-752-moduler med adresserne 0x4D og 0x4C (A0 og A1 til GND eller 3,3 V). Hvert modul driver to RS485-kort, så der er kanal C til F, og med A og B i alt seks kanaler.">
+      
+      <rect class="frame" x="702" y="396" width="568" height="1024" rx="6"/>
+      <rect class="box" x="14" y="40" width="150" height="56" rx="3"/>
+      <text x="26" y="62" class="t-title">Strøm ind</text>
+      <text x="26" y="82" class="t-muted">3,3 V DC</text>
+      <g transform="translate(130,40)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <line class="sym" x1="150" y1="96" x2="150" y2="108"/>
+      <g transform="translate(150,108)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <rect class="esp" x="340" y="100" width="180" height="930" rx="4"/>
+      <text x="430" y="440" text-anchor="middle" class="t-title">ESP32</text>
+      <text x="430" y="458" text-anchor="middle" class="t-muted">DevKit</text>
+      <g transform="translate(400,100)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <text x="400" y="118" text-anchor="middle">3V3</text>
+      <g transform="translate(430,1030)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="430" y="1020" text-anchor="middle">GND</text>
+      <rect class="box" x="110" y="140" width="140" height="110" rx="3"/>
+      <text x="14" y="132" class="t-title">RS485-kort 1</text>
+      <rect class="box" x="14" y="160" width="30" height="44" rx="2"/>
+      <path class="w bus" d="M29 174 H110"/>
+      <circle class="sym" cx="29" cy="174" r="3.5"/>
+      <text x="118" y="178">A</text>
+      <path class="w bus" d="M29 194 H110"/>
+      <circle class="sym" cx="29" cy="194" r="3.5"/>
+      <text x="118" y="198">B</text>
+      <text x="14" y="220" class="t-muted">Bus</text>
+      <text x="242" y="168" text-anchor="end">DI</text>
+      <text x="242" y="190" text-anchor="end">RO</text>
+      <text x="242" y="212" text-anchor="end">DE</text>
+      <text x="242" y="234" text-anchor="end">/RE</text>
+      <path class="w uart" d="M250 164 H340"/>
+      <path class="w uart" d="M250 186 H340"/>
+      <path class="w ctrl" d="M250 208 H275 V230 H250"/>
+      <path class="w ctrl" d="M275 219 H340"/>
+      <circle class="dot ctrldot" cx="275" cy="219" r="4"/>
+      <text x="348" y="168">D17</text>
+      <text x="348" y="190">D16</text>
+      <text x="348" y="223">D27</text>
+      <g transform="translate(210,140)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(210,250)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <rect class="box" x="110" y="330" width="140" height="110" rx="3"/>
+      <text x="14" y="322" class="t-title">RS485-kort 2</text>
+      <rect class="box" x="14" y="350" width="30" height="44" rx="2"/>
+      <path class="w bus" d="M29 364 H110"/>
+      <circle class="sym" cx="29" cy="364" r="3.5"/>
+      <text x="118" y="368">A</text>
+      <path class="w bus" d="M29 384 H110"/>
+      <circle class="sym" cx="29" cy="384" r="3.5"/>
+      <text x="118" y="388">B</text>
+      <text x="14" y="410" class="t-muted">Bus</text>
+      <text x="242" y="358" text-anchor="end">DI</text>
+      <text x="242" y="380" text-anchor="end">RO</text>
+      <text x="242" y="402" text-anchor="end">DE</text>
+      <text x="242" y="424" text-anchor="end">/RE</text>
+      <path class="w uart" d="M250 354 H340"/>
+      <path class="w uart" d="M250 376 H340"/>
+      <path class="w ctrl" d="M250 398 H275 V420 H250"/>
+      <path class="w ctrl" d="M275 409 H340"/>
+      <circle class="dot ctrldot" cx="275" cy="409" r="4"/>
+      <text x="348" y="358">D18</text>
+      <text x="348" y="380">D19</text>
+      <text x="348" y="413">D25</text>
+      <g transform="translate(210,330)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(210,440)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <path class="w ctrl" d="M340 560 H300"/>
+      <text x="348" y="564">D4</text>
+      <circle class="dot ctrldot" cx="300" cy="560" r="4"/>
+      <line class="sym" x1="300" y1="560" x2="300" y2="542"/>
+      <rect class="box" x="286" y="516" width="28" height="26" rx="2"/>
+      <text x="278" y="520" text-anchor="end" class="t-title">JP2</text>
+      <text x="278" y="533" text-anchor="end" class="t-muted">lukket = RS485 (D4 høj)</text>
+      <text x="278" y="546" text-anchor="end" class="t-muted">åben = RS232 (D4 lav)</text>
+      <line class="sym" x1="300" y1="516" x2="300" y2="492"/>
+      <g transform="translate(300,492)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <line class="sym" x1="300" y1="560" x2="300" y2="578"/>
+      <rect class="box" x="294" y="578" width="12" height="32" rx="0"/>
+      <text x="278" y="598" text-anchor="end">R8 4,7k pull-ned</text>
+      <line class="sym" x1="300" y1="610" x2="300" y2="622"/>
+      <g transform="translate(300,622)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <path class="w io" d="M340 700 H290"/>
+      <polygon class="sym" points="290,690 290,710 262,700" style="fill:var(--panel)"/>
+      <line class="sym" x1="262" y1="690" x2="262" y2="710"/>
+      <path class="w io" d="M262 700 H220"/>
+      <rect class="box" x="180" y="694" width="40" height="12" rx="0"/>
+      <path class="w io" d="M180 700 H140"/>
+      <g transform="translate(140,700)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="348" y="704">D26</text>
+      <text x="276" y="684" text-anchor="middle">LED1 · Kanal A</text>
+      <text x="276" y="730" text-anchor="middle" class="t-muted">TX/RX-status</text>
+      <text x="200" y="688" text-anchor="middle">R2 1k</text>
+      <path class="w io" d="M340 770 H290"/>
+      <polygon class="sym" points="290,760 290,780 262,770" style="fill:var(--panel)"/>
+      <line class="sym" x1="262" y1="760" x2="262" y2="780"/>
+      <path class="w io" d="M262 770 H220"/>
+      <rect class="box" x="180" y="764" width="40" height="12" rx="0"/>
+      <path class="w io" d="M180 770 H140"/>
+      <g transform="translate(140,770)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="348" y="774">D33</text>
+      <text x="276" y="754" text-anchor="middle">LED2 · Kanal B</text>
+      <text x="276" y="800" text-anchor="middle" class="t-muted">TX/RX-status</text>
+      <text x="200" y="758" text-anchor="middle">R3 1k</text>
+      <path class="w ctrl" d="M340 920 H300"/>
+      <text x="348" y="924">VP</text>
+      <circle class="dot ctrldot" cx="300" cy="920" r="4"/>
+      <line class="sym" x1="300" y1="920" x2="300" y2="902"/>
+      <rect class="box" x="286" y="876" width="28" height="26" rx="2"/>
+      <text x="278" y="893" text-anchor="end" class="t-title">JP1</text>
+      <text x="278" y="906" text-anchor="end" class="t-muted">lukket = CJMCU-752 monteret</text>
+      <line class="sym" x1="300" y1="876" x2="300" y2="852"/>
+      <g transform="translate(300,852)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <line class="sym" x1="300" y1="920" x2="300" y2="938"/>
+      <rect class="box" x="294" y="938" width="12" height="32" rx="0"/>
+      <text x="278" y="958" text-anchor="end">R4 10k pull-ned</text>
+      <line class="sym" x1="300" y1="970" x2="300" y2="982"/>
+      <g transform="translate(300,982)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <rect class="box" x="770" y="130" width="150" height="220" rx="3"/>
+      <text x="778" y="154">RST</text>
+      <text x="778" y="184">MISO</text>
+      <text x="778" y="214">MOSI</text>
+      <text x="778" y="244">SCK</text>
+      <text x="778" y="274">CS</text>
+      <text x="778" y="304">INT</text>
+      <text x="845" y="336" text-anchor="middle" class="t-title">W5500</text>
+      <g transform="translate(830,130)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(830,350)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <path class="w ctrl" d="M520 150 H770"/>
+      <text x="512" y="154" text-anchor="end">D23</text>
+      <path class="w spi" d="M520 180 H770"/>
+      <text x="512" y="184" text-anchor="end">D35</text>
+      <path class="w spi" d="M520 210 H770"/>
+      <text x="512" y="214" text-anchor="end">D13</text>
+      <path class="w spi" d="M520 240 H770"/>
+      <text x="512" y="244" text-anchor="end">D14</text>
+      <path class="w spi" d="M520 270 H770"/>
+      <text x="512" y="274" text-anchor="end">D32</text>
+      <path class="w spi" d="M520 300 H770"/>
+      <text x="512" y="304" text-anchor="end">VN</text>
+      <circle class="dot" cx="580" cy="300" r="4"/>
+      <path class="w spi" d="M580 300 V316"/>
+      <rect class="box" x="574" y="316" width="12" height="40" rx="0"/>
+      <path class="w spi" d="M580 356 V372"/>
+      <line class="sym" x1="572" y1="372" x2="588" y2="372"/>
+      <text x="594" y="376">3V3</text>
+      <text x="594" y="340">R1 10k</text>
+      <text x="512" y="454" text-anchor="end">D21</text>
+      <text x="512" y="484" text-anchor="end">D22</text>
+      <text x="512" y="514" text-anchor="end">D34</text>
+      <path class="w i2c" d="M520 450 H770"/>
+      <path class="w i2c" d="M520 480 H684 a6 6 0 0 1 12 0 H770"/>
+      <path class="w ctrl dash" d="M520 510 H614 a6 6 0 0 1 12 0 H684 a6 6 0 0 1 12 0 H770"/>
+      <circle class="dot i2cdot" cx="690" cy="450" r="4"/>
+      <circle class="dot i2cdot" cx="620" cy="480" r="4"/>
+      <circle class="dot ctrldot" cx="550" cy="510" r="4"/>
+      <path class="w i2c" d="M690 450 V1050"/>
+      <path class="w i2c" d="M620 480 V1050"/>
+      <path class="w ctrl dash" d="M550 510 V1050"/>
+      <text x="682" y="444" text-anchor="end" class="t-muted">I2C-bus</text>
+      <rect class="box" x="544" y="1054" width="12" height="32" rx="0"/>
+      <path class="w ctrl" d="M550 1086 V1094"/>
+      <text x="558" y="1110" text-anchor="end">R5 1k</text>
+      <rect class="box" x="614" y="1054" width="12" height="32" rx="0"/>
+      <path class="w i2c" d="M620 1086 V1094"/>
+      <text x="628" y="1124" text-anchor="end">R11 4k7</text>
+      <rect class="box" x="684" y="1054" width="12" height="32" rx="0"/>
+      <path class="w i2c" d="M690 1086 V1094"/>
+      <text x="698" y="1138" text-anchor="end">R12 4k7</text>
+      <line class="sym" x1="540" y1="1094" x2="700" y2="1094"/>
+      <text x="708" y="1098">3V3</text>
+      <rect class="box" x="770" y="420" width="150" height="440" rx="3"/>
+      <g transform="translate(830,420)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(830,860)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="845" y="436" text-anchor="middle" class="t-muted">UART A = kanal C</text>
+      <text x="845" y="606" text-anchor="middle" class="t-muted">UART B = kanal D</text>
+      <text x="845" y="722" text-anchor="middle" class="t-muted">chip-GPIO til LED</text>
+      <text x="845" y="834" text-anchor="middle" class="t-muted">adr. 0x4D</text>
+      <text x="845" y="850" text-anchor="middle" class="t-title">CJMCU-752 nr. 1</text>
+      <text x="778" y="454">SDA</text>
+      <text x="778" y="484">SCL</text>
+      <text x="778" y="514">IRQ</text>
+      <text x="778" y="624">A0</text>
+      <path class="w ctrl" d="M770 620 H720"/>
+      <g transform="translate(720,620)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="778" y="674">A1</text>
+      <path class="w ctrl" d="M770 670 H720"/>
+      <g transform="translate(720,670)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="912" y="454" text-anchor="end">TXA</text>
+      <text x="912" y="484" text-anchor="end">RXA</text>
+      <text x="912" y="514" text-anchor="end">RTSA</text>
+      <text x="912" y="624" text-anchor="end">TXB</text>
+      <text x="912" y="654" text-anchor="end">RXB</text>
+      <text x="912" y="684" text-anchor="end">RTSB</text>
+      <text x="912" y="744" text-anchor="end">GPIO0</text>
+      <text x="912" y="804" text-anchor="end">GPIO1</text>
+      <path class="w uart" d="M920 450 H1060"/>
+      <path class="w uart" d="M920 480 H1060"/>
+      <path class="w ctrl" d="M920 510 H1025"/>
+      <circle class="dot ctrldot" cx="1025" cy="510" r="4"/>
+      <rect class="box" x="1060" y="430" width="140" height="110" rx="3"/>
+      <text x="1256" y="422" text-anchor="end" class="t-title">RS485-kort 3</text>
+      <text x="1192" y="534" text-anchor="end" class="t-muted">kanal C</text>
+      <rect class="box" x="1226" y="450" width="30" height="44" rx="2"/>
+      <path class="w bus" d="M1200 464 H1241"/>
+      <circle class="sym" cx="1241" cy="464" r="3.5"/>
+      <text x="1192" y="468" text-anchor="end">A</text>
+      <path class="w bus" d="M1200 484 H1241"/>
+      <circle class="sym" cx="1241" cy="484" r="3.5"/>
+      <text x="1192" y="488" text-anchor="end">B</text>
+      <text x="1256" y="510" text-anchor="end" class="t-muted">Bus</text>
+      <text x="1068" y="454">DI</text>
+      <text x="1068" y="484">RO</text>
+      <text x="1068" y="504">DE</text>
+      <text x="1068" y="524">/RE</text>
+      <path class="w ctrl" d="M1060 500 H1025 V520 H1060"/>
+      <circle class="dot ctrldot" cx="1025" cy="510" r="4"/>
+      <g transform="translate(1100,430)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(1100,540)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <path class="w uart" d="M920 620 H1060"/>
+      <path class="w uart" d="M920 650 H1060"/>
+      <path class="w ctrl" d="M920 680 H1025"/>
+      <circle class="dot ctrldot" cx="1025" cy="680" r="4"/>
+      <rect class="box" x="1060" y="600" width="140" height="110" rx="3"/>
+      <text x="1256" y="592" text-anchor="end" class="t-title">RS485-kort 4</text>
+      <text x="1192" y="704" text-anchor="end" class="t-muted">kanal D</text>
+      <rect class="box" x="1226" y="620" width="30" height="44" rx="2"/>
+      <path class="w bus" d="M1200 634 H1241"/>
+      <circle class="sym" cx="1241" cy="634" r="3.5"/>
+      <text x="1192" y="638" text-anchor="end">A</text>
+      <path class="w bus" d="M1200 654 H1241"/>
+      <circle class="sym" cx="1241" cy="654" r="3.5"/>
+      <text x="1192" y="658" text-anchor="end">B</text>
+      <text x="1256" y="680" text-anchor="end" class="t-muted">Bus</text>
+      <text x="1068" y="624">DI</text>
+      <text x="1068" y="654">RO</text>
+      <text x="1068" y="674">DE</text>
+      <text x="1068" y="694">/RE</text>
+      <path class="w ctrl" d="M1060 670 H1025 V690 H1060"/>
+      <circle class="dot ctrldot" cx="1025" cy="680" r="4"/>
+      <g transform="translate(1100,600)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(1100,710)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <path class="w io" d="M920 740 H945"/>
+      <polygon class="sym" points="945,730 945,750 973,740" style="fill:var(--panel)"/>
+      <line class="sym" x1="973" y1="730" x2="973" y2="750"/>
+      <path class="w io" d="M973 740 H1010"/>
+      <rect class="box" x="1010" y="734" width="40" height="12" rx="0"/>
+      <path class="w io" d="M1050 740 H1080"/>
+      <g transform="translate(1080,740)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="980" y="724" text-anchor="middle">LED3 · Kanal C</text>
+      <text x="1030" y="764" text-anchor="middle">R6 1k</text>
+      <path class="w io" d="M920 800 H945"/>
+      <polygon class="sym" points="945,790 945,810 973,800" style="fill:var(--panel)"/>
+      <line class="sym" x1="973" y1="790" x2="973" y2="810"/>
+      <path class="w io" d="M973 800 H1010"/>
+      <rect class="box" x="1010" y="794" width="40" height="12" rx="0"/>
+      <path class="w io" d="M1050 800 H1080"/>
+      <g transform="translate(1080,800)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="980" y="784" text-anchor="middle">LED4 · Kanal D</text>
+      <text x="1030" y="824" text-anchor="middle">R7 1k</text>
+      <rect class="box" x="770" y="940" width="150" height="440" rx="3"/>
+      <g transform="translate(830,940)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(830,1380)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="845" y="956" text-anchor="middle" class="t-muted">UART A = kanal E</text>
+      <text x="845" y="1126" text-anchor="middle" class="t-muted">UART B = kanal F</text>
+      <text x="845" y="1242" text-anchor="middle" class="t-muted">chip-GPIO til LED</text>
+      <text x="845" y="1354" text-anchor="middle" class="t-muted">adr. 0x4C</text>
+      <text x="845" y="1370" text-anchor="middle" class="t-title">CJMCU-752 nr. 2</text>
+      <path class="w i2c" d="M690 970 H770"/>
+      <path class="w i2c" d="M620 1000 H684 a6 6 0 0 1 12 0 H770"/>
+      <path class="w ctrl dash" d="M550 1030 H614 a6 6 0 0 1 12 0 H684 a6 6 0 0 1 12 0 H770"/>
+      <circle class="dot i2cdot" cx="690" cy="970" r="4"/>
+      <circle class="dot i2cdot" cx="620" cy="1000" r="4"/>
+      <circle class="dot ctrldot" cx="550" cy="1030" r="4"/>
+      <text x="778" y="974">SDA</text>
+      <text x="778" y="1004">SCL</text>
+      <text x="778" y="1034">IRQ</text>
+      <text x="778" y="1144">A0</text>
+      <path class="w ctrl" d="M770 1140 H720"/>
+      <g transform="translate(720,1140)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <text x="778" y="1194">A1</text>
+      <path class="w ctrl" d="M770 1190 H720"/>
+      <g transform="translate(720,1190)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="912" y="974" text-anchor="end">TXA</text>
+      <text x="912" y="1004" text-anchor="end">RXA</text>
+      <text x="912" y="1034" text-anchor="end">RTSA</text>
+      <text x="912" y="1144" text-anchor="end">TXB</text>
+      <text x="912" y="1174" text-anchor="end">RXB</text>
+      <text x="912" y="1204" text-anchor="end">RTSB</text>
+      <text x="912" y="1264" text-anchor="end">GPIO0</text>
+      <text x="912" y="1324" text-anchor="end">GPIO1</text>
+      <path class="w uart" d="M920 970 H1060"/>
+      <path class="w uart" d="M920 1000 H1060"/>
+      <path class="w ctrl" d="M920 1030 H1025"/>
+      <circle class="dot ctrldot" cx="1025" cy="1030" r="4"/>
+      <rect class="box" x="1060" y="950" width="140" height="110" rx="3"/>
+      <text x="1256" y="942" text-anchor="end" class="t-title">RS485-kort 5</text>
+      <text x="1192" y="1054" text-anchor="end" class="t-muted">kanal E</text>
+      <rect class="box" x="1226" y="970" width="30" height="44" rx="2"/>
+      <path class="w bus" d="M1200 984 H1241"/>
+      <circle class="sym" cx="1241" cy="984" r="3.5"/>
+      <text x="1192" y="988" text-anchor="end">A</text>
+      <path class="w bus" d="M1200 1004 H1241"/>
+      <circle class="sym" cx="1241" cy="1004" r="3.5"/>
+      <text x="1192" y="1008" text-anchor="end">B</text>
+      <text x="1256" y="1030" text-anchor="end" class="t-muted">Bus</text>
+      <text x="1068" y="974">DI</text>
+      <text x="1068" y="1004">RO</text>
+      <text x="1068" y="1024">DE</text>
+      <text x="1068" y="1044">/RE</text>
+      <path class="w ctrl" d="M1060 1020 H1025 V1040 H1060"/>
+      <circle class="dot ctrldot" cx="1025" cy="1030" r="4"/>
+      <g transform="translate(1100,950)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(1100,1060)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <path class="w uart" d="M920 1140 H1060"/>
+      <path class="w uart" d="M920 1170 H1060"/>
+      <path class="w ctrl" d="M920 1200 H1025"/>
+      <circle class="dot ctrldot" cx="1025" cy="1200" r="4"/>
+      <rect class="box" x="1060" y="1120" width="140" height="110" rx="3"/>
+      <text x="1256" y="1112" text-anchor="end" class="t-title">RS485-kort 6</text>
+      <text x="1192" y="1224" text-anchor="end" class="t-muted">kanal F</text>
+      <rect class="box" x="1226" y="1140" width="30" height="44" rx="2"/>
+      <path class="w bus" d="M1200 1154 H1241"/>
+      <circle class="sym" cx="1241" cy="1154" r="3.5"/>
+      <text x="1192" y="1158" text-anchor="end">A</text>
+      <path class="w bus" d="M1200 1174 H1241"/>
+      <circle class="sym" cx="1241" cy="1174" r="3.5"/>
+      <text x="1192" y="1178" text-anchor="end">B</text>
+      <text x="1256" y="1200" text-anchor="end" class="t-muted">Bus</text>
+      <text x="1068" y="1144">DI</text>
+      <text x="1068" y="1174">RO</text>
+      <text x="1068" y="1194">DE</text>
+      <text x="1068" y="1214">/RE</text>
+      <path class="w ctrl" d="M1060 1190 H1025 V1210 H1060"/>
+      <circle class="dot ctrldot" cx="1025" cy="1200" r="4"/>
+      <g transform="translate(1100,1120)"><line class="sym" x1="0" y1="0" x2="0" y2="-18"/><line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/><text x="12" y="-14">3V3</text></g>
+      <g transform="translate(1100,1230)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <path class="w io" d="M920 1260 H945"/>
+      <polygon class="sym" points="945,1250 945,1270 973,1260" style="fill:var(--panel)"/>
+      <line class="sym" x1="973" y1="1250" x2="973" y2="1270"/>
+      <path class="w io" d="M973 1260 H1010"/>
+      <rect class="box" x="1010" y="1254" width="40" height="12" rx="0"/>
+      <path class="w io" d="M1050 1260 H1080"/>
+      <g transform="translate(1080,1260)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="980" y="1244" text-anchor="middle">LED5 · Kanal E</text>
+      <text x="1030" y="1284" text-anchor="middle">R9 1k</text>
+      <path class="w io" d="M920 1320 H945"/>
+      <polygon class="sym" points="945,1310 945,1330 973,1320" style="fill:var(--panel)"/>
+      <line class="sym" x1="973" y1="1310" x2="973" y2="1330"/>
+      <path class="w io" d="M973 1320 H1010"/>
+      <rect class="box" x="1010" y="1314" width="40" height="12" rx="0"/>
+      <path class="w io" d="M1050 1320 H1080"/>
+      <g transform="translate(1080,1320)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="980" y="1304" text-anchor="middle">LED6 · Kanal F</text>
+      <text x="1030" y="1344" text-anchor="middle">R10 1k</text>
+      <text x="710" y="388" class="t-muted">Plan (to CJMCU-752): kræver firmwareændring, i dag understøttes kun ét modul</text>
+    </svg>
+    <figcaption>
+      <p><b>Bussen:</b> SDA (D21) og SCL (D22) er fælles for begge moduler. Hvor linjerne krydser hinanden uden forbindelse, er der en lille bue. R11 og R12 (4,7 kΩ) er pull-ups for hele bussen, og de sidder for enden af den. IRQ (D34) er en åben-afløb-linje, som begge moduler deler, og den kræver R5 (1 kΩ) til 3,3 V. Firmwaren bruger ikke IRQ i dag, men den er en forudsætning for at aflæse chipperne mindre ofte.</p>
+      <p><b>Adresser:</b> hvert modul skal have sin egen. A0 og A1 er lagt på GND eller 3,3 V. Modul 1 (A1 = GND, A0 = GND) er 0x4D som i variant 2, og modul 2 (A1 = GND, A0 = 3,3 V) er 0x4C. Adresserne 0x49 (A1 = 3,3 V, A0 = GND) og 0x48 (begge på 3,3 V) er ledige til flere moduler senere.</p>
+      <p><b>Retning (DE + /RE)</b> på kort 3 til 6 kommer fra modulernes RTS-ben (RTSA og RTSB), som i variant 2. Resten af boardet (W5500, JP1, JP2, LED1 og LED2, RS485-kort 1 og 2) er som i variant 2. LED3 til LED6 sidder på modulernes GPIO0 og GPIO1 (R6, R7, R9 og R10, 1 kΩ).</p>
+      <p><b>Pull-ups på modulerne:</b> har CJMCU-printet egne pull-ups på SDA og SCL, ligger de i parallel med R11 og R12. Hvis hvert modul har 4,7 kΩ, giver R12 (eller R11) og to moduler tilsammen ca. 1,6 kΩ, hvilket er acceptabelt. Ved flere moduler skal pull-ups fjernes fra nogle af dem, så den samlede modstand ikke kommer under ca. 1 kΩ.</p>
+    </figcaption>
+  </figure>
+
+  <h2>Variant 3: det skal ændres i firmwaren</h2>
+  <ul>
+    <li><b>Flere moduler:</b> i dag findes kun én global chip (<code>g_address</code>) og to porte. Der skal bruges en liste af chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57).</li>
+    <li><b>Kanaler:</b> kanal-ID'er og konfiguration udvides fra 4 til 6 pladser. Det er klogt at gå direkte til 8 (designets loft), så et tredje modul senere ikke kræver endnu en konfigurationsversion. Der skal være migrering af gemt konfiguration. Modbus TCP-porte 504 til 507, REST (<code>/api/channels/1</code> til <code>6</code>) og CLI (<code>test 1-6</code>, <code>debug modbus a-f</code>).</li>
+    <li><b>Aflæsning:</b> brug chippens FIFO-trigger og den fælles IRQ-linje i stedet for at spørge hvert millisekund, og læs længere stykker ad gangen, så bussen ikke bliver fyldt, og 64-bytes-bufferen ikke løber over ved lange svar. Det er nødvendigt, hvis der skal flere end to moduler på bussen.</li>
+    <li><b>Status og PLC:</b> <code>board_type</code> og antal aktive kanaler (op til 6) i <code>/api/status</code>, og PLC'en skal kunne vise kanal E og F.</li>
+  </ul>
 </main>
 </body>
 </html>

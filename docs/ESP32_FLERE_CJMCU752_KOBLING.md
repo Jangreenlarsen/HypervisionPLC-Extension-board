@@ -5,7 +5,7 @@
 ```mermaid
 flowchart LR
     ESP["ESP32 DevKit<br/>D21 SDA, D22 SCL, D34 IRQ"]
-    BUS(["I2C-bus<br/>SDA + SCL + fælles IRQ<br/>R9, R10 4k7 og R5 1k til 3,3 V"])
+    BUS(["I2C-bus<br/>SDA + SCL + fælles IRQ<br/>R12, R11 4k7 og R5 1k til 3,3 V"])
     M1["CJMCU-752 nr. 1<br/>A1 = GND, A0 = GND<br/>adr. 0x4D"]
     M2["CJMCU-752 nr. 2<br/>A1 = GND, A0 = 3,3 V<br/>adr. 0x4C"]
     R3["RS485-kort 3<br/>kanal C"]
@@ -39,7 +39,7 @@ Adresserne 0x49 (A1 = 3,3 V, A0 = GND) og 0x48 (begge på 3,3 V) er ledige til f
 | ESP32 D21 | SDA på begge moduler | I2C-data (fælles) |
 | ESP32 D22 | SCL på begge moduler | I2C-clock (fælles) |
 | ESP32 D34 | IRQ på begge moduler, og R5 1k til 3,3 V | Fælles afbrydelse (åben afløb, valgfri; bruges ikke af firmwaren i dag) |
-| SDA og SCL | R9 og R10 4,7k til 3,3 V | Pull-ups for hele bussen |
+| SDA og SCL | R12 og R11 4,7k til 3,3 V | Pull-ups for hele bussen |
 | Modul nr. 1, A1 og A0 | GND | Adresse 0x4D |
 | Modul nr. 2, A1 | GND | Adresse 0x4C |
 | Modul nr. 2, A0 | 3,3 V | Adresse 0x4C |
@@ -54,7 +54,7 @@ På hvert RS485-kort forbindes DE og /RE med hinanden. Høj = sender, lav = modt
 - **I2C-bussen (400 kHz) er den praktiske grænse ved 115200 baud.** Med den nuværende måde at aflæse chippen på (ca. hvert millisekund pr. kanal, mens den venter på svar) er **2 moduler (6 kanaler) realistisk**. Det er beregnet, ikke målt.
 - **Flere end 2 moduler** kræver, at aflæsningen gøres smartere (se nedenfor). Så kan et tredje modul (adresse 0x49) give 8 kanaler, som er designets loft (port 502 til 509).
 - **Adresser:** med A0 og A1 på kun GND eller 3,3 V er der 4 mulige moduler (0x48, 0x49, 0x4C, 0x4D), altså 8 UART'er. Lægges A0 og A1 også på SCL og SDA, er der 16 adresser (32 UART'er).
-- **Pull-ups:** har CJMCU-printet egne pull-ups på SDA og SCL, ligger de i parallel med R9 og R10. Hvis hvert modul har 4,7 kΩ, giver R9 (eller R10) og to moduler tilsammen ca. 1,6 kΩ, hvilket er acceptabelt. Ved flere moduler skal pull-ups fjernes fra nogle af dem, så den samlede modstand ikke kommer under ca. 1 kΩ.
+- **Pull-ups:** har CJMCU-printet egne pull-ups på SDA og SCL, ligger de i parallel med R12 og R11. Hvis hvert modul har 4,7 kΩ, giver R12 (eller R11) og to moduler tilsammen ca. 1,6 kΩ, hvilket er acceptabelt. Ved flere moduler skal pull-ups fjernes fra nogle af dem, så den samlede modstand ikke kommer under ca. 1 kΩ.
 
 ## Det skal ændres i firmwaren
 
