@@ -58,7 +58,8 @@ På hvert RS485-kort forbindes DE og /RE med hinanden. Høj = sender, lav = modt
 
 ## Det skal ændres i firmwaren
 
-- **Flere moduler:** i dag findes kun én global chip (`g_address`) og to porte. Der skal bruges en liste af chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57).
+- **Flere moduler (ny UART-chip):** i dag findes kun én global chip (`g_address`) og to porte. Der skal bruges en liste af SC16IS752-chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57) og sin egen skygge-kopi af IOSTATE (bus-lås pr. chip eller fælles for bussen).
+- **LED-status:** kanal-LED'erne følger chippens GPIO0 og GPIO1 pr. modul (modul 1: kanal C/D, modul 2: kanal E/F), og IODIR/IOSTATE skal sættes pr. chip ved start (som i v0.34.1). **Watchdog-LED** (v0.37.0, GPIO2, 1 blink i sekundet) er allerede implementeret og uafhængig af antallet af moduler; blinker den ikke, hænger hovedløkken.
 - **Kanaler:** kanal-ID'er og konfiguration udvides fra 4 til 6 pladser. Det er klogt at gå direkte til 8 (designets loft), så et tredje modul senere ikke kræver endnu en konfigurationsversion. Der skal være migrering af gemt konfiguration. Modbus TCP-porte 504 til 507, REST (`/api/channels/1` til `6`) og CLI (`test 1-6`, `debug modbus a-f`).
 - **Aflæsning:** brug chippens FIFO-trigger og den fælles IRQ-linje i stedet for at spørge hvert millisekund, og læs længere stykker ad gangen, så bussen ikke bliver fyldt, og 64-bytes-bufferen ikke løber over ved lange svar.
 - **Status og PLC:** `board_type` og antal aktive kanaler (op til 6) i `/api/status`, og PLC'en skal kunne vise kanal E og F.

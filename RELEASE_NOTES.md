@@ -2,6 +2,12 @@
 
 ---
 
+## v0.37.0 — 2026-10-27 — Watchdog-LED
+
+Boardet har fået en **status-LED på GPIO2** (LED + ca. 1 kΩ til GND). Den blinker kort 1 gang i sekundet, så længe firmwaren kører normalt. Hænger hovedprogrammet i mere end 30 sekunder, stopper blinket, og LED'en er slukket, så man kan se det i skabet uden at åbne en forbindelse. LED'en ændrer ikke på noget andet (ingen automatisk genstart). Ikke afprøvet på et rigtigt board endnu.
+
+---
+
 ## v0.36.0 — 2026-10-27 — Statusside direkte på boardet
 
 Boardet har nu en lille **statusside**, som du kan åbne i en browser: `http://<board-ip>:8080/`. Den viser firmwareversion, oppetid, fri hukommelse, årsag til sidste genstart, board-type, UART-expander, Ethernet/WiFi og for hver kanal status, indstillinger og antal forespørgsler, lykkedes, timeouts og fejl. Siden opdaterer sig selv hvert 5. sekund.

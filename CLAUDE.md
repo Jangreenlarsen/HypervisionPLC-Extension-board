@@ -148,6 +148,7 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 │   ├── modbus_channel.cpp/.h       # 2 eller 4 kanaler (EXP_SEL-jumper), én FreeRTOS-task pr. kanal, laeser config fra NVS, live-omkonfigurering + statistik — bruger lib/modbus_pdu/ — v0.11.0, 4 kanaler v0.31.0
 │   ├── channel_port.h              # fælles UART-interface for kanal-tasken (Lag 3) — v0.31.0
 │   ├── uart_port_native.cpp/.h     # kanal A/B: ESP32-UART + DIR/LED-GPIO — v0.31.0
+│   ├── heartbeat_led.cpp/.h        # watchdog-/heartbeat-LED på GPIO2, 1 blink i sekundet, stopper hvis loop() hænger — v0.37.0
 │   ├── uart_expander.cpp/.h        # kanal C/D: SC16IS752 (CJMCU-752) over I2C GPIO21/22 — v0.31.0, IKKE hardware-verificeret
 │   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-503 (+504-505 med CJMCU-752), plc_ip-permit (§4.3) inline — Fase 4, live-verificeret
 │   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — status/channels(get/put/post read-write) — v0.11.0, faerdig; + offentlig GET-statusside / og /status.json (uden auth) — v0.36.0

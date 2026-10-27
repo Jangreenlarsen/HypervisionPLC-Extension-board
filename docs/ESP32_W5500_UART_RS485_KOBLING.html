@@ -865,7 +865,8 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
 
   <h2>Variant 3: det skal ændres i firmwaren</h2>
   <ul>
-    <li><b>Flere moduler:</b> i dag findes kun én global chip (<code>g_address</code>) og to porte. Der skal bruges en liste af chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57).</li>
+    <li><b>Flere moduler (ny UART-chip):</b> i dag findes kun én global chip (<code>g_address</code>) og to porte. Der skal bruges en liste af SC16IS752-chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57) og sin egen skygge-kopi af IOSTATE.</li>
+    <li><b>LED-status:</b> kanal-LED'erne følger chippens GPIO0 og GPIO1 pr. modul (modul 1: kanal C/D, modul 2: kanal E/F), initialiseret pr. chip ved start. <b>Watchdog-LED</b> (v0.37.0, GPIO2, 1 blink i sekundet) er allerede implementeret; blinker den ikke, hænger hovedløkken.</li>
     <li><b>Kanaler:</b> kanal-ID'er og konfiguration udvides fra 4 til 6 pladser. Det er klogt at gå direkte til 8 (designets loft), så et tredje modul senere ikke kræver endnu en konfigurationsversion. Der skal være migrering af gemt konfiguration. Modbus TCP-porte 504 til 507, REST (<code>/api/channels/1</code> til <code>6</code>) og CLI (<code>test 1-6</code>, <code>debug modbus a-f</code>).</li>
     <li><b>Aflæsning:</b> brug chippens FIFO-trigger og den fælles IRQ-linje i stedet for at spørge hvert millisekund, og læs længere stykker ad gangen, så bussen ikke bliver fyldt, og 64-bytes-bufferen ikke løber over ved lange svar. Det er nødvendigt, hvis der skal flere end to moduler på bussen.</li>
     <li><b>Status og PLC:</b> <code>board_type</code> og antal aktive kanaler (op til 6) i <code>/api/status</code>, og PLC'en skal kunne vise kanal E og F.</li>

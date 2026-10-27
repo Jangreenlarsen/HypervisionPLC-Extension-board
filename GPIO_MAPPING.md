@@ -87,6 +87,12 @@ Gælder det almindelige 4-bens RS485-modul. **Brug 3,3 V-moduler (SP3485/MAX3485
 - Selvstyrende moduler uden DE/RE-ben (kun TXD/RXD) bruger hverken DIR eller RTS; så udgår den ledning.
 - Er boardet bygget med både RS485 og RS232 pr. kanal (designdokumentets dual-population), sidder der en AND-port (MODE_SEL × DIR) og en mux mellem ESP32 og transceiverne; tabellen ovenfor gælder de rene RS485-moduler.
 
+## Watchdog-LED (heartbeat), v0.37.0
+
+| Ben | Funktion | Detaljer |
+|---|---|---|
+| ESP32 GPIO2 | Watchdog-LED | Udgang, aktiv høj, lav ved start. LED + ca. 1 kΩ til GND. Blinker kort (100 ms) 1 gang i sekundet, så længe hovedløkken (`loop()`) melder sig inden for 30 s; hænger den, stopper blinket og LED'en er slukket. GPIO2 er et strapping-ben, men LED + modstand til GND forstyrrer ikke boot. Samme ben som DevKit'ets indbyggede LED. |
+
 ## Aktivitets-LED'er
 
 Hver kanal har en LED, der er **tændt (aktiv høj) under en hel RTU-transaktion**, uanset om den lykkes eller timer ud. Den blinker ikke for en deaktiveret kanal. Hver LED forbindes via en seriemodstand til GND (anbefalet ca. 1 kΩ — værdien er ikke noget, firmwaren bestemmer).

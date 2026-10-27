@@ -171,7 +171,8 @@ Variant 3 bygger på variant 2, men to moduler deler I2C-bussen.
 
 **Det skal ændres i firmwaren:**
 
-- **Flere moduler:** en liste af chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57), i stedet for én global chip.
+- **Flere moduler (ny UART-chip):** en liste af SC16IS752-chips, hver med sin adresse (fundet ved at prøve 0x48 til 0x57) og egen IOSTATE-skygge, i stedet for én global chip.
+- **LED-status:** kanal-LED'erne følger chippens GPIO0/GPIO1 pr. modul (kanal C til F), initialiseret pr. chip ved start. Watchdog-LED'en på GPIO2 (v0.37.0, 1 blink i sekundet) er allerede implementeret.
 - **Kanaler:** kanal-ID'er og konfiguration fra 4 til 6 pladser (klogt: direkte til 8), med migrering af gemt konfiguration; Modbus TCP-porte 504 til 507, REST (`/api/channels/1` til `6`) og CLI (`test 1-6`, `debug modbus a-f`).
 - **Aflæsning:** chippens FIFO-trigger og den fælles IRQ-linje i stedet for at spørge hvert millisekund; nødvendigt ved flere end to moduler.
 - **Status og PLC:** `board_type` og antal aktive kanaler (op til 6) i `/api/status`; PLC'en skal kunne vise kanal E og F.
