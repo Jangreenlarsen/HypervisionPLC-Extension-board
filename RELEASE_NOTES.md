@@ -11,7 +11,7 @@ Boardet har nu en lille **statusside**, som du kan åbne i en browser: `http://<
 - Adressen står også i CLI'ens `status` (linjen `status.page`).
 - Står jeres firewall sat til at lukke boardet for alle andre end PLC'en, skal port 8080 åbnes for den PC, der skal se siden.
 
-Siden er endnu ikke set på et rigtigt board.
+Afprøvet på et rigtigt board: siden og dataene svarer uden login, alt andet end læsning afvises, og resten af API'et kræver stadig token. Selve udseendet (layout, mørk tilstand, mobil) er endnu ikke set i en browser.
 
 ---
 
