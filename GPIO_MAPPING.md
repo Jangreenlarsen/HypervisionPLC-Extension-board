@@ -12,7 +12,7 @@ Samlet, hurtigt-opslags-reference for alle ben brugt på det fysiske board: et *
 | 1 | UART0 TX | | Seriel CLI (USB) |
 | 2 | *(undgås)* | | Boot-strapping-pin |
 | 3 | UART0 RX | | Seriel CLI (USB) |
-| 4 | **MODE_SEL — hele boardet** | INPUT_PULLUP | Jumper: **3,3 V eller ubunden = RS485**, **GND = RS232**. Læses ÉN gang ved boot (10 µs sættetid). Gælder alle kanaler. Ikke ændrbar via REST |
+| 4 | **MODE_SEL — hele boardet** | INPUT_PULLUP | Firmwaren: **høj = RS485, lav = RS232**. Læses ÉN gang ved boot (10 µs sættetid). Gælder alle kanaler. Ikke ændrbar via REST. **Nyt board: JP2 (til 3,3 V) + R8 4,7k pull-ned til GND: JP2 lukket = RS485, åben = RS232.** Ældre boards uden R8: jumper til 3,3 V eller ubunden = RS485, GND = RS232 |
 | 5 | *(undgås)* | | Boot-strapping-pin |
 | 6–11 | *(undgås)* | | Internt forbundet til SPI-flash — brug ALDRIG |
 | 12 | *(undgås)* | | Boot-strapping-pin |
@@ -63,7 +63,7 @@ Samlet, hurtigt-opslags-reference for alle ben brugt på det fysiske board: et *
 - Chippen sætter selv RTS **høj** i det øjeblik, firmwaren lægger data i send-FIFO'en, og slipper den **lav** efter sidste bit er sendt (databladet, afsnit 9.1-9.2).
 - Firmwaren venter, til chippen melder "sender og skifteregister tomme" (LSR bit 6, højst 500 ms), før den lytter efter svar.
 
-**RS232-mode** (MODE_SEL = GND): ESP32 rører aldrig DIR (forbliver lav). På C/D sættes `EFCR = 0x00` og `MCR = 0x02`, som tvinger RTS-benet **lavt**, så en evt. monteret RS485-driver er slukket. *Et RS485-modul sender derfor aldrig i RS232-mode — er boardet kun bygget med RS485-moduler, skal GPIO4 stå på 3,3 V (eller ubunden).*
+**RS232-mode** (MODE_SEL lav: JP2 åben på det nye board, eller jumper til GND på ældre boards): ESP32 rører aldrig DIR (forbliver lav). På C/D sættes `EFCR = 0x00` og `MCR = 0x02`, som tvinger RTS-benet **lavt**, så en evt. monteret RS485-driver er slukket. *Et RS485-modul sender derfor aldrig i RS232-mode — er boardet kun bygget med RS485-moduler, skal MODE_SEL være høj: JP2 lukket (nyt board), eller 3,3 V/ubunden på ældre boards uden R8.*
 
 **Under opstart (kort):**
 - **Kanal A/B:** GPIO27/25 er indgange (flydende), indtil firmwaren sætter dem lave. *Anbefaling:* 10 kΩ pull-down på DE/RE-ledningen, så driveren er slukket under reset.
@@ -161,7 +161,7 @@ I2C-subadressen er `(register << 3) | (kanal << 1)`. Send: højst 32 byte pr. I2
 
 ## Opstartsrækkefølge for benene
 
-1. **MODE_SEL (GPIO4)** læses (`INPUT_PULLUP`): høj/ubunden → RS485, lav → RS232.
+1. **MODE_SEL (GPIO4)** læses (`INPUT_PULLUP`): høj → RS485, lav → RS232. (Uden ekstern modstand trækker den interne pull-up en ubunden pin høj = RS485. Med R8 4,7k pull-ned, som på det nye board, er en åben JP2 lav = RS232.)
 2. **EXP_SEL (GPIO36)** læses 5 gange; alle skal være høje, ellers antages intet modul (2 kanaler).
 3. Hvis EXP_SEL er høj: I2C startes (GPIO21/22, 400 kHz) og adresserne 0x48-0x57 afprøves med en scratch-register-test (skriv `0xA5` og `0x5A`, læs tilbage). Den første, der svarer, bruges.
 4. Chippen **software-nulstilles**, LED-benene sættes til udgange, og begge LED'er slukkes.
@@ -214,7 +214,7 @@ GPIO-nummeret er det autoritative — det står trykt direkte på kredsløbskort
 
 ## Vigtigt at vide
 
-- **MODE_SEL (GPIO4) gælder ALLE kanaler samtidig** — RS232 og RS485 kan ikke blandes mellem kanalerne. `PUT /api/channels/{n}/config` ignorerer et evt. `mode`-felt; `mode` er kun en læseværdi.
+- **MODE_SEL (GPIO4) gælder ALLE kanaler samtidig** — RS232 og RS485 kan ikke blandes mellem kanalerne. På det nye board er R8 4,7 kΩ (ikke 10 kΩ), fordi firmwaren har ESP32'ens interne pull-up (ca. 45 kΩ) slået til på pinden: 4,7 kΩ giver et sikkert lavt niveau, når JP2 er åben. `PUT /api/channels/{n}/config` ignorerer et evt. `mode`-felt; `mode` er kun en læseværdi.
 - **W5500 har ingen strapping-pin-konflikt** — alle dens GPIO'er (13, 14, 23, 32, 35, 39) er valgt udenom ESP32'ens boot-strapping-pins.
 - **Kanal C/D: baudrate 1200-115200** (krystallens grænse). Højere afvises af `PUT /api/channels/{3,4}/config` med `400 invalid_baudrate`.
 - **GPIO21/22 er I2C-bussen til CJMCU-752** — andre I2C-enheder kan sidde på samme bus, så længe de ikke bruger adresserne 0x48-0x57.

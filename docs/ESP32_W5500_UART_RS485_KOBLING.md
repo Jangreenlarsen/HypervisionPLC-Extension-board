@@ -12,6 +12,7 @@ Det er samme print og samme firmware. **Variant 1** har 2 kanaler (A og B). **Va
 | RS485-kort | 1 og 2, direkte på ESP32 | 1 og 2 direkte på ESP32, 3 og 4 på CJMCU-752 |
 | CJMCU-752 (I2C på D21 og D22) | ikke monteret | monteret, A0 og A1 på GND (I2C-adresse 0x4D) |
 | JP1 (EXP_SEL på VP / GPIO36) | åben | lukket (til 3,3 V) |
+| JP2 (mode på D4) | lukket = RS485, åben = RS232 | lukket = RS485, åben = RS232 |
 | Aktivitets-LED'er | LED1 og LED2 på ESP32 | LED1 og LED2 på ESP32, LED3 og LED4 på CJMCU-752 |
 | Firmware | samme | samme |
 
@@ -23,7 +24,7 @@ flowchart LR
     ETH["W5500"]
     RS1["RS485-kort 1<br/>kanal A"]
     RS2["RS485-kort 2<br/>kanal B"]
-    JP2["JP2 mode-vælger<br/>åben = RS485, sluttet = RS232"]
+    JP2["JP2 mode-vælger<br/>lukket til 3,3 V = RS485, åben = RS232<br/>R8 4,7k pull-ned"]
     LED["LED1 og LED2<br/>hver via 1k til GND"]
     EXP["JP1 åben<br/>R4 10k pull-ned"]
 
@@ -46,7 +47,7 @@ flowchart LR
     RS2["RS485-kort 2<br/>kanal B"]
     RS3["RS485-kort 3<br/>kanal C"]
     RS4["RS485-kort 4<br/>kanal D"]
-    JP2["JP2 mode-vælger<br/>åben = RS485, sluttet = RS232"]
+    JP2["JP2 mode-vælger<br/>lukket til 3,3 V = RS485, åben = RS232<br/>R8 4,7k pull-ned"]
     LED["LED1 og LED2<br/>hver via 1k til GND"]
     LEDCD["LED3 og LED4<br/>hver via 1k til GND"]
     EXP["JP1 lukket til 3,3 V<br/>R4 10k pull-ned"]
@@ -83,7 +84,7 @@ flowchart LR
 | ESP32 D14 | W5500 SCK | SPI (clock) |
 | ESP32 D32 | W5500 CS | SPI (chip select) |
 | ESP32 VN | W5500 INT og R1 10k til 3,3 V | Afbrydelse fra W5500 med pull-up |
-| ESP32 D4 | JP2 til GND | Mode-vælger: åben = RS485, sluttet = RS232 |
+| ESP32 D4 | JP2 til 3,3 V, og R8 4,7k til GND | Mode-vælger: lukket = RS485, åben = RS232 |
 | ESP32 D26 | LED1, R2 1k, GND | Aktivitet kanal A |
 | ESP32 D33 | LED2, R3 1k, GND | Aktivitet kanal B |
 | ESP32 VP (GPIO36) | R4 10k til GND, og JP1 til 3,3 V | EXP_SEL: JP1 lukket = CJMCU-752 monteret |
@@ -110,7 +111,7 @@ flowchart LR
 
 - På hvert RS485-kort forbindes DE og /RE med hinanden og går til ét signal. Høj = sender, lav = modtager. **Bind ikke /RE til GND**, ellers hører kortet sin egen afsendelse.
 - Retningen styres af ESP32 (D27, D25) for kanal A og B, og af CJMCU-752's RTS-ben for kanal C og D.
-- JP2 skal være åben (D4 høj) med RS485-kort. I RS232-mode rører firmwaren aldrig retningen.
+- JP2 skal være lukket (D4 høj) med RS485-kort; åben giver RS232 (R8 trækker D4 lavt). Firmwaren har ESP32'ens interne pull-up (ca. 45 kΩ) slået til på D4, så R8 er 4,7 kΩ: det giver et sikkert lavt niveau, når JP2 er åben. I RS232-mode rører firmwaren aldrig retningen.
 - R4 trækker VP (GPIO36) lavt. GPIO34-39 har ingen intern pull, så modstanden er nødvendig i begge varianter.
 - R1 trækker INT på VN op til 3,3 V. D35 er kun indgang på ESP32 og passer til MISO.
 - SDA og SCL skal have pull-ups til 3,3 V (typisk 4,7 kΩ); tjek om CJMCU-modulet har dem. IRQ kræver 1 kΩ til 3,3 V, hvis den forbindes.
