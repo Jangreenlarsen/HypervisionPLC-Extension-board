@@ -10,7 +10,7 @@ Det er samme print og samme firmware. **Variant 1** har 2 kanaler (A og B). **Va
 | Modbus TCP-porte | 502, 503 | 502, 503, 504, 505 |
 | Boardtype i `/api/status` | `2xRS485` | `4xRS485` |
 | RS485-kort | 1 og 2, direkte på ESP32 | 1 og 2 direkte på ESP32, 3 og 4 på CJMCU-752 |
-| CJMCU-752 (I2C på D21 og D22) | ikke monteret | monteret |
+| CJMCU-752 (I2C på D21 og D22) | ikke monteret | monteret, A0 og A1 på GND (I2C-adresse 0x4D) |
 | JP1 (EXP_SEL på VP / GPIO36) | åben | lukket (til 3,3 V) |
 | Aktivitets-LED'er | LED1 og LED2 på ESP32 | LED1 og LED2 på ESP32, LED3 og LED4 på CJMCU-752 |
 | Firmware | samme | samme |
@@ -50,11 +50,13 @@ flowchart LR
     LED["LED1 og LED2<br/>hver via 1k til GND"]
     LEDCD["LED3 og LED4<br/>hver via 1k til GND"]
     EXP["JP1 lukket til 3,3 V<br/>R4 10k pull-ned"]
+    ADR["A0 og A1 til GND<br/>I2C-adresse 0x4D"]
 
     ESP ---|"D17 til DI<br/>D16 fra RO<br/>D27 til DE + /RE"| RS1
     ESP ---|"D18 til DI<br/>D19 fra RO<br/>D25 til DE + /RE"| RS2
     ESP ---|"SPI: D13 MOSI, D35 MISO, D14 SCK, D32 CS<br/>D23 RST<br/>VN INT med R1 10k til 3,3 V"| ETH
     ESP ---|"I2C: D21 SDA, D22 SCL<br/>D34 IRQ (valgfri, R5 1k til 3,3 V)"| CJ
+    CJ --- ADR
     CJ ---|"TXA til DI<br/>RXA fra RO<br/>RTSA til DE + /RE"| RS3
     CJ ---|"TXB til DI<br/>RXB fra RO<br/>RTSB til DE + /RE"| RS4
     CJ ---|"GPIO0 = LED3<br/>GPIO1 = LED4"| LEDCD
@@ -93,6 +95,8 @@ flowchart LR
 | ESP32 D21 | CJMCU-752 SDA | I2C-data |
 | ESP32 D22 | CJMCU-752 SCL | I2C-clock |
 | ESP32 D34 | CJMCU-752 IRQ og R5 1k til 3,3 V | Valgfri, bruges ikke af firmwaren |
+| CJMCU-752 A0 | GND | I2C-adresse (sammen med A1: 0x4D) |
+| CJMCU-752 A1 | GND | I2C-adresse (sammen med A0: 0x4D) |
 | CJMCU-752 TXA | RS485-kort 3 DI | UART TX, kanal C |
 | RS485-kort 3 RO | CJMCU-752 RXA | UART RX, kanal C |
 | CJMCU-752 RTSA | RS485-kort 3 DE og /RE (samme ledning) | Retning, kanal C (styres af chippen) |

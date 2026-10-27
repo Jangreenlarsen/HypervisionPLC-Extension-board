@@ -114,7 +114,7 @@ CJMCU-752 er et modul med NXP **SC16IS752** (2× UART, 64 byte FIFO pr. retning)
 | 3V3 | I2C/SPI-valg | 9 / 6 | **Høj = I2C** |
 | — | SO | 12 / 9 | **Ubrugt** i I2C-mode (må ikke forbindes) |
 | — | RESET | 5 / 2 | Aktiv lav, skal ligge højt. Firmwaren bruger software-reset (IOControl) og styrer ikke benet |
-| A0 / A1 | CS/A0, SI/A1 | 10 / 7, 11 / 8 | Bestemmer I2C-adressen (tabel nedenfor) |
+| GND | CS/A0, SI/A1 | 10 / 7, 11 / 8 | **A0 og A1 er begge bundet til GND på vores board → I2C-adresse 0x4D** (tabel nedenfor) |
 | GPIO36 | *(EXP_SEL — ikke på chippen)* | | Jumper til 3,3 V = modul monteret |
 
 ### Chippens UART-ben
@@ -136,7 +136,7 @@ Chippens øvrige GPIO2-7 (ben 20, 21, 25-28 / 19, 20, 24-27) bruges ikke og er i
 
 ### I2C-adresse (A1 og A0)
 
-Databladet angiver adresserne i 8-bit-form (0x90-0xAE); herunder er de omregnet til 7-bit, som firmwaren bruger. **Firmwaren prøver alle 16** (0x48-0x57) ved boot, så adressevalget er ligegyldigt.
+Databladet angiver adresserne i 8-bit-form (0x90-0xAE); herunder er de omregnet til 7-bit, som firmwaren bruger. **På vores board er A1 og A0 begge bundet til GND, dvs. adressen er 0x4D** (A1 = VSS, A0 = VSS). **Firmwaren prøver alle 16** (0x48-0x57) ved boot, så en anden adressering virker også.
 
 | A1 \ A0 | VDD | VSS | SCL | SDA |
 |---|---|---|---|---|

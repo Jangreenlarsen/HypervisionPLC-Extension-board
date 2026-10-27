@@ -79,7 +79,7 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
       <tr><th>Modbus TCP-porte</th><td>502, 503</td><td>502, 503, 504, 505</td></tr>
       <tr><th>Boardtype i status</th><td><code>2xRS485</code></td><td><code>4xRS485</code></td></tr>
       <tr><th>RS485-kort</th><td>1 og 2, direkte på ESP32</td><td>1 og 2 direkte på ESP32, 3 og 4 på CJMCU-752</td></tr>
-      <tr><th>CJMCU-752 (I2C på D21 og D22)</th><td>ikke monteret</td><td>monteret</td></tr>
+      <tr><th>CJMCU-752 (I2C på D21 og D22)</th><td>ikke monteret</td><td>monteret, A0 og A1 på GND (I2C-adresse 0x4D)</td></tr>
       <tr><th>JP1 (EXP_SEL på VP / GPIO36)</th><td>åben</td><td>lukket (til 3,3 V)</td></tr>
       <tr><th>Aktivitets-LED'er</th><td>LED1 og LED2 på ESP32</td><td>LED1 og LED2 på ESP32, LED3 og LED4 på CJMCU-752</td></tr>
       <tr><th>Firmware</th><td colspan="2">Samme firmware. Den læser JP1 ved opstart og tjekker, at CJMCU-752 svarer på I2C.</td></tr>
@@ -230,7 +230,7 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
 
   <h2 id="v2">Variant 2: 4 kanaler (A til D) med CJMCU-752</h2>
   <figure>
-    <svg class="v2" viewBox="0 0 1140 950" role="img" aria-label="Variant 2, fire kanaler: som variant 1, men JP1 er lukket, og ESP32 er desuden forbundet via I2C til CJMCU-752, som er forbundet til RS485-kort 3 og 4 og to ekstra aktivitets-LED'er på chippens GPIO0 og GPIO1.">
+    <svg class="v2" viewBox="0 0 1140 950" role="img" aria-label="Variant 2, fire kanaler: som variant 1, men JP1 er lukket, og ESP32 er desuden forbundet via I2C til CJMCU-752 (A0 og A1 på GND), som er forbundet til RS485-kort 3 og 4 og to ekstra aktivitets-LED'er på chippens GPIO0 og GPIO1.">
       
       <rect class="box" x="14" y="40" width="150" height="56" rx="3"/>
       <text x="26" y="62" class="t-title">Strøm ind</text>
@@ -391,6 +391,13 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
       <line class="sym" x1="572" y1="582" x2="588" y2="582"/>
       <text x="594" y="586">3V3</text>
       <text x="594" y="550">R5 1k</text>
+      <text x="648" y="624">A0</text>
+      <path class="w ctrl" d="M640 620 H590"/>
+      <g transform="translate(590,620)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="648" y="674">A1</text>
+      <path class="w ctrl" d="M640 670 H590"/>
+      <g transform="translate(590,670)"><line class="sym" x1="0" y1="0" x2="0" y2="12"/><line class="sym" x1="-10" y1="12" x2="10" y2="12"/><line class="sym" x1="-6" y1="16" x2="6" y2="16"/><line class="sym" x1="-2" y1="20" x2="2" y2="20"/><text x="14" y="18" class="t-muted">GND</text></g>
+      <text x="648" y="700" class="t-muted">adr. 0x4D</text>
       <text x="782" y="454" text-anchor="end">TXA</text>
       <text x="782" y="484" text-anchor="end">RXA</text>
       <text x="782" y="514" text-anchor="end">RTSA</text>
@@ -466,6 +473,7 @@ svg .dot { fill: var(--spi); } svg .ctrldot { fill: var(--ctrl); }
       <p><b>Retning (DE + /RE):</b> på hvert RS485-kort forbindes DE og /RE med hinanden og går til ét signal. Høj = sender, lav = modtager. På kort 1 og 2 styrer ESP32 signalet (D27 og D25). På kort 3 og 4 styrer CJMCU-752 selv signalet fra sine RTS-ben (RTSA og RTSB), så der bruges ingen ESP32-ben til dem. Bind ikke /RE til GND.</p>
       <p><b>Mode:</b> JP2 på D4 vælger RS232 eller RS485 for hele boardet. Med RS485-kort skal JP2 være åben (D4 høj). <b>JP1</b> på VP (GPIO36) fortæller firmwaren, at CJMCU-752 er monteret; R4 trækker pinden lavt, når JP1 er åben.</p>
       <p><b>Pull-ups og forsyning:</b> D35 (MISO) er kun indgang. R1 trækker INT på VN op til 3,3 V. IRQ fra CJMCU-752 bruges ikke af firmwaren og er valgfri; forbindes den, kræver databladet R5 på 1 kΩ til 3,3 V. SDA og SCL skal have pull-ups til 3,3 V (typisk 4,7 kΩ); tjek om CJMCU-modulet har dem. Brug 3,3 V-moduler til RS485 (SP3485/MAX3485), og sæt 120 Ω terminering i begge ender af hver bus.</p>
+      <p><b>I2C-adresse:</b> A0 og A1 på CJMCU-752 er begge bundet til GND, så adressen er 0x4D. Firmwaren prøver alle 16 mulige adresser (0x48-0x57), så en anden adressering virker også.</p>
       <p>LED1 og LED2 sidder på ESP32 (D26, D33). LED3 og LED4 sidder på CJMCU-752's GPIO0 og GPIO1 og er tændt under en transaktion på kanal C og D.</p>
     </figcaption>
   </figure>
