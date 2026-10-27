@@ -364,7 +364,7 @@ Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsn
 
 - **2 eller 4 kanaler** (v0.31.0: kanal C+D med CJMCU-752). Variant B (8 kanaler, SPI-expander) er designet (§2.2) men ikke bygget. **Kanal C/D er IKKE verificeret med rigtig hardware endnu** (se CHANGELOG v0.31.0).
 - **W5500-Ethernet (v0.13.0) er implementeret men IKKE hardware-verificeret** — kun boot-testet uden fysisk modul tilsluttet (fejler sikkert, resten af boardet upåvirket). Link/DHCP/faktisk dataoverførsel over Ethernet er endnu ikke testet.
-- **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode` kan IKKE sættes via REST (se nedenfor) — kræver at MODE_SEL-jumperen fysisk flyttes til GND, hvilket ikke er afprøvet endnu.
+- **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode` kan IKKE sættes via REST (se nedenfor) — kræver at MODE_SEL-jumperen fysisk ændres (til GND på ældre boards; åbn JP2 på boards med pull-ned-modstanden R8), hvilket ikke er afprøvet endnu.
 - **Ingen `POST /api/channels/{n}/reset-stats`/`POST /api/stats/reset`** — statistikken (afsnit 4.3) kan kun nulstilles ved reboot.
 - **OTA-uploadet har intet "annullér"-endpoint** — det afbrydes ved at lukke forbindelsen (boardet kasserer da uploadet og bliver på den kørende firmware). Fremdriften kan ikke aflæses via `GET /api/ota/status` mens uploadet står på (én HTTP-arbejdstråd).
 - **`active_channels` (2 eller 4) afgøres af EXP_SEL-jumperen ved boot**, ikke af ren auto-detektion — firmwaren tjekker dog, at chippen svarer. Svarer den ikke, kører boardet på 2 kanaler og melder `expander: "not_found"` (afsnit 4.2).

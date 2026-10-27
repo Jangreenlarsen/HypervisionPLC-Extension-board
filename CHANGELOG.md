@@ -4,6 +4,16 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.37.0 build 0059] — 2026-10-27 — Watchdog-LED (heartbeat) på GPIO2
+
+**Ønske:** Jan: "tilfør en LED til status på wartdog timer som skal blink 1 gang i sek" + "opdatere plan for firmware med ny uart chip samt LED status".
+
+**Filer:** nye `src/heartbeat_led.cpp/.h`, `src/main.cpp` (`heartbeat_led_begin()` efter `config_begin()`, `heartbeat_led_alive()` i `loop()`), `GPIO_MAPPING.md`, `docs/ESP32_FLERE_CJMCU752_KOBLING.md`, `docs/ESP32_W5500_UART_RS485_KOBLING.md` (firmwareplan: ny UART-chip + LED-status), `FEATURES.md`, `CLAUDE.md`.
+
+LED på GPIO2 blinker 100 ms hvert sekund, så længe `loop()` har meldt sig inden for 30 s. Ingen reset-handling. `pio run` og 353 native tests består. Ikke verificeret på rigtig hardware.
+
+---
+
 ## [0.36.0 build 0058] — 2026-10-27 — Offentlig, skrivebeskyttet statusside på boardet
 
 **Ønske:** Jan: "har vi en status side hvor på vi kan se general status af PLC expansions boardet" → "der skal ikke være login og data skal kunne tåle at være public på den status side" → "det skal også kun være en read only side".

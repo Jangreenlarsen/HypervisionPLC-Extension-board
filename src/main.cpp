@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "eth_driver.h"
+#include "heartbeat_led.h"
 #include "http_server.h"
 #include "modbus_channel.h"
 #include "modbus_tcp_server.h"
@@ -17,6 +18,7 @@ void setup() {
   // (baudrate=0!) g_config, som faar HardwareSerial::begin() til at forsoege
   // baud-auto-detektion og haenge.
   config_begin();
+  heartbeat_led_begin();  // v0.37.0: watchdog-LED paa GPIO2, blink 1 gang i sekundet
   // v0.26.0 (Jan: "kan vi lave en syslog funktion...") — laeser den
   // persisterede modtager-liste/hostname. Uafhaengigt af WiFi/Ethernet-
   // status (samme filosofi som modbus_channel_init_all() nedenfor) -
@@ -62,4 +64,7 @@ void setup() {
   provisioning_begin();
 }
 
-void loop() { provisioning_poll(); }
+void loop() {
+  heartbeat_led_alive();
+  provisioning_poll();
+}
