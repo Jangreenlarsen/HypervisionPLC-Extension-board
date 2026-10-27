@@ -223,6 +223,7 @@ GPIO-nummeret er det autoritative — det står trykt direkte på kredsløbskort
 
 ## Se også
 
+- [docs/ESP32_W5500_UART_RS485_KOBLING.html](docs/ESP32_W5500_UART_RS485_KOBLING.html) — kablingsdiagram med alle ben for de to varianter af boardet (2 kanaler, og 4 kanaler med CJMCU-752)
 - [EXPANSION_BOARD_DESIGN.md](EXPANSION_BOARD_DESIGN.md) §2.0.1 — den fulde begrundelse, AND-gate-logik og hardware-revisionshistorik
 - [PLC_INTEGRATION_MANUAL.md](PLC_INTEGRATION_MANUAL.md) — REST-API'et der konfigurerer kanalerne
 - [NXP SC16IS752 datablad](https://www.nxp.com/docs/en/data-sheet/SC16IS752_SC16IS762.pdf) — ben (tabel 2), adresser (tabel 32), auto-RS485 (afsnit 9)
