@@ -4,6 +4,28 @@ Nyeste øverst. Format: `## [version build NNNN] — YYYY-MM-DD — beskrivelse`
 
 ---
 
+## [0.36.0 build 0058] — 2026-10-27 — Offentlig, skrivebeskyttet statusside på boardet
+
+**Ønske:** Jan: "har vi en status side hvor på vi kan se general status af PLC expansions boardet" → "der skal ikke være login og data skal kunne tåle at være public på den status side" → "det skal også kun være en read only side".
+
+**Ny `lib/public_status/`** (native-testet): `mb_public_status_build_json()` bygger JSON'en ud fra en **fast allowlist** — structen har intet felt til token, adgangskoder, SSID, IP-adresser, MAC eller slave-ID/adresse, så de ikke kan sive ud ved en senere udvidelse af konfigurationen. JSON-escaping af tekstfelter, aldrig halv JSON ved for lille buffer, afviser ugyldigt kanaltal.
+
+**`src/status_page.h`:** selve HTML-siden (kun én fil, ingen eksterne ressourcer, lys/mørk efter systemet). Ingen formularer eller knapper; al tekst sættes med `textContent`. Henter `/status.json` hvert 5. sekund (pauser i skjult fane; `setTimeout` efter svar, så kald aldrig hober sig op).
+
+**`src/http_server.cpp`:** `GET /` og `GET /status.json` — **bevidst uden `require_auth()`**, kun GET (resten giver 405 fra esp_http_server). Svarene har `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, og siden en stram `Content-Security-Policy` (`connect-src 'self'`, ingen ekstern kode). `max_uri_handlers` 16 → 20 (13 → 15 i brug).
+
+**`lib/channel_config/`:** kanalens status-streng (`ok`/`error`/`disabled`/`unavailable`) flyttet til én delt funktion `mb_channel_status_string()`, som både `GET /api/channels` og den offentlige side bruger, så de aldrig kan blive uenige.
+
+**CLI:** `status` viser `status.page: http://<ip>:8080/` (WiFi og Ethernet); `help status` forklarer siden.
+
+**Dokumentation:** `PLC_INTEGRATION_MANUAL.md` nyt afsnit 4.9 (inkl. firewall-note), `CLAUDE.md` (regel 6: den offentlige side må aldrig udvides med hemmeligheder + projektstruktur), `ARCHITECTURE.md`, `FEATURES.md`.
+
+**Tests:** 10 nye i `test_public_status`, bl.a. en **vagt der udtrækker alle JSON-nøgler og sammenligner med den tilladte liste** (et nyt felt fejler testen, til nogen bevidst har godkendt det), en forbudt-ord-test (`token`, `pass`, `ssid`, `plc`, `syslog`, `mac`, `slave`, `address`, `ip":`), escaping, alle buffer-størrelser, og worst case-størrelse (1381 bytes) mod 2048-byte bufferen.
+
+**Filer:** `lib/public_status/*` (ny), `test/test_public_status/*` (ny), `src/status_page.h` (ny), `src/http_server.cpp`, `src/provisioning.cpp`, `lib/channel_config/*`, `lib/provisioning_cli/provisioning_cli.cpp`, `PLC_INTEGRATION_MANUAL.md`, `CLAUDE.md`, `ARCHITECTURE.md`, `FEATURES.md`, `version.json`.
+
+**Status:** 353/353 native-tests grønne. Bygger for esp32dev (Flash 70,6 %). **IKKE verificeret på rigtig hardware:** testboardet (10.1.1.26) var ikke på netværket, og driftsboardet ExtensionB1 er ikke opdateret uden Jans accept — siden er derfor hverken set i en browser eller kaldt over netværket endnu. Mangler at tjekke: at `/` og `/status.json` svarer uden token, at POST giver 405, at `/api/status` stadig kræver token, og at siden ser rigtig ud.
+
 ## [0.35.0 build 0057] — 2026-10-07 — Nyt: årsag til sidste genstart i `/api/status`
 
 **Ønske:** Jan, efter en genstart der lignede tabt trafik: boardet skal melde status til PLC'en om, hvorfor det genstartede.

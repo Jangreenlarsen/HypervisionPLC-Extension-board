@@ -348,11 +348,18 @@ void print_status() {
     Serial.print("rest.api: http://");
     Serial.print(WiFi.localIP());
     Serial.println(":8080/api/status");
+    // v0.36.0: offentlig, skrivebeskyttet statusside (ingen login) — se 'help status'.
+    Serial.print("status.page: http://");
+    Serial.print(WiFi.localIP());
+    Serial.println(":8080/");
   }
   if (eth_driver_status() == ETH_STATUS_CONNECTED) {
     Serial.print("rest.api (eth): http://");
     Serial.print(eth_driver_ip_string());
     Serial.println(":8080/api/status");
+    Serial.print("status.page (eth): http://");
+    Serial.print(eth_driver_ip_string());
+    Serial.println(":8080/");
   }
 
   Serial.print("provisioned: ");

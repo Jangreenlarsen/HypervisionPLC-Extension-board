@@ -2,6 +2,19 @@
 
 ---
 
+## v0.36.0 — 2026-10-27 — Statusside direkte på boardet
+
+Boardet har nu en lille **statusside**, som du kan åbne i en browser: `http://<board-ip>:8080/`. Den viser firmwareversion, oppetid, fri hukommelse, årsag til sidste genstart, board-type, UART-expander, Ethernet/WiFi og for hver kanal status, indstillinger og antal forespørgsler, lykkedes, timeouts og fejl. Siden opdaterer sig selv hvert 5. sekund.
+
+- **Ingen login** — og derfor kun data, der tåler at være offentlige. Den viser aldrig adgangskoder, tokens, netværksnavne eller IP-adresser.
+- **Kun til at se på:** den har ingen knapper og kan ikke ændre noget. Al konfiguration sker stadig fra PLC'en.
+- Adressen står også i CLI'ens `status` (linjen `status.page`).
+- Står jeres firewall sat til at lukke boardet for alle andre end PLC'en, skal port 8080 åbnes for den PC, der skal se siden.
+
+Siden er endnu ikke set på et rigtigt board.
+
+---
+
 ## v0.35.0 — 2026-10-07 — Boardet fortæller, hvorfor det sidst genstartede
 
 Boardets status indeholder nu årsagen til den seneste genstart: strøm tilsluttet, reset-knap, genstart via kommando eller firmwareopdatering, crash, watchdog eller spændingsfald. PLC'en (v7.9.68.119+) viser den sammen med oppetiden, når man trykker **Test forbindelse**. Så kan man se, om boardet er gået ned af sig selv.

@@ -117,12 +117,17 @@ bool parse_string_field(const char *json, const char *key, char *out, size_t out
 
 }  // namespace
 
+const char *mb_channel_status_string(const mb_channel_config_t *config, const mb_channel_stats_t *stats,
+                                      bool hardware_present) {
+  return !hardware_present  ? "unavailable"
+         : !config->enabled ? "disabled"
+         : (stats->has_last_error && !stats->last_result_ok) ? "error"
+                                                             : "ok";
+}
+
 size_t mb_channel_build_json(int channel_number, const mb_channel_config_t *config, const mb_channel_stats_t *stats,
                               char *out, size_t out_capacity, bool hardware_present) {
-  const char *status = !hardware_present  ? "unavailable"
-                       : !config->enabled ? "disabled"
-                       : (stats->has_last_error && !stats->last_result_ok) ? "error"
-                                               : "ok";
+  const char *status = mb_channel_status_string(config, stats, hardware_present);
 
   int written = snprintf(
       out, out_capacity,

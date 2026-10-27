@@ -110,6 +110,7 @@
 │   ├── channel_config/             # JSON build/parse for §4.2's kanal-config
 │   ├── diagnostic_modbus/          # JSON<->PDU for §4.2's diagnostiske read/write (FC01-06/15/16)
 │   ├── ota_validation/             # ESP32-magic-byte, firmware-identitets-scanner, MD5-format, OTA-status-JSON
+│   ├── public_status/              # allowlist-JSON til den offentlige statusside (v0.36.0) — ingen hemmeligheder
 │   ├── sc16is75x/                  # SC16IS752-registerlogik: baud-divisor, LCR/EFCR/MCR, I2C-subadresse (v0.31.0)
 │   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — bruges af http_server.cpp
 │   ├── rest_status/                # JSON-builders for GET /api/status + REST-fejlsvar — bruges af http_server.cpp

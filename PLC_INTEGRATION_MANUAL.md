@@ -297,6 +297,27 @@ Se afsnit 6 punkt 2 nedenfor for hvordan dette anbefales brugt sammen med den pe
 
 ---
 
+### 4.9 Offentlig statusside: `GET /` og `GET /status.json` (v0.36.0)
+
+En **skrivebeskyttet** side direkte på boardet, til et hurtigt blik (fejlsøgning, tavle-besøg) uden token. **Ingen login**, og den ignorerer `rest auth`-indstillingen — derfor indeholder den kun data, der tåler at være offentlige.
+
+- `GET http://<board-ip>:8080/` — HTML-siden (opdaterer sig selv hvert 5. sekund).
+- `GET http://<board-ip>:8080/status.json` — de samme data som JSON.
+- **Kun læsning:** kun GET findes. POST/PUT/DELETE mod disse stier giver `405`. Siden har ingen knapper eller formularer og kan intet ændre. PLC'en bør fortsat bruge `GET /api/status` (med token) — `/status.json` er til mennesker.
+
+```json
+{"product":"HypervisionPLC Extension Board","hostname":"ExtensionB1","fw_version":"0.36.0","fw_build":"0058",
+ "uptime_s":90061,"heap_free_bytes":217468,"reset_reason":"software","board_type":"4xRS485","active_channels":4,
+ "board_mode":"rs485","expander":"ok","wifi_connected":false,"ethernet":"connected",
+ "ota_pending_confirm":false,"ota_last_update_rolled_back":false,
+ "channels":[{"channel":"A","status":"ok","mode":"rs485","baudrate":9600,"parity":"none","stop_bits":1,
+              "total_requests":1000,"successful_requests":990,"timeout_errors":7,"crc_errors":2,"exception_errors":1}]}
+```
+
+**Aldrig med:** token, adgangskoder (WiFi/REST), SSID, IP-adresser (heller ikke PLC-IP eller syslog-modtagere), MAC-adresse, slave-ID'er og adresser fra seneste fejl. Listen over tilladte felter er fast i firmwaren, og en test fejler, hvis et nyt felt dukker op uden et bevidst valg.
+
+> **Firewall:** siden ligger på samme port (8080) som management-API'et. Tillader jeres netværksfirewall kun PLC'ens IP at nå boardet, kan kun PLC'en også se siden. Skal teknikere kunne se den fra en PC, skal firewallen åbne port 8080 for den — og så er også `/api/*` (token-beskyttet) nåbart derfra.
+
 ## 5. Fejlkoder-reference
 
 `mb_error_code_t`-værdier, brugt i `last_error_type` (afsnit 4.3) og `error_code` i `channel_error`-svar (afsnit 4.5/4.6):
