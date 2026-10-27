@@ -2,13 +2,14 @@
 
 Firmware til en selvstændig Modbus RTU-gateway ("expansion board") på ESP32. Boardet giver en Hypervision PLC ekstra RS485/RS232-feltbus-kanaler over netværk — Modbus TCP til data og REST/JSON til administration — uden at røre PLC'ens egen chip.
 
-**Status (v0.35.0, 2026-10-07):** I drift og hardware-verificeret sammen med PLC-firmware v7.9.68.x.
+**Status (v0.36.0, 2026-10-27):** I drift og hardware-verificeret sammen med PLC-firmware v7.9.68.x. Den nyeste firmware (v0.36.0, med statussiden nedenfor) er afprøvet over netværket på et driftsboard (4×RS485).
 
 - **2 eller 4 kanaler:**
   - Kanal A+B kører på ESP32'ens egne UART'er.
   - Kanal C+D kommer fra et CJMCU-752-modul (SC16IS752 over I2C), når det er monteret. Verificeret som 4×RS485 med en rigtig slave på kanal C.
 - **Netværk:** WiFi og valgfri W5500-Ethernet (dual-stack).
 - **Styres helt fra PLC'en**, inklusive firmwareopdatering med automatisk rollback.
+- **Statusside på boardet:** `http://<board-ip>:8080/`. Kun til at se på: ingen login og ingen knapper (se nedenfor).
 
 Se [FEATURES.md](FEATURES.md) for den detaljerede status.
 
@@ -18,7 +19,7 @@ Hypervision PLC'en kan tale Modbus RTU som slave og som én master over sin egen
 
 Løsningen er dette board: en fysisk separat ESP32-gateway, der ejer de ekstra feltbusser og stiller dem til rådighed for PLC'en over netværket.
 
-Boardet har bevidst ingen egen driftsbrugerflade, kun en seriel CLI over USB til første netværksopsætning. Al løbende konfiguration sker fra PLC'ens web-GUI ("single pane of glass").
+Boardet har bevidst ingen egen driftsbrugerflade, kun en seriel CLI over USB til første netværksopsætning. Al løbende konfiguration sker fra PLC'ens web-GUI ("single pane of glass"). Eneste undtagelse er en lille **skrivebeskyttet statusside**, der kun viser og aldrig kan ændre noget.
 
 ## Funktioner
 
@@ -28,6 +29,7 @@ Boardet har bevidst ingen egen driftsbrugerflade, kun en seriel CLI over USB til
 | **Modbus TCP (data)** | Én port pr. kanal: 502 (A), 503 (B), 504 (C), 505 (D). FC01–06, FC15, FC16. Kun PLC-IP'en har adgang (allowlist). Et FC05/FC06-svar, der ikke er et præcist ekko af forespørgslen, meldes til PLC'en som exception 0x04 (`MB_RESPONSE_MISMATCH`) i stedet for en falsk succes |
 | **REST (administration, port 8080)** | Status, kanalopsætning, diagnostisk læs/skriv, `GET /api/capabilities` (understøttede function codes uden bustrafik), hostname, PLC-IP, syslog, config-udtræk til PLC-backup, OTA. Bearer-token eller Basic Auth |
 | **Hardware-signalering** | `board_type` (fx `4xRS485`) og antal aktive kanaler i `/api/status`, så PLC'en viser det rigtige kanaltal. `reset_reason` fortæller, hvorfor boardet sidst genstartede (strøm, reset, software/OTA, crash, watchdog, brownout) |
+| **Statusside (offentlig, kun læsning)** | `GET /` (HTML, opdaterer hvert 5. sekund) og `GET /status.json` på port 8080. **Ingen login**, derfor kun uskadelige data: firmware, oppetid, hukommelse, sidste genstart, board-type, UART-expander, Ethernet/WiFi-status og pr. kanal status, indstillinger og tællere. Aldrig token, kodeord, WiFi-navn, IP-adresser, MAC eller slave-ID'er. Kun GET findes (alt andet giver 405). Adressen står i CLI'ens `status` (`status.page`) |
 | **Firmwareopdatering** | Via PLC'en: identitetstjek af image, MD5, bekræftelse efter opstart og automatisk rollback, hvis den ikke bekræftes |
 | **Drift og fejlsøgning** | Aktivitets-LED pr. kanal, syslog (RFC 3164, op til 4 modtagere), leveled Modbus-debug i CLI'en, sektionsopdelt `help` |
 
@@ -72,6 +74,7 @@ Fuld pin-oversigt: [GPIO_MAPPING.md](GPIO_MAPPING.md).
    - Kør `save`.
    - Notér tokenet fra `status`.
 3. Tilføj boardet på PLC'ens I/O-side med IP og token. Al øvrig opsætning sker derfra.
+4. Vil du bare se, om boardet kører, så åbn `http://<board-ip>:8080/` i en browser. Står jeres firewall sat til kun at lade PLC'ens IP nå boardet, skal port 8080 åbnes for den PC, der skal se siden.
 
 ## Dokumentation
 

@@ -58,6 +58,7 @@ HypervisionPLC Extension Board er et selvstændigt ESP32-baseret firmware- og ha
 
 6. **Hemmeligheder og eksterne nøgler (UFRAVIGELIG, revideret — to forskellige regler for to forskellige grænseflader)**: API-nøgler, adgangskoder og andre hemmeligheder må ALDRIG committes eller logges i git. Projektets hemmeligheder er: WiFi-adgangskoden, REST-brugernavn/adgangskode og management-API'ets Bearer-token — alle sat via den serielle CLI (§3.4) og opbevaret i boardets NVS/flash.
     - **REST-API'et (netværksvendt, §4.2/§4.4):** hemmeligheder må ALDRIG sendes tilbage til en klient. Tokenet er write-only fra det øjeblik det er genereret — intet endpoint må nogensinde returnere det, kun bekræfte at gyldige credentials blev præsenteret (401 ved manglende/forkert).
+    - **Den offentlige statusside (v0.36.0, Jan: "ingen login ... data skal kunne tåle at være public" / "kun read only"):** `GET /` og `GET /status.json` har INGEN auth og er kun GET. Indholdet er en fast allowlist i `lib/public_status/` — token, adgangskoder, SSID, IP-adresser, MAC og slave-ID/adresse må ALDRIG tilføjes. `test_public_status` har en vagt, der fejler ved enhver ny JSON-nøgle; udvid kun listen efter en bevidst vurdering af at feltet tåler at være offentligt.
     - **Den serielle CLI (Jan, bekræftet — fysisk USB-adgang er allerede tillidsgrænsen):** her gælder IKKE samme regel. `show`/`status` viser ALT konfigureret data i klartekst, INKL. WiFi-password, REST-password og management-tokenet — maskering på dette lag giver ingen reel beskyttelse (en angriber med fysisk adgang kan alligevel factory-reset'e og selv sætte nye credentials), kun friktion for den legitime installatør. Denne undtagelse gælder UDELUKKENDE den serielle CLI, aldrig REST-API'et eller nogen fremtidig netværksgrænseflade.
 
 7. **Read/write rettigheder**: Claude har forhåndsgodkendelse (via [.claude/settings.local.json](.claude/settings.local.json)) til at læse, skrive og redigere filer i projektmappen. Samme forhåndsgodkendelse dækker **alle kommandoer der er relevante for at køre og teste projektet** — uden at spørge først (fx `pio test`, `pio run`/`pio check`). Kun ægte destruktive handlinger (force-push, `git reset --hard`, sletning af andet end egne midlertidige testdata) kræver stadig eksplicit accept, jf. `deny`-listen.
@@ -149,7 +150,8 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 │   ├── uart_port_native.cpp/.h     # kanal A/B: ESP32-UART + DIR/LED-GPIO — v0.31.0
 │   ├── uart_expander.cpp/.h        # kanal C/D: SC16IS752 (CJMCU-752) over I2C GPIO21/22 — v0.31.0, IKKE hardware-verificeret
 │   ├── modbus_tcp_server.cpp/.h    # data-plan, port 502-503 (+504-505 med CJMCU-752), plc_ip-permit (§4.3) inline — Fase 4, live-verificeret
-│   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — status/channels(get/put/post read-write) — v0.11.0, faerdig
+│   ├── http_server.cpp/.h          # REST management-API, port 8080 (§4.2) — status/channels(get/put/post read-write) — v0.11.0, faerdig; + offentlig GET-statusside / og /status.json (uden auth) — v0.36.0
+│   ├── status_page.h               # HTML til den offentlige, skrivebeskyttede statusside (kun textContent, ingen formularer) — v0.36.0
 │   ├── http_helpers.h/.cpp         # require_auth()/send_json_error(), delt mellem http_server.cpp og ota_handler.cpp — v0.12.0
 │   ├── ota_handler.cpp/.h          # POST /api/ota, GET /api/ota/status, POST /api/ota/confirm, POST /api/reboot — v0.12.0, udvidet v0.30.0
 │   ├── ota_manager.cpp/.h          # OTA-bekræftelse/automatisk rollback + firmware-identitets-markør, delt af REST og CLI — v0.30.0
@@ -164,9 +166,10 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
 │   ├── ota_validation/             # ESP32-magic-byte, firmware-identitets-scanner, MD5-format, OTA-status-JSON — v0.12.0, udvidet v0.30.0
 │   ├── rest_auth/                  # base64 + Bearer/Basic Auth-tjek (§4.4) — v0.7.0, færdig
 │   ├── rest_status/                # JSON-builders for GET /api/status (inkl. board_type/expander) + REST-fejlsvar — v0.7.0, udvidet v0.31.0
+│   ├── public_status/              # allowlist-JSON til den offentlige statusside (ingen hemmeligheder) — v0.36.0
 │   ├── sc16is75x/                  # SC16IS752-registerlogik (baud-divisor, LCR/EFCR/MCR, I2C-subadresse) — v0.31.0
 │   └── syslog_client/              # RFC 3164-pakkeformatering (facility/severity, hardware-uafhængig) — v0.26.0
-└── test/                            # PlatformIO native unit-tests (`pio test -e native`) — 329 tests i alt
+└── test/                            # PlatformIO native unit-tests (`pio test -e native`) — 353 tests i alt
     ├── test_modbus_pdu/
     ├── test_modbus_tcp/
     ├── test_provisioning_cli/
@@ -176,6 +179,7 @@ Jf. `EXPANSION_BOARD_DESIGN.md` §3.1 og `ARCHITECTURE.md`. `net_driver.cpp` og 
     ├── test_ota_validation/
     ├── test_rest_auth/
     ├── test_rest_status/
+    ├── test_public_status/
     ├── test_sc16is75x/
     └── test_syslog_client/
 ```

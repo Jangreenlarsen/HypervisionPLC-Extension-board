@@ -38,6 +38,12 @@ struct mb_channel_stats_t {
 size_t mb_channel_build_json(int channel_number, const mb_channel_config_t *config, const mb_channel_stats_t *stats,
                               char *out, size_t out_capacity, bool hardware_present = true);
 
+// v0.36.0: kanalens status-streng ("unavailable" | "disabled" | "error" | "ok"),
+// delt mellem GET /api/channels (ovenfor) og den offentlige statusside, så de
+// to aldrig kan blive uenige om hvad en kanal fejler.
+const char *mb_channel_status_string(const mb_channel_config_t *config, const mb_channel_stats_t *stats,
+                                      bool hardware_present);
+
 // Parser en `PUT /api/channels/{n}/config`-JSON-body. §4.2: ATOMISK — ALLE
 // felter skal være til stede og gyldige (ingen PATCH-semantik); mangler
 // eller er blot ét ugyldigt, afvises HELE requestet (false, `*out_config`

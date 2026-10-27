@@ -14,6 +14,9 @@
 #include "http_helpers.h"
 #include "modbus_channel.h"
 #include "ota_handler.h"
+#include "ota_manager.h"
+#include "public_status.h"
+#include "status_page.h"
 #include "rest_status.h"
 #include "provisioning.h"
 #include "provisioning_cli.h"
@@ -159,6 +162,94 @@ esp_err_t capabilities_handler(httpd_req_t *req) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_send(req, body, body_len);
   return ESP_OK;
+}
+
+// ---------------------------------------------------------------------------
+// v0.36.0 (Jan: "der skal ikke være login og data skal kunne tåle at være
+// public på den status side" / "det skal også kun være en read only side")
+// — OFFENTLIG, skrivebeskyttet statusside. BEVIDST UDEN require_auth().
+//
+// Sikkerhedsgrænser (hold dem, hvis siden udvides):
+//  * Kun HTTP GET registreres (se http_server_begin()) — POST/PUT/DELETE
+//    mod / og /status.json får 405 fra esp_http_server.
+//  * Indholdet er en ALLOWLIST (lib/public_status) — aldrig token,
+//    adgangskoder, SSID, IP-adresser, MAC eller slave-ID/adresse. En test
+//    fejler hvis et nyt felt dukker op i JSON'en uden et bevidst valg.
+//  * Siden har ingen formularer/knapper og sætter al tekst via textContent.
+// ---------------------------------------------------------------------------
+void set_public_page_headers(httpd_req_t *req) {
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  httpd_resp_set_hdr(req, "X-Content-Type-Options", "nosniff");
+  httpd_resp_set_hdr(req, "X-Frame-Options", "DENY");
+  httpd_resp_set_hdr(req, "Referrer-Policy", "no-referrer");
+}
+
+esp_err_t public_status_page_handler(httpd_req_t *req) {
+  set_public_page_headers(req);
+  // Siden henter kun /status.json fra samme oprindelse og har ét inline script/style.
+  httpd_resp_set_hdr(req, "Content-Security-Policy",
+                     "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; "
+                     "frame-ancestors 'none'");
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
+  return httpd_resp_send(req, kStatusPageHtml, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t public_status_json_handler(httpd_req_t *req) {
+  set_public_page_headers(req);
+
+  const mb_board_config_t &cfg = config_get();
+  char hostname[40];
+  mb_config_build_hostname(cfg.has_hostname, cfg.hostname, cfg.eth_mac, hostname, sizeof(hostname));
+
+  mb_public_status_t d{};
+  d.hostname = hostname;
+#ifdef FW_VERSION
+  d.fw_version = FW_VERSION;
+  d.fw_build = FW_BUILD;
+#else
+  d.fw_version = "ukendt";
+  d.fw_build = "ukendt";
+#endif
+  d.uptime_s = static_cast<uint32_t>(millis() / 1000);
+  d.heap_free_bytes = ESP.getFreeHeap();
+  d.reset_reason = mb_status_reset_reason_string(static_cast<int>(esp_reset_reason()));
+  d.board_mode = modbus_channel_get_config(ModbusChannelId::kA).mode;
+  d.expander = expander_status_string();
+  d.wifi_connected = WiFi.status() == WL_CONNECTED;
+  d.eth_status = eth_driver_status_string();
+  d.ota_pending_confirm = ota_manager_pending_confirm(nullptr);
+  d.ota_last_update_rolled_back = ota_manager_last_update_rolled_back();
+
+  size_t count = modbus_channel_active_count();
+  if (count > MB_PUBLIC_STATUS_MAX_CHANNELS) count = MB_PUBLIC_STATUS_MAX_CHANNELS;
+  d.channel_count = static_cast<uint8_t>(count);
+  for (size_t i = 0; i < count; i++) {
+    const ModbusChannelId id = static_cast<ModbusChannelId>(i);
+    const mb_channel_config_t ccfg = modbus_channel_get_config(id);
+    const mb_channel_stats_t stats = modbus_channel_get_stats(id);
+    mb_public_channel_t &c = d.channels[i];
+    c.letter = static_cast<char>('A' + i);
+    c.status = mb_channel_status_string(&ccfg, &stats, modbus_channel_hardware_present(id));
+    c.mode = ccfg.mode;
+    c.baudrate = ccfg.baudrate;
+    c.parity = ccfg.parity;
+    c.stop_bits = ccfg.stop_bits;
+    c.total_requests = stats.total_requests;
+    c.successful_requests = stats.successful_requests;
+    c.timeout_errors = stats.timeout_errors;
+    c.crc_errors = stats.crc_errors;
+    c.exception_errors = stats.exception_errors;
+  }
+
+  char body[2048];
+  const size_t len = mb_public_status_build_json(&d, body, sizeof(body));
+  if (len == 0) {
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, "{\"error\":\"internal\"}", HTTPD_RESP_USE_STRLEN);
+  }
+  httpd_resp_set_type(req, "application/json");
+  return httpd_resp_send(req, body, len);
 }
 
 esp_err_t status_handler(httpd_req_t *req) {
@@ -611,7 +702,7 @@ void http_server_begin() {
   // Default (8) rækker ikke længere — status/channels(get)/channels(put)/
   // channels(post)/ota/ota-status/reboot er allerede 7 registreringer, uden
   // plads til fremtidige endpoints (fx reset-stats).
-  config.max_uri_handlers = 16;
+  config.max_uri_handlers = 20;  // v0.36.0: +2 offentlige GET-sider (13 -> 15 + luft)
 
   if (httpd_start(&g_server, &config) != ESP_OK) {
     Serial.println("FEJL: kunne ikke starte REST management-API (port 8080).");
@@ -673,7 +764,13 @@ void http_server_begin() {
   const httpd_uri_t syslog_post_uri = {.uri = "/api/syslog", .method = HTTP_POST, .handler = syslog_post_handler, .user_ctx = nullptr};
   httpd_register_uri_handler(g_server, &syslog_post_uri);
 
+  // v0.36.0: offentlig, skrivebeskyttet statusside — KUN GET, ingen auth (se public_status_page_handler()).
+  const httpd_uri_t public_page_uri = {.uri = "/", .method = HTTP_GET, .handler = public_status_page_handler, .user_ctx = nullptr};
+  httpd_register_uri_handler(g_server, &public_page_uri);
+  const httpd_uri_t public_json_uri = {.uri = "/status.json", .method = HTTP_GET, .handler = public_status_json_handler, .user_ctx = nullptr};
+  httpd_register_uri_handler(g_server, &public_json_uri);
+
   ota_handler_register(g_server);
 
-  Serial.println("REST management-API startet paa port 8080 (status/capabilities/channels/diagnostic read-write/hostname/config/plc-ip/syslog/ota).");
+  Serial.println("REST management-API startet paa port 8080 (status/capabilities/channels/diagnostic read-write/hostname/config/plc-ip/syslog/ota) + offentlig statusside paa / (skrivebeskyttet, uden login).");
 }
