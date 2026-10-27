@@ -127,7 +127,7 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
 **`board_type` og `expander` (v0.31.0):** `GET /api/status` indeholder også fx `"board_type":"4xRS485","expander":"ok"`.
 - `board_type` = `"<active_channels>x<RS485|RS232>"` — én streng PLC'en kan vise og validere direkte: `"2xRS485"`, `"2xRS232"`, `"4xRS485"` eller `"4xRS232"`. **Alle kanaler på et board har altid samme mode** (én MODE_SEL-jumper).
 - `active_channels` er **2 eller 4**, afgjort ved boot af boardets EXP_SEL-jumper (CJMCU-752 monteret eller ej).
-- `expander`: `"not_fitted"` (2 kanaler), `"ok"` (CJMCU-752 fundet, 4 kanaler) eller `"not_found"` — jumperen siger monteret, men chippen svarer ikke. Da er `active_channels` stadig 4, men kanal 3/4 har `"status":"unavailable"` og afviser alle transaktioner (REST: `error_code` 9, Modbus TCP: gateway-exception 0x0A "Gateway Path Unavailable"). Vis det som en hardwarefejl på boardet.
+- `expander`: `"not_fitted"` (2 kanaler), `"ok"` (CJMCU-752 fundet, 4 kanaler) eller `"not_found"` — jumperen siger monteret, men chippen svarer ikke. Siden v0.33.0 kører boardet da videre på **2 kanaler** (`active_channels: 2`, kanal 3/4 findes ikke → `404`, port 504/505 er lukkede) — i stedet for 4 kanaler, hvor C/D afviser alt. `expander: "not_found"` er det eneste tegn på, at et modul burde have været der: vis det som en hardwarefejl (modul/ledninger, eller en manglende pull-down på GPIO36, hvis intet modul er monteret).
 
 `board_mode` (`"rs485"` eller `"rs232"`, v0.15.0) er boardets AKTUELLE RS232/RS485-mode — siden begge kanaler siden v0.14.0 deler én fysisk MODE_SEL-GPIO (§2.0.1), er dette den samme værdi som ENHVER kanals `mode`-felt i `GET /api/channels`. Foretrukket direkte kilde til board-mode fremfor at udlede den fra en tilfældig kanal. **Ren læseværdi (hardware-revision 2026-09-14, 2. ændring):** afspejler MODE_SEL-jumperens fysiske position, læst af firmwaren ved boot — kan IKKE påvirkes via REST, se afsnit 4.4.
 
@@ -136,7 +136,7 @@ Præsenteres en metode der er eksplicit slået fra (`rest auth`-kommandoen), er 
 
 ### 4.3 `GET /api/channels` og `GET /api/channels/{n}`
 
-`n` er **1-baseret**: 1=kanal A, 2=kanal B, 3=kanal C, 4=kanal D (v0.31.0, kun med CJMCU-752). `n` udenfor `1..active_channels` giver `404`. Kanalens `status` er `"ok"`, `"error"`, `"disabled"` eller (v0.31.0) `"unavailable"` — sidstnævnte når kanalens hardware ikke svarer (`expander: "not_found"`).
+`n` er **1-baseret**: 1=kanal A, 2=kanal B, 3=kanal C, 4=kanal D (v0.31.0, kun med CJMCU-752). `n` udenfor `1..active_channels` giver `404`. Kanalens `status` er `"ok"`, `"error"` (seneste transaktion fejlede), `"disabled"` eller `"unavailable"` (kanalens hardware svarer ikke; med v0.33.0 kan C/D dog ikke længere være aktive uden et svarende modul, se `expander` i afsnit 4.2).
 
 `GET /api/channels` returnerer et JSON-array af nøjagtigt samme objekt-form som `GET /api/channels/{n}`, ét pr. aktiv kanal:
 
@@ -367,6 +367,6 @@ Modbus-standard exception-koder (fra slaven ELLER boardets egen gateway, se afsn
 - **RS232-mode er ikke hardware-testet** — kun RS485 er verificeret med et rigtigt device. `mode` kan IKKE sættes via REST (se nedenfor) — kræver at MODE_SEL-jumperen fysisk flyttes til GND, hvilket ikke er afprøvet endnu.
 - **Ingen `POST /api/channels/{n}/reset-stats`/`POST /api/stats/reset`** — statistikken (afsnit 4.3) kan kun nulstilles ved reboot.
 - **OTA-uploadet har intet "annullér"-endpoint** — det afbrydes ved at lukke forbindelsen (boardet kasserer da uploadet og bliver på den kørende firmware). Fremdriften kan ikke aflæses via `GET /api/ota/status` mens uploadet står på (én HTTP-arbejdstråd).
-- **`active_channels` (2 eller 4) afgøres af EXP_SEL-jumperen ved boot**, ikke af ren auto-detektion — firmwaren tjekker dog, at chippen svarer, og melder `expander: "not_found"` hvis ikke (afsnit 4.2).
+- **`active_channels` (2 eller 4) afgøres af EXP_SEL-jumperen ved boot**, ikke af ren auto-detektion — firmwaren tjekker dog, at chippen svarer. Svarer den ikke, kører boardet på 2 kanaler og melder `expander: "not_found"` (afsnit 4.2).
 - **RS232/RS485-mode er nu ÉN fabriksvalgt hardware-input for HELE boardet, ikke et PUT-bart felt** (hardware-revision 2026-09-14, §2.0.1) — kanal A og B kan ikke have forskellig mode, og mode kan ikke ændres via REST uden en fysisk jumper-omkobling. Se afsnit 4.4's boks om dette.
 - Se [FEATURES.md](FEATURES.md)'s "Planlagte features" for den fulde, opdaterede liste over hvad der mangler.
