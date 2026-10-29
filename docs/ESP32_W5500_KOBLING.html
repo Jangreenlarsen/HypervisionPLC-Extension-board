@@ -1,0 +1,203 @@
+<title>ESP32 W5500 forbindelser</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: koblingsdiagram med ESP32 i midten, RS232 + DIP + LED til venstre, W5500 til højre */
+:root {
+  --bg: #f1f4f6;
+  --fg: #16212b;
+  --muted: #5a6975;
+  --panel: #ffffff;
+  --line: #9aa8b3;
+  --uart: #1565c0;
+  --spi: #c2410c;
+  --ctrl: #0f766e;
+  --io: #7c3aed;
+  --font-body: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10171d; --fg: #e3eaef; --muted: #93a2ae; --panel: #19232b; --line: #4a5b68;
+    --uart: #5aa9ff; --spi: #ff9a5c; --ctrl: #3fd1c0; --io: #b794ff; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10171d; --fg: #e3eaef; --muted: #93a2ae; --panel: #19232b; --line: #4a5b68;
+  --uart: #5aa9ff; --spi: #ff9a5c; --ctrl: #3fd1c0; --io: #b794ff; color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  padding-block: 24px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 1.4rem; margin: 0; text-wrap: balance; }
+p.sub { margin: 0; color: var(--muted); max-width: 65ch; line-height: 1.5; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 20px; font-size: 0.85rem; }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { width: 24px; height: 3px; display: inline-block; }
+figure { margin: 0; overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+figure svg { display: block; min-width: 720px; width: 100%; height: auto; }
+figcaption { font-size: 0.85rem; color: var(--muted); padding: 8px 4px 2px; max-width: 80ch; line-height: 1.5; }
+svg text { font-family: var(--font-mono); font-size: 12px; fill: var(--fg); }
+svg .t-muted { fill: var(--muted); }
+svg .t-title { font-family: var(--font-body); font-weight: 600; font-size: 14px; }
+svg .box { fill: var(--panel); stroke: var(--fg); stroke-width: 1.5; }
+svg .esp { fill: var(--bg); stroke: var(--fg); stroke-width: 2; }
+svg .sym { stroke: var(--fg); stroke-width: 1.5; fill: none; }
+svg .w { fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+svg .uart { stroke: var(--uart); } svg .spi { stroke: var(--spi); }
+svg .ctrl { stroke: var(--ctrl); } svg .io { stroke: var(--io); }
+svg .dot { fill: var(--spi); }
+</style>
+
+<main>
+  <h1>ESP32 med W5500 og to RS232-kort</h1>
+  <p class="sub">Alle komponenter forsynes med 3,3 V. Symbolerne 3V3 og GND er samme net overalt i tegningen.</p>
+  <div class="legend">
+    <span><i style="background:var(--uart)"></i>Seriel (UART)</span>
+    <span><i style="background:var(--spi)"></i>SPI til W5500</span>
+    <span><i style="background:var(--ctrl)"></i>Reset og afbryder</span>
+    <span><i style="background:var(--io)"></i>LED-udgange</span>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1000 680" role="img" aria-label="Koblingsdiagram: ESP32 forbundet til to RS232-kort via UART, til W5500 via SPI, til en DIP-kontakt på D4 og til to LED'er med 1 kilo-ohm modstande. 10 kilo-ohm modstand R1 trækker INT-linjen op til 3,3 V.">
+      <defs>
+        <g id="vcc">
+          <line class="sym" x1="0" y1="0" x2="0" y2="-18"/>
+          <line class="sym" x1="-8" y1="-18" x2="8" y2="-18"/>
+          <text x="12" y="-14">3V3</text>
+        </g>
+        <g id="gnd">
+          <line class="sym" x1="0" y1="0" x2="0" y2="12"/>
+          <line class="sym" x1="-10" y1="12" x2="10" y2="12"/>
+          <line class="sym" x1="-6" y1="16" x2="6" y2="16"/>
+          <line class="sym" x1="-2" y1="20" x2="2" y2="20"/>
+          <text x="14" y="18" class="t-muted">GND</text>
+        </g>
+      </defs>
+
+      <!-- Strøm ind -->
+      <rect class="box" x="20" y="20" width="150" height="56" rx="3"/>
+      <text class="t-title" x="32" y="42">Strøm ind</text>
+      <text class="t-muted" x="32" y="62">3,3 V DC</text>
+      <use href="#vcc" x="130" y="20"/>
+      <line class="sym" x1="150" y1="76" x2="150" y2="88"/>
+      <use href="#gnd" x="150" y="88"/>
+
+      <!-- ESP32 -->
+      <rect class="esp" x="390" y="110" width="220" height="510" rx="4"/>
+      <text class="t-title" x="500" y="360" text-anchor="middle">ESP32</text>
+      <text class="t-muted" x="500" y="378" text-anchor="middle">DevKit</text>
+      <use href="#vcc" x="470" y="110"/>
+      <text x="470" y="128" text-anchor="middle">3V3</text>
+      <use href="#gnd" x="500" y="620"/>
+      <text x="500" y="610" text-anchor="middle">GND</text>
+
+      <!-- RS232 kort 1 -->
+      <rect class="box" x="80" y="180" width="180" height="70" rx="3"/>
+      <text class="t-title" x="260" y="172" text-anchor="end">RS232-kort 1</text>
+      <rect class="box" x="14" y="190" width="30" height="60" rx="2"/>
+      <path class="w uart" d="M34 200 H80"/><path class="w uart" d="M34 220 H80"/><path class="w uart" d="M34 240 H80"/>
+      <circle class="sym" cx="34" cy="200" r="3.5"/><circle class="sym" cx="34" cy="220" r="3.5"/><circle class="sym" cx="34" cy="240" r="3.5"/>
+      <text x="88" y="204">TX</text><text x="88" y="224">RX</text><text x="88" y="244">GND</text>
+      <text class="t-muted" x="29" y="184">Header</text>
+      <text x="252" y="214" text-anchor="end">TX</text>
+      <text x="252" y="244" text-anchor="end">RX</text>
+      <use href="#vcc" x="120" y="180"/>
+      <use href="#gnd" x="120" y="250"/>
+      <path class="w uart" d="M260 210 H390"/>
+      <path class="w uart" d="M260 240 H390"/>
+      <text x="398" y="214">D16</text>
+      <text x="398" y="244">D17</text>
+
+      <!-- RS232 kort 2 -->
+      <rect class="box" x="80" y="330" width="180" height="70" rx="3"/>
+      <text class="t-title" x="260" y="322" text-anchor="end">RS232-kort 2</text>
+      <rect class="box" x="14" y="330" width="30" height="60" rx="2"/>
+      <path class="w uart" d="M34 340 H80"/><path class="w uart" d="M34 360 H80"/><path class="w uart" d="M34 380 H80"/>
+      <circle class="sym" cx="34" cy="340" r="3.5"/><circle class="sym" cx="34" cy="360" r="3.5"/><circle class="sym" cx="34" cy="380" r="3.5"/>
+      <text x="88" y="344">TX</text><text x="88" y="364">RX</text><text x="88" y="384">GND</text>
+      <text class="t-muted" x="29" y="324">Header</text>
+      <text x="252" y="354" text-anchor="end">TX</text>
+      <text x="252" y="384" text-anchor="end">RX</text>
+      <use href="#vcc" x="120" y="330"/>
+      <use href="#gnd" x="120" y="400"/>
+      <path class="w uart" d="M260 350 H390"/>
+      <path class="w uart" d="M260 380 H390"/>
+      <text x="398" y="354">D19</text>
+      <text x="398" y="384">D18</text>
+
+      <!-- SW1 -->
+      <rect class="box" x="80" y="460" width="180" height="40" rx="3"/>
+      <text class="t-title" x="92" y="485">SW1</text>
+      <text class="t-muted" x="136" y="485">1-polet DIP</text><text x="80" y="452">Mode: sluttet = RS232</text>
+      <path class="w ctrl" d="M260 480 H390"/>
+      <text x="398" y="484">D4</text>
+      <line class="sym" x1="120" y1="500" x2="120" y2="512"/>
+      <use href="#gnd" x="120" y="512"/>
+
+      <!-- LED1 -->
+      <path class="w io" d="M390 540 H312"/>
+      <polygon class="sym" points="340,530 340,550 312,540" style="fill:var(--panel)"/>
+      <line class="sym" x1="312" y1="530" x2="312" y2="550"/>
+      <path class="w io" d="M312 540 H270"/>
+      <rect class="box" x="230" y="534" width="40" height="12"/>
+      <path class="w io" d="M230 540 H190"/>
+      <use href="#gnd" x="190" y="540"/>
+      <text x="398" y="544">D26</text>
+      <text x="326" y="524" text-anchor="middle">LED1 · Kanal A</text><text class="t-muted" x="326" y="570" text-anchor="middle">TX/RX-status</text>
+      <text x="250" y="524" text-anchor="middle">R2 1k</text>
+
+      <!-- LED2 -->
+      <path class="w io" d="M390 600 H340"/>
+      <polygon class="sym" points="340,590 340,610 312,600" style="fill:var(--panel)"/>
+      <line class="sym" x1="312" y1="590" x2="312" y2="610"/>
+      <path class="w io" d="M312 600 H270"/>
+      <rect class="box" x="230" y="594" width="40" height="12"/>
+      <path class="w io" d="M230 600 H190"/>
+      <use href="#gnd" x="190" y="600"/>
+      <text x="398" y="604">D33</text>
+      <text x="326" y="584" text-anchor="middle">LED2 · Kanal B</text><text class="t-muted" x="326" y="630" text-anchor="middle">TX/RX-status</text>
+      <text x="250" y="584" text-anchor="middle">R3 1k</text>
+
+      <!-- W5500 -->
+      <rect class="box" x="740" y="180" width="180" height="200" rx="3"/>
+      <text class="t-title" x="830" y="352" text-anchor="middle">W5500</text>
+      <text x="748" y="214">RST</text>
+      <text x="748" y="244">MISO</text>
+      <text x="748" y="274">MOSI</text>
+      <text x="748" y="304">SCK</text>
+      <text x="748" y="334">CS</text>
+      <use href="#vcc" x="860" y="180"/>
+      <use href="#gnd" x="860" y="380"/>
+
+      <path class="w ctrl" d="M610 210 H740"/>
+      <path class="w spi" d="M610 240 H740"/>
+      <path class="w spi" d="M610 270 H740"/>
+      <path class="w spi" d="M610 300 H740"/>
+      <path class="w spi" d="M610 330 H740"/>
+      <text x="602" y="214" text-anchor="end">D23</text>
+      <text x="602" y="244" text-anchor="end">D35</text>
+      <text x="602" y="274" text-anchor="end">D13</text>
+      <text x="602" y="304" text-anchor="end">D14</text>
+      <text x="602" y="334" text-anchor="end">D32</text>
+
+      <!-- INT og R1 -->
+      <path class="w spi" d="M610 360 H740"/>
+      <text x="748" y="364">INT</text>
+      <text x="602" y="364" text-anchor="end">VN</text>
+      <circle class="dot" cx="680" cy="360" r="4"/>
+      <path class="w spi" d="M680 360 V396"/>
+      <rect class="box" x="674" y="396" width="12" height="40"/>
+      <text x="696" y="420">R1 10k</text>
+      <path class="w spi" d="M680 436 V462"/>
+      <line class="sym" x1="672" y1="462" x2="688" y2="462"/>
+      <text x="694" y="466">3V3</text>
+    </svg>
+    <figcaption>D35 (MISO) er en indgang, D13 (MOSI) og D14 (SCK) er udgange. R1 trækker INT på VN op til 3,3 V, så linjen er høj når W5500 ikke melder noget. SW1 er mode-vælger: sluttet (D4 lav) giver RS232-mode, åben giver RS485-mode. LED1 viser TX/RX-status for kanal A (RS232-kort 1), LED2 for kanal B (RS232-kort 2).</figcaption>
+  </figure>
+</main>
